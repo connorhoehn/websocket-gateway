@@ -103,8 +103,6 @@ samconfig.toml
 *.mov
 *.avi
 *.mkv
-*.gif
-*.png
-*.jpg
-*.jpeg
-*.webp
+# Allow assets folder for documentation
+!assets/
+!assets/**

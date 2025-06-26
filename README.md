@@ -1,6 +1,6 @@
 # WebSocket Gateway with Redis
 
-![WebSocket Gateway Demo](https://www.connorhoehn.com/websocket_gateway_demo_fast.gif)
+![WebSocket Gateway Demo](./assets/websocket_gateway_demo.gif)
 
 A scalable WebSocket gateway built with Node.js, Redis, and AWS CDK for pub/sub messaging across multiple instances.
 
