@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Gateway Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .connection-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        
+        .instructions {
+            background-color: #e7f3ff;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #0c5460;
+        }
+        
+        .instructions ul {
+            margin-bottom: 0;
+        }
+        
+        .service-section {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .service-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        input, button, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .log-info { background-color: #d1ecf1; }
+        .log-error { background-color: #f8d7da; }
+        .log-success { background-color: #d4edda; }
+        
+        .cursor-demo {
+            position: relative;
+            width: 100%;
+            height: 200px;
+            border: 2px solid #ddd;
+            background-color: #f8f9fa;
+            overflow: hidden;
+        }
+        
+        .cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            /* border-radius: 50%; */
+            transition: all 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        /* Reaction Styles */
+        .reaction-picker {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 10px;
+            margin: 10px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .reaction-button {
+            padding: 10px;
+            font-size: 24px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .reaction-button:hover {
+            transform: scale(1.1);
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0,123,255,0.2);
+        }
+
+        .reaction-button:active {
+            transform: scale(0.95);
+        }
+
+        .reaction-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .reaction-animation {
+            position: absolute;
+            font-size: 60px;
+            pointer-events: none;
+            z-index: 1001;
+        }
+
+        /* Reaction Animation Effects */
+        @keyframes pulse-red {
+            0% { transform: scale(1); background-color: rgba(255, 0, 0, 0.3); }
+            50% { transform: scale(1.2); background-color: rgba(255, 0, 0, 0.6); }
+            100% { transform: scale(1); background-color: rgba(255, 0, 0, 0); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        @keyframes bounce-green {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        @keyframes bounce-red {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        @keyframes zoom {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.5); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes fade-blue {
+            0% { opacity: 1; color: #007bff; }
+            100% { opacity: 0.3; color: #007bff; }
+        }
+
+        @keyframes shake-red {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-3px) rotate(-2deg); }
+            75% { transform: translateX(3px) rotate(2deg); }
+        }
+
+        @keyframes confetti {
+            0% { transform: scale(0) rotate(0deg); opacity: 1; }
+            50% { transform: scale(1.2) rotate(180deg); opacity: 0.8; }
+            100% { transform: scale(0.8) rotate(360deg); opacity: 0; }
+        }
+
+        @keyframes flicker-orange {
+            0%, 100% { opacity: 1; color: #ff6600; }
+            50% { opacity: 0.5; color: #ffaa00; }
+        }
+
+        @keyframes flash-yellow {
+            0%, 100% { opacity: 1; color: #ffff00; background-color: rgba(255, 255, 0, 0); }
+            50% { opacity: 0.8; color: #ffff00; background-color: rgba(255, 255, 0, 0.3); }
+        }
+
+        @keyframes spin-gold {
+            0% { transform: rotate(0deg); color: #ffd700; }
+            100% { transform: rotate(360deg); color: #ffd700; }
+        }
+
+        @keyframes fly-up {
+            0% { transform: translateY(0) scale(1); opacity: 1; }
+            100% { transform: translateY(-100px) scale(0.5); opacity: 0; }
+        }
+
+        .effect-pulse-red { animation: pulse-red 0.5s ease-in-out; }
+        .effect-shake { animation: shake 0.5s ease-in-out; }
+        .effect-bounce-green { animation: bounce-green 0.5s ease-in-out; }
+        .effect-bounce-red { animation: bounce-red 0.5s ease-in-out; }
+        .effect-zoom { animation: zoom 0.5s ease-in-out; }
+        .effect-fade-blue { animation: fade-blue 0.5s ease-in-out; }
+        .effect-shake-red { animation: shake-red 0.5s ease-in-out; }
+        .effect-confetti { animation: confetti 1s ease-in-out; }
+        .effect-flicker-orange { animation: flicker-orange 0.5s ease-in-out infinite; }
+        .effect-flash-yellow { animation: flash-yellow 0.3s ease-in-out; }
+        .effect-spin-gold { animation: spin-gold 1s ease-in-out; }
+        .effect-fly-up { animation: fly-up 1s ease-in-out; }
+    </style>
+</head>
+<body>
+    <!-- Instructions for multi-tab testing -->
+    <div class="instructions">
+        <h3>🧪 Multi-Tab Testing Instructions</h3>
+        <ul>
+            <li><strong>Step 1:</strong> Open this page in multiple browser tabs</li>
+            <li><strong>Step 2:</strong> Click "Connect" in each tab</li>
+            <li><strong>Step 3:</strong> Join the same channel (e.g., "general") in multiple tabs</li>
+            <li><strong>Step 4:</strong> Send messages in one tab and watch them appear in other tabs!</li>
+            <li><strong>Tip:</strong> Each client gets a unique 8-character ID for identification</li>
+        </ul>
+    </div>
+    <h1>🚀 Distributed WebSocket Gateway Test Client</h1>
+    
+    <div class="container">
+        <h2>Connection Status</h2>
+        <div class="connection-info">
+            <div>
+                <label for="wsUrl">WebSocket URL:</label>
+                <input type="text" id="wsUrl" value="ws://localhost:8080" style="width: 100%; margin-top: 5px;">
+            </div>
+            <div>
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" disabled>Disconnect</button>
+            </div>
+        </div>
+        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+        <div id="clientInfo" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">
+            <strong>Client ID:</strong> <span id="clientId">Not connected</span><br>
+            <strong>Node ID:</strong> <span id="nodeId">Not connected</span><br>
+            <strong>Services:</strong> <span id="enabledServices">Not connected</span>
+        </div>
+    </div>
+
+    <!-- Chat Service -->
+    <div class="container service-section">
+        <h3>💬 Chat Service</h3>
+        <div class="controls">
+            <input type="text" id="chatChannel" placeholder="Channel name" value="general">
+            <button id="joinChatBtn" disabled>Join Channel</button>
+            <button id="leaveChatBtn" disabled>Leave Channel</button>
+        </div>
+        <div class="controls">
+            <input type="text" id="chatMessage" placeholder="Type a message..." style="flex: 1;">
+            <button id="sendChatBtn" disabled>Send</button>
+        </div>
+        <div id="chatLog" class="log-container"></div>
+    </div>
+
+    <!-- Presence Service -->
+    <div class="container service-section">
+        <h3>👥 Presence Service</h3>
+        <div class="controls">
+            <select id="presenceStatus">
+                <option value="online">Online</option>
+                <option value="away">Away</option>
+                <option value="busy">Busy</option>
+                <option value="offline">Offline</option>
+            </select>
+            <input type="text" id="presenceChannel" placeholder="Channel name" value="general">
+            <button id="setPresenceBtn" disabled>Set Presence</button>
+            <button id="subscribePresenceBtn" disabled>Subscribe</button>
+        </div>
+        <div id="presenceLog" class="log-container"></div>
+    </div>
+
+    <!-- Cursor Service -->
+    <div class="container service-section">
+        <h3>🖱️ Cursor Service</h3>
+        <div class="controls">
+            <input type="text" id="cursorChannel" placeholder="Channel name" value="general">
+            <button id="subscribeCursorBtn" disabled>Subscribe to Cursors</button>
+            <button id="unsubscribeCursorBtn" disabled>Unsubscribe</button>
+        </div>
+        <div class="cursor-demo" id="cursorDemo">
+            <div style="position: absolute; top: 10px; left: 10px; font-size: 12px; color: #666;">
+                Move your mouse here to share cursor position
+            </div>
+        </div>
+        <div id="cursorLog" class="log-container"></div>
+    </div>
+
+    <!-- Reaction Service -->
+    <div class="container service-section">
+        <h3>🎭 Reaction Service</h3>
+        <div class="controls">
+            <input type="text" id="reactionChannel" placeholder="Channel name" value="general">
+            <button id="subscribeReactionBtn" disabled>Subscribe to Reactions</button>
+            <button id="unsubscribeReactionBtn" disabled>Unsubscribe</button>
+        </div>
+        <div class="controls">
+            <p style="margin: 5px 0; font-weight: bold;">Click an emoji to send a reaction:</p>
+        </div>
+        <div class="reaction-picker">
+            <button class="reaction-button" data-emoji="❤️" disabled title="Heart - Pulse Red">❤️</button>
+            <button class="reaction-button" data-emoji="😂" disabled title="Laugh - Shake">😂</button>
+            <button class="reaction-button" data-emoji="👍" disabled title="Thumbs Up - Bounce Green">👍</button>
+            <button class="reaction-button" data-emoji="👎" disabled title="Thumbs Down - Bounce Red">👎</button>
+            <button class="reaction-button" data-emoji="😮" disabled title="Wow - Zoom">😮</button>
+            <button class="reaction-button" data-emoji="😢" disabled title="Sad - Fade Blue">😢</button>
+            <button class="reaction-button" data-emoji="😡" disabled title="Angry - Shake Red">😡</button>
+            <button class="reaction-button" data-emoji="🎉" disabled title="Party - Confetti">🎉</button>
+            <button class="reaction-button" data-emoji="🔥" disabled title="Fire - Flicker Orange">🔥</button>
+            <button class="reaction-button" data-emoji="⚡" disabled title="Lightning - Flash Yellow">⚡</button>
+            <button class="reaction-button" data-emoji="💯" disabled title="Hundred - Spin Gold">💯</button>
+            <button class="reaction-button" data-emoji="🚀" disabled title="Rocket - Fly Up">🚀</button>
+        </div>
+        <div id="reactionLog" class="log-container"></div>
+    </div>
+
+    <!-- System Logs -->
+    <div class="container">
+        <h3>📊 System Logs</h3>
+        <button onclick="clearLogs()">Clear All Logs</button>
+        <div id="systemLog" class="log-container"></div>
+    </div>
+
+    <!-- Reaction Overlay for Animations -->
+    <div id="reactionOverlay" class="reaction-overlay"></div>
+
+    <script>
+        class DistributedWebSocketClient {
+            constructor() {
+                this.ws = null;
+                this.connected = false;
+                this.nodeInfo = {};
+                this.setupEventListeners();
+            }
+
+            setupEventListeners() {
+                // Connection controls
+                document.getElementById('connectBtn').addEventListener('click', () => this.connect());
+                document.getElementById('disconnectBtn').addEventListener('click', () => this.disconnect());
+
+                // Chat controls
+                document.getElementById('joinChatBtn').addEventListener('click', () => this.joinChat());
+                document.getElementById('leaveChatBtn').addEventListener('click', () => this.leaveChat());
+                document.getElementById('sendChatBtn').addEventListener('click', () => this.sendChat());
+                document.getElementById('chatMessage').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendChat();
+                });
+
+                // Presence controls
+                document.getElementById('setPresenceBtn').addEventListener('click', () => this.setPresence());
+                document.getElementById('subscribePresenceBtn').addEventListener('click', () => this.subscribePresence());
+
+                // Cursor controls
+                document.getElementById('subscribeCursorBtn').addEventListener('click', () => this.subscribeCursor());
+                document.getElementById('unsubscribeCursorBtn').addEventListener('click', () => this.unsubscribeCursor());
+                
+                // Cursor demo
+                const cursorDemo = document.getElementById('cursorDemo');
+                cursorDemo.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+
+                // Reaction controls
+                document.getElementById('subscribeReactionBtn').addEventListener('click', () => this.subscribeReaction());
+                document.getElementById('unsubscribeReactionBtn').addEventListener('click', () => this.unsubscribeReaction());
+                
+                // Reaction buttons
+                document.querySelectorAll('.reaction-button').forEach(button => {
+                    button.addEventListener('click', (e) => this.sendReaction(e.target.dataset.emoji));
+                });
+            }
+
+            connect() {
+                const url = document.getElementById('wsUrl').value;
+                this.ws = new WebSocket(url);
+
+                this.ws.onopen = () => {
+                    this.connected = true;
+                    this.updateConnectionStatus('Connected', 'connected');
+                    this.updateButtons();
+                    this.log('system', 'Connected to WebSocket server', 'success');
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (error) {
+                        this.log('system', `Raw message: ${event.data}`, 'info');
+                    }
+                };
+
+                this.ws.onclose = () => {
+                    this.connected = false;
+                    this.nodeInfo = null;
+                    this.updateConnectionStatus('Disconnected', 'disconnected');
+                    this.updateNodeInfo();
+                    this.updateButtons();
+                    this.log('system', 'Disconnected from WebSocket server', 'error');
+                };
+
+                this.ws.onerror = (error) => {
+                    this.log('system', `WebSocket error: ${error}`, 'error');
+                };
+            }
+
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                }
+            }
+
+            handleMessage(data) {
+                if (data.type === 'connection') {
+                    this.nodeInfo = {
+                        clientId: data.clientId,
+                        nodeId: data.nodeId,
+                        enabledServices: data.enabledServices
+                    };
+                    this.updateNodeInfo();
+                    this.log('system', `Connected to node: ${data.nodeId}`, 'success');
+                    this.log('system', `Enabled services: ${data.enabledServices.join(', ')}`, 'info');
+                } else if (data.type === 'chat') {
+                    this.handleChatMessage(data);
+                } else if (data.type === 'presence') {
+                    this.handlePresenceMessage(data);
+                } else if (data.type === 'cursor') {
+                    this.handleCursorMessage(data);
+                } else if (data.type === 'reaction') {
+                    this.handleReactionMessage(data);
+                } else {
+                    this.log('system', `Unknown message type: ${JSON.stringify(data)}`, 'info');
+                }
+            }
+
+            handleChatMessage(data) {
+                if (data.action === 'message') {
+                    // data.message is the full message object from the server
+                    const msg = data.message;
+                    const displayName = msg.clientId ? msg.clientId.slice(-8) : 'Unknown'; // Show last 8 chars of clientId
+                    this.log('chat', `[${data.channel}] ${displayName}: ${msg.message}`, 'info');
+                } else if (data.action === 'sent') {
+                    this.log('chat', `✅ Message sent to ${data.channel}`, 'success');
+                } else if (data.action === 'joined') {
+                    this.log('chat', `✅ Joined channel: ${data.channel}`, 'success');
+                } else if (data.action === 'left') {
+                    this.log('chat', `⬅️ Left channel: ${data.channel}`, 'info');
+                } else if (data.action === 'history') {
+                    this.log('chat', `📚 Channel history for ${data.channel} (${data.messages.length} messages)`, 'info');
+                    // Display recent messages from history
+                    data.messages.forEach(msg => {
+                        const displayName = msg.clientId ? msg.clientId.slice(-8) : 'Unknown';
+                        this.log('chat', `[${data.channel}] ${displayName}: ${msg.message}`, 'info');
+                    });
+                } else if (data.action === 'error') {
+                    this.log('chat', `❌ Error: ${data.error}`, 'error');
+                } else {
+                    this.log('chat', JSON.stringify(data), 'info');
+                }
+            }
+
+            handlePresenceMessage(data) {
+                if (data.action === 'update') {
+                    this.log('presence', `${data.presence.clientId}: ${data.presence.status}`, 'info');
+                } else {
+                    this.log('presence', JSON.stringify(data), 'info');
+                }
+            }
+
+            handleCursorMessage(data) {
+                if (data.action === 'update') {
+                    this.updateCursorDisplay(data.cursor);
+                    this.log('cursor', `Cursor update from ${data.cursor.clientId}`, 'info');
+                } else if (data.action === 'remove') {
+                    this.removeCursorDisplay(data.clientId);
+                    this.log('cursor', `Cursor removed: ${data.clientId}`, 'info');
+                } else {
+                    this.log('cursor', JSON.stringify(data), 'info');
+                }
+            }
+
+            // Chat methods
+            joinChat() {
+                const channel = document.getElementById('chatChannel').value;
+                this.send({
+                    service: 'chat',
+                    action: 'join',
+                    channel: channel
+                });
+            }
+
+            leaveChat() {
+                const channel = document.getElementById('chatChannel').value;
+                this.send({
+                    service: 'chat',
+                    action: 'leave',
+                    channel: channel
+                });
+            }
+
+            sendChat() {
+                const channel = document.getElementById('chatChannel').value;
+                const message = document.getElementById('chatMessage').value;
+                if (!message.trim()) return;
+
+                this.send({
+                    service: 'chat',
+                    action: 'send',
+                    channel: channel,
+                    message: message
+                });
+                document.getElementById('chatMessage').value = '';
+            }
+
+            // Presence methods
+            setPresence() {
+                const status = document.getElementById('presenceStatus').value;
+                const channel = document.getElementById('presenceChannel').value;
+                this.send({
+                    service: 'presence',
+                    action: 'set',
+                    status: status,
+                    channels: [channel],
+                    metadata: { userAgent: navigator.userAgent }
+                });
+            }
+
+            subscribePresence() {
+                const channel = document.getElementById('presenceChannel').value;
+                this.send({
+                    service: 'presence',
+                    action: 'subscribe',
+                    channel: channel
+                });
+            }
+
+            // Cursor methods
+            subscribeCursor() {
+                const channel = document.getElementById('cursorChannel').value;
+                this.send({
+                    service: 'cursor',
+                    action: 'subscribe',
+                    channel: channel
+                });
+            }
+
+            unsubscribeCursor() {
+                const channel = document.getElementById('cursorChannel').value;
+                this.send({
+                    service: 'cursor',
+                    action: 'unsubscribe',
+                    channel: channel
+                });
+            }
+
+            handleMouseMove(event) {
+                if (!this.connected) return;
+                
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                const channel = document.getElementById('cursorChannel').value;
+                this.send({
+                    service: 'cursor',
+                    action: 'update',
+                    channel: channel,
+                    position: { x, y },
+                    metadata: { color: '#007bff' }
+                });
+            }
+
+            updateCursorDisplay(cursor) {
+                const demo = document.getElementById('cursorDemo');
+                let cursorElement = document.getElementById(`cursor-${cursor.clientId}`);
+                
+                if (!cursorElement) {
+                    cursorElement = document.createElement('div');
+                    cursorElement.id = `cursor-${cursor.clientId}`;
+                    cursorElement.className = 'cursor';
+                    cursorElement.style.backgroundColor = cursor.metadata?.color || '#007bff';
+                    cursorElement.textContent = cursor.clientId.slice(-3);
+                    demo.appendChild(cursorElement);
+                }
+                
+                cursorElement.style.left = `${cursor.position.x}px`;
+                cursorElement.style.top = `${cursor.position.y}px`;
+            }
+
+            removeCursorDisplay(clientId) {
+                const cursorElement = document.getElementById(`cursor-${clientId}`);
+                if (cursorElement) {
+                    cursorElement.remove();
+                }
+            }
+
+            // Reaction methods
+            subscribeReaction() {
+                const channel = document.getElementById('reactionChannel').value;
+                this.send({
+                    service: 'reaction',
+                    action: 'subscribe',
+                    channel: channel
+                });
+            }
+
+            unsubscribeReaction() {
+                const channel = document.getElementById('reactionChannel').value;
+                this.send({
+                    service: 'reaction',
+                    action: 'unsubscribe',
+                    channel: channel
+                });
+            }
+
+            sendReaction(emoji) {
+                const channel = document.getElementById('reactionChannel').value;
+                if (!channel) {
+                    alert('Please enter a channel name first');
+                    return;
+                }
+                
+                // Get random position for visual effect
+                const position = {
+                    x: Math.random() * (window.innerWidth - 100),
+                    y: Math.random() * (window.innerHeight - 100)
+                };
+                
+                this.send({
+                    service: 'reaction',
+                    action: 'send',
+                    channel: channel,
+                    emoji: emoji,
+                    position: position,
+                    metadata: { timestamp: Date.now() }
+                });
+            }
+
+            handleReactionMessage(data) {
+                if (data.action === 'reaction_received') {
+                    // Display visual effect
+                    this.displayReactionEffect(data.data);
+                    
+                    // Log the reaction
+                    const displayName = data.data.clientId ? data.data.clientId.slice(-8) : 'Unknown';
+                    this.log('reaction', `[${data.data.channel}] ${displayName} reacted with ${data.data.emoji}`, 'info');
+                } else if (data.action === 'reaction_sent') {
+                    this.log('reaction', `✅ Reaction sent: ${data.data.emoji}`, 'success');
+                } else if (data.action === 'reaction_subscribed') {
+                    this.log('reaction', `✅ Subscribed to reactions in: ${data.data.channel}`, 'success');
+                } else if (data.action === 'reaction_unsubscribed') {
+                    this.log('reaction', `⬅️ Unsubscribed from reactions in: ${data.data.channel}`, 'info');
+                } else if (data.action === 'available_reactions') {
+                    this.log('reaction', `📚 Available reactions: ${Object.keys(data.data.reactions).join(' ')}`, 'info');
+                } else if (data.action === 'error') {
+                    this.log('reaction', `❌ Error: ${data.error}`, 'error');
+                } else {
+                    this.log('reaction', JSON.stringify(data), 'info');
+                }
+            }
+
+            displayReactionEffect(reaction) {
+                const overlay = document.getElementById('reactionOverlay');
+                const reactionElement = document.createElement('div');
+                
+                reactionElement.className = `reaction-animation effect-${reaction.effect}`;
+                reactionElement.textContent = reaction.emoji;
+                reactionElement.style.position = 'fixed';
+                reactionElement.style.left = `${reaction.position?.x || Math.random() * window.innerWidth}px`;
+                reactionElement.style.top = `${reaction.position?.y || Math.random() * window.innerHeight}px`;
+                reactionElement.style.fontSize = '48px';
+                reactionElement.style.zIndex = '9999';
+                reactionElement.style.pointerEvents = 'none';
+                reactionElement.style.userSelect = 'none';
+                
+                overlay.appendChild(reactionElement);
+                
+                // Remove after animation completes
+                setTimeout(() => {
+                    if (reactionElement.parentNode) {
+                        reactionElement.parentNode.removeChild(reactionElement);
+                    }
+                }, 2000); // 2 seconds should be enough for all animations
+            }
+
+            send(data) {
+                if (this.ws && this.connected) {
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+
+            updateConnectionStatus(status, className) {
+                const statusElement = document.getElementById('connectionStatus');
+                statusElement.textContent = status;
+                statusElement.className = `status ${className}`;
+            }
+
+            updateNodeInfo() {
+                if (this.nodeInfo) {
+                    document.getElementById('clientId').textContent = this.nodeInfo.clientId || 'Unknown';
+                    document.getElementById('nodeId').textContent = this.nodeInfo.nodeId || 'Unknown';
+                    document.getElementById('enabledServices').textContent = this.nodeInfo.enabledServices?.join(', ') || 'Unknown';
+                } else {
+                    document.getElementById('clientId').textContent = 'Not connected';
+                    document.getElementById('nodeId').textContent = 'Not connected';
+                    document.getElementById('enabledServices').textContent = 'Not connected';
+                }
+            }
+
+            updateButtons() {
+                const connected = this.connected;
+                document.getElementById('connectBtn').disabled = connected;
+                document.getElementById('disconnectBtn').disabled = !connected;
+                document.getElementById('joinChatBtn').disabled = !connected;
+                document.getElementById('leaveChatBtn').disabled = !connected;
+                document.getElementById('sendChatBtn').disabled = !connected;
+                document.getElementById('setPresenceBtn').disabled = !connected;
+                document.getElementById('subscribePresenceBtn').disabled = !connected;
+                document.getElementById('subscribeCursorBtn').disabled = !connected;
+                document.getElementById('unsubscribeCursorBtn').disabled = !connected;
+                document.getElementById('subscribeReactionBtn').disabled = !connected;
+                document.getElementById('unsubscribeReactionBtn').disabled = !connected;
+                
+                // Update reaction buttons
+                document.querySelectorAll('.reaction-button').forEach(button => {
+                    button.disabled = !connected;
+                });
+            }
+
+            log(type, message, level = 'info') {
+                const logContainer = document.getElementById(`${type}Log`);
+                const systemLog = document.getElementById('systemLog');
+                
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${level}`;
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                
+                if (logContainer) {
+                    logContainer.appendChild(logEntry);
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+                
+                // Also log to system log
+                if (systemLog && type !== 'system') {
+                    const systemEntry = logEntry.cloneNode(true);
+                    systemEntry.textContent = `[${type.toUpperCase()}] ${logEntry.textContent}`;
+                    systemLog.appendChild(systemEntry);
+                    systemLog.scrollTop = systemLog.scrollHeight;
+                }
+            }
+        }
+
+        function clearLogs() {
+            const logs = document.querySelectorAll('.log-container');
+            logs.forEach(log => log.innerHTML = '');
+        }
+
+        // Initialize the client
+        const client = new DistributedWebSocketClient();
+    </script>
+</body>
+</html>

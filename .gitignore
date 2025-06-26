@@ -1,8 +1,110 @@
+# Compiled JavaScript files (except specific files)
 *.js
 !jest.config.js
+!src/**/*.js
 *.d.ts
-node_modules
 
-# CDK asset staging directory
-.cdk.staging
-cdk.out
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# CDK
+.cdk.staging/
+cdk.out/
+
+# Environment variables and secrets
+.env
+.env.*
+!config/*.env
+.aws/
+credentials
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vimrc
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Generated task definition files
+task-definition.json
+task-definition-*.json
+current-task-def.json
+updated-task-def.json
+container-definitions.json
+latest-task-def-arn.tmp
+
+# Docker
+.dockerignore
+
+# AWS specific
+.aws-sam/
+samconfig.toml
+
+# Runtime files
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Media files (add to repository selectively)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.gif
+*.png
+*.jpg
+*.jpeg
+*.webp
