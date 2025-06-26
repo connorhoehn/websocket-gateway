@@ -13,10 +13,46 @@ A scalable WebSocket gateway built with Node.js, Redis, and AWS CDK for pub/sub 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Client[Clients] --> NLB[Load Balancer]
-    NLB --> ECS[ECS Fargate<br/>WebSocket Gateway]
-    ECS <--> Redis[Redis<br/>Pub/Sub]
+flowchart TD
+  classDef awsNLB fill:#fdf6e3,stroke:#b58900
+  classDef awsECS fill:#f0f8ff,stroke:#268bd2
+  classDef awsRedis fill:#fce5cd,stroke:#cc0000
+  classDef client fill:#e8f5e9,stroke:#43a047
+  classDef logic fill:#ffffff,stroke:#555,stroke-dasharray: 4 2
+
+  subgraph Clients
+    ClientA[Client A<br/>Browser / WebSocket]
+    ClientB[Client B<br/>Browser / WebSocket]
+  end
+  class ClientA client
+  class ClientB client
+
+  ClientA -->|wss| NLB
+  ClientB -->|wss| NLB
+
+  subgraph Ingress
+    NLB[AWS Network Load Balancer<br/>WebSocket endpoint]
+  end
+  class NLB awsNLB
+
+  NLB --> ECS
+
+  subgraph ECS[WebSocket Gateway<br/>ECS Fargate Task]
+    Chat[Chat Service]
+    Presence[Presence Service]
+    Cursor[Cursor Service]
+    Reaction[Reaction Service]
+  end
+  class ECS awsECS
+  class Chat,Presence,Cursor,Reaction logic
+
+  subgraph Messaging
+    Redis[ElastiCache Redis<br/>Pub/Sub]
+  end
+  class Redis awsRedis
+
+  Redis --> ECS
+
 ```
 
 The gateway includes logical services: Chat, Presence, Cursor, and Reaction services that communicate via Redis pub/sub channels.
