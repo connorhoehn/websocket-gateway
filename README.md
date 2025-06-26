@@ -1,4 +1,4 @@
-# WebSocket Gateway with Redis
+# WebSocket Gateway
 
 ![WebSocket Gateway Demo](./assets/websocket_gateway_demo.gif)
 
