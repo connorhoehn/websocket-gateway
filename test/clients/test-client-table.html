@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Gateway - Table Cursor Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .connection-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        input, button, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .log-info { background-color: #d1ecf1; }
+        .log-error { background-color: #f8d7da; }
+        .log-success { background-color: #d4edda; }
+        
+        .table-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            border: 2px solid #ddd;
+            background-color: white;
+            overflow: auto;
+        }
+        
+        .spreadsheet-table {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 800px;
+        }
+        
+        .spreadsheet-table th,
+        .spreadsheet-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            position: relative;
+            min-width: 80px;
+            height: 30px;
+            vertical-align: middle;
+        }
+        
+        .spreadsheet-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .spreadsheet-table td {
+            cursor: pointer;
+            background-color: white;
+        }
+        
+        .spreadsheet-table td:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .cell-cursor {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 3px solid;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .user-indicator {
+            position: absolute;
+            top: -12px;
+            left: -1px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            z-index: 11;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .formula-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .cell-reference {
+            font-weight: bold;
+            padding: 5px 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            min-width: 60px;
+        }
+        
+        .formula-input {
+            flex: 1;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        
+        .user-info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .selected-cell {
+            background-color: #e3f2fd !important;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Table Cursor Test (Excel/Sheets Style)</h1>
+    
+    <div class="container">
+        <h2>Connection Status</h2>
+        <div class="connection-info">
+            <div>
+                <label for="wsUrl">WebSocket URL:</label>
+                <input type="text" id="wsUrl" value="ws://localhost:8080" style="width: 100%; margin-top: 5px;">
+            </div>
+            <div>
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" disabled>Disconnect</button>
+            </div>
+        </div>
+        <div id="connectionStatus" class="status disconnected">Disconnected</div>
+        <div id="clientInfo" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 12px;">
+            <strong>Client ID:</strong> <span id="clientId">Not connected</span><br>
+            <strong>Mode:</strong> Table Cursor
+        </div>
+    </div>
+
+    <div class="container">
+        <h3>📊 Table Cursor Service</h3>
+        <div class="controls">
+            <input type="text" id="cursorChannel" placeholder="Channel name" value="spreadsheet-1">
+            <button id="subscribeCursorBtn" disabled>Subscribe to Cursors</button>
+            <button id="unsubscribeCursorBtn" disabled>Unsubscribe</button>
+            <input type="text" id="sheetName" placeholder="Sheet name" value="Sheet1">
+        </div>
+        
+        <div class="formula-bar">
+            <div class="cell-reference" id="cellReference">A1</div>
+            <input type="text" class="formula-input" id="formulaInput" placeholder="Enter formula or value...">
+        </div>
+        
+        <div class="table-container" id="tableContainer">
+            <div class="user-info">
+                <div>Click cells to select and share position</div>
+                <div>Active Users: <span id="activeUsers">0</span></div>
+            </div>
+            <table class="spreadsheet-table" id="spreadsheetTable">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>A</th>
+                        <th>B</th>
+                        <th>C</th>
+                        <th>D</th>
+                        <th>E</th>
+                        <th>F</th>
+                        <th>G</th>
+                        <th>H</th>
+                        <th>I</th>
+                        <th>J</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Table rows will be generated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="cursorLog" class="log-container"></div>
+    </div>
+
+    <script>
+        class TableCursorClient {
+            constructor() {
+                this.ws = null;
+                this.connected = false;
+                this.cursors = new Map();
+                this.selectedCell = null;
+                this.setupTable();
+                this.setupEventListeners();
+            }
+
+            setupTable() {
+                const tableBody = document.getElementById('tableBody');
+                const columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+                
+                for (let row = 1; row <= 20; row++) {
+                    const tr = document.createElement('tr');
+                    
+                    // Row header
+                    const rowHeader = document.createElement('th');
+                    rowHeader.textContent = row;
+                    tr.appendChild(rowHeader);
+                    
+                    // Data cells
+                    for (let col = 0; col < columns.length; col++) {
+                        const td = document.createElement('td');
+                        td.dataset.row = row - 1;
+                        td.dataset.col = col;
+                        td.dataset.cellId = `${columns[col]}${row}`;
+                        td.addEventListener('click', (e) => this.handleCellClick(e));
+                        tr.appendChild(td);
+                    }
+                    
+                    tableBody.appendChild(tr);
+                }
+            }
+
+            setupEventListeners() {
+                // Connection controls
+                document.getElementById('connectBtn').addEventListener('click', () => this.connect());
+                document.getElementById('disconnectBtn').addEventListener('click', () => this.disconnect());
+
+                // Cursor controls
+                document.getElementById('subscribeCursorBtn').addEventListener('click', () => this.subscribeCursor());
+                document.getElementById('unsubscribeCursorBtn').addEventListener('click', () => this.unsubscribeCursor());
+                
+                // Formula input
+                document.getElementById('formulaInput').addEventListener('input', (e) => this.handleFormulaInput(e));
+                document.getElementById('formulaInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.handleFormulaSubmit();
+                    }
+                });
+            }
+
+            connect() {
+                const url = document.getElementById('wsUrl').value;
+                this.ws = new WebSocket(url);
+
+                this.ws.onopen = () => {
+                    this.connected = true;
+                    this.updateConnectionStatus('Connected', 'connected');
+                    this.updateButtons();
+                    this.log('Connected to WebSocket server', 'success');
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (error) {
+                        this.log(`Error parsing message: ${error.message}`, 'error');
+                    }
+                };
+
+                this.ws.onclose = () => {
+                    this.connected = false;
+                    this.updateConnectionStatus('Disconnected', 'disconnected');
+                    this.updateButtons();
+                    this.log('Disconnected from WebSocket server', 'error');
+                };
+
+                this.ws.onerror = (error) => {
+                    this.log(`WebSocket error: ${error.message}`, 'error');
+                };
+            }
+
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                }
+            }
+
+            handleMessage(data) {
+                if (data.type === 'connection') {
+                    document.getElementById('clientId').textContent = data.clientId;
+                    this.log(`Client ID: ${data.clientId}`, 'info');
+                } else if (data.type === 'error') {
+                    // Handle server-level errors
+                    this.log(`Server Error: ${data.message}`, 'error');
+                    if (data.availableServices) {
+                        this.log(`Available services: ${data.availableServices.join(', ')}`, 'info');
+                    }
+                } else if (data.type === 'cursor') {
+                    this.handleCursorMessage(data);
+                } else {
+                    this.log(`Unknown message type: ${data.type}`, 'info');
+                }
+            }
+
+            handleCursorMessage(data) {
+                if (data.action === 'update') {
+                    this.updateCursorDisplay(data.cursor);
+                    this.log(`Cell cursor update from ${data.cursor.clientId} at ${this.getCellReference(data.cursor.position)}`, 'info');
+                } else if (data.action === 'subscribed') {
+                    this.log(`✅ Subscribed to cursor channel: ${data.channel}`, 'success');
+                    // Display existing cursors
+                    data.cursors.forEach(cursor => this.updateCursorDisplay(cursor));
+                } else if (data.action === 'unsubscribed') {
+                    this.log(`⬅️ Unsubscribed from cursor channel: ${data.channel}`, 'info');
+                    this.clearAllCursors();
+                } else if (data.action === 'remove') {
+                    this.removeCursorDisplay(data.clientId);
+                    this.log(`Cell cursor removed: ${data.clientId}`, 'info');
+                } else if (data.action === 'error') {
+                    // Handle cursor service errors
+                    this.log(`Cursor Error: ${data.error}`, 'error');
+                }
+                this.updateActiveUsers();
+            }
+
+            subscribeCursor() {
+                const channel = document.getElementById('cursorChannel').value;
+                if (!channel) {
+                    this.log('Please enter a channel name', 'error');
+                    return;
+                }
+
+                this.send({
+                    service: 'cursor',
+                    action: 'subscribe',
+                    channel: channel
+                });
+            }
+
+            unsubscribeCursor() {
+                const channel = document.getElementById('cursorChannel').value;
+                if (!channel) {
+                    this.log('Please enter a channel name', 'error');
+                    return;
+                }
+
+                this.send({
+                    service: 'cursor',
+                    action: 'unsubscribe',
+                    channel: channel
+                });
+            }
+
+            handleCellClick(event) {
+                if (!this.connected) return;
+
+                const cell = event.target;
+                const row = parseInt(cell.dataset.row);
+                const col = parseInt(cell.dataset.col);
+                
+                // Clear previous selection
+                if (this.selectedCell) {
+                    this.selectedCell.classList.remove('selected-cell');
+                }
+                
+                // Select new cell
+                cell.classList.add('selected-cell');
+                this.selectedCell = cell;
+                
+                // Update cell reference
+                const cellReference = cell.dataset.cellId;
+                document.getElementById('cellReference').textContent = cellReference;
+                
+                // Focus formula input
+                document.getElementById('formulaInput').focus();
+
+                const channel = document.getElementById('cursorChannel').value;
+                if (!channel) return;
+
+                this.send({
+                    service: 'cursor',
+                    action: 'update',
+                    channel: channel,
+                    position: { row, col },
+                    mode: 'table',
+                    metadata: {
+                        sheet: document.getElementById('sheetName').value,
+                        cellReference: cellReference,
+                        cellValue: cell.textContent
+                    }
+                });
+            }
+
+            handleFormulaInput(event) {
+                if (this.selectedCell) {
+                    // Update cell content as user types
+                    const value = event.target.value;
+                    this.selectedCell.textContent = value;
+                }
+            }
+
+            handleFormulaSubmit() {
+                if (this.selectedCell) {
+                    const value = document.getElementById('formulaInput').value;
+                    this.selectedCell.textContent = value;
+                    this.log(`Cell updated: ${this.selectedCell.dataset.cellId} = ${value}`, 'success');
+                }
+            }
+
+            getCellReference(position) {
+                const columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+                return `${columns[position.col]}${position.row + 1}`;
+            }
+
+            updateCursorDisplay(cursor) {
+                const clientId = cursor.clientId;
+                const { row, col } = cursor.position;
+                
+                // Find the target cell
+                const targetCell = document.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
+                if (!targetCell) return;
+                
+                // Remove existing cursor for this client
+                this.removeCursorDisplay(clientId);
+                
+                // Create cursor border
+                const cursorBorder = document.createElement('div');
+                cursorBorder.className = 'cell-cursor';
+                cursorBorder.id = `cursor-${clientId}`;
+                
+                // Create user indicator
+                const userIndicator = document.createElement('div');
+                userIndicator.className = 'user-indicator';
+                
+                const initials = cursor.metadata.userInitials || clientId.substring(0, 2).toUpperCase();
+                const color = cursor.metadata.userColor || this.generateUserColor(clientId);
+                
+                cursorBorder.style.borderColor = color;
+                userIndicator.style.backgroundColor = color;
+                userIndicator.textContent = initials;
+                userIndicator.title = `${clientId} - ${cursor.metadata.cellReference || ''}`;
+                
+                // Add cursor to cell
+                targetCell.style.position = 'relative';
+                targetCell.appendChild(cursorBorder);
+                targetCell.appendChild(userIndicator);
+                
+                this.cursors.set(clientId, { cursor, targetCell });
+            }
+
+            removeCursorDisplay(clientId) {
+                const cursorData = this.cursors.get(clientId);
+                if (cursorData) {
+                    const { targetCell } = cursorData;
+                    const cursorBorder = targetCell.querySelector(`#cursor-${clientId}`);
+                    const userIndicator = targetCell.querySelector('.user-indicator');
+                    
+                    if (cursorBorder) cursorBorder.remove();
+                    if (userIndicator) userIndicator.remove();
+                }
+                this.cursors.delete(clientId);
+            }
+
+            clearAllCursors() {
+                this.cursors.forEach((_, clientId) => {
+                    this.removeCursorDisplay(clientId);
+                });
+                this.cursors.clear();
+            }
+
+            generateUserColor(clientId) {
+                const colors = [
+                    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
+                    '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
+                    '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838'
+                ];
+                let hash = 0;
+                for (let i = 0; i < clientId.length; i++) {
+                    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                return colors[Math.abs(hash) % colors.length];
+            }
+
+            updateActiveUsers() {
+                document.getElementById('activeUsers').textContent = this.cursors.size;
+            }
+
+            send(data) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+
+            updateConnectionStatus(status, className) {
+                const statusElement = document.getElementById('connectionStatus');
+                statusElement.textContent = status;
+                statusElement.className = `status ${className}`;
+            }
+
+            updateButtons() {
+                const buttons = ['subscribeCursorBtn', 'unsubscribeCursorBtn'];
+                buttons.forEach(id => {
+                    document.getElementById(id).disabled = !this.connected;
+                });
+                document.getElementById('connectBtn').disabled = this.connected;
+                document.getElementById('disconnectBtn').disabled = !this.connected;
+            }
+
+            log(message, level = 'info') {
+                const logContainer = document.getElementById('cursorLog');
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-entry log-${level}`;
+                logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logContainer.appendChild(logEntry);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        // Initialize the client
+        const client = new TableCursorClient();
+    </script>
+</body>
+</html>

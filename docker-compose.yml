@@ -1,23 +1,6 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: websocket-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data:/data
-    networks:
-      - websocket-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
   # Main websocket gateway with all services (default)
   websocket-gateway:
     build:
@@ -29,14 +12,13 @@ services:
     env_file:
       - config/full-service.env
     environment:
-      - REDIS_ENDPOINT=redis
+      - REDIS_ENDPOINT=core-redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://core-redis:6379
       - NODE_ENV=development
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - websocket-network
+      - shared-network
     volumes:
       - ./src:/app/src:ro
     restart: unless-stopped
@@ -53,14 +35,13 @@ services:
     env_file:
       - config/chat-only.env
     environment:
-      - REDIS_ENDPOINT=redis
+      - REDIS_ENDPOINT=core-redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://core-redis:6379
       - NODE_ENV=development
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - websocket-network
+      - shared-network
     volumes:
       - ./src:/app/src:ro
     restart: unless-stopped
@@ -79,14 +60,13 @@ services:
     env_file:
       - config/presence-only.env
     environment:
-      - REDIS_ENDPOINT=redis
+      - REDIS_ENDPOINT=core-redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://core-redis:6379
       - NODE_ENV=development
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - websocket-network
+      - shared-network
     volumes:
       - ./src:/app/src:ro
     restart: unless-stopped
@@ -105,14 +85,13 @@ services:
     env_file:
       - config/cursor-only.env
     environment:
-      - REDIS_ENDPOINT=redis
+      - REDIS_ENDPOINT=core-redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://core-redis:6379
       - NODE_ENV=development
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - websocket-network
+      - shared-network
     volumes:
       - ./src:/app/src:ro
     restart: unless-stopped
@@ -127,18 +106,17 @@ services:
       dockerfile: Dockerfile
     container_name: websocket-dev
     ports:
-      - "8080:8080"
+      - "8084:8080"
     env_file:
       - config/local-dev.env
     environment:
-      - REDIS_ENDPOINT=redis
+      - REDIS_ENDPOINT=core-redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://core-redis:6379
       - NODE_ENV=development
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - websocket-network
+      - shared-network
     volumes:
       - ./src:/app/src
       - ./config:/app/config:ro
@@ -147,24 +125,8 @@ services:
     profiles:
       - local-dev
 
-  # Optional: Redis Commander for GUI management
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: redis-commander
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-    ports:
-      - "8084:8081"
-    depends_on:
-      - redis
-    networks:
-      - websocket-network
-    profiles:
-      - tools
-
-volumes:
-  redis-data:
-
 networks:
   websocket-network:
     driver: bridge
+  shared-network:
+    external: true

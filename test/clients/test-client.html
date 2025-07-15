@@ -481,6 +481,12 @@
                     this.updateNodeInfo();
                     this.log('system', `Connected to node: ${data.nodeId}`, 'success');
                     this.log('system', `Enabled services: ${data.enabledServices.join(', ')}`, 'info');
+                } else if (data.type === 'error') {
+                    // Handle server-level errors
+                    this.log('system', `Server Error: ${data.message}`, 'error');
+                    if (data.availableServices) {
+                        this.log('system', `Available services: ${data.availableServices.join(', ')}`, 'info');
+                    }
                 } else if (data.type === 'chat') {
                     this.handleChatMessage(data);
                 } else if (data.type === 'presence') {
@@ -523,6 +529,8 @@
             handlePresenceMessage(data) {
                 if (data.action === 'update') {
                     this.log('presence', `${data.presence.clientId}: ${data.presence.status}`, 'info');
+                } else if (data.action === 'error') {
+                    this.log('presence', `Presence Error: ${data.error}`, 'error');
                 } else {
                     this.log('presence', JSON.stringify(data), 'info');
                 }
@@ -535,6 +543,9 @@
                 } else if (data.action === 'remove') {
                     this.removeCursorDisplay(data.clientId);
                     this.log('cursor', `Cursor removed: ${data.clientId}`, 'info');
+                } else if (data.action === 'error') {
+                    // Handle cursor service errors
+                    this.log('cursor', `Cursor Error: ${data.error}`, 'error');
                 } else {
                     this.log('cursor', JSON.stringify(data), 'info');
                 }
