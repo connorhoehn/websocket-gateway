@@ -86,15 +86,30 @@
             background-color: #007bff;
             color: white;
             cursor: pointer;
+            transition: all 0.2s ease;
         }
         
         button:hover {
             background-color: #0056b3;
         }
         
+        button:active {
+            background-color: #004085;
+            transform: translateY(1px);
+        }
+        
         button:disabled {
             background-color: #6c757d;
             cursor: not-allowed;
+        }
+        
+        .subscribed {
+            background-color: #28a745 !important;
+            color: white !important;
+        }
+        
+        .subscribed:hover {
+            background-color: #218838 !important;
         }
         
         .demo-area {
@@ -161,6 +176,15 @@
         .spreadsheet-table td {
             cursor: pointer;
             background-color: white;
+            transition: background-color 0.2s ease;
+        }
+        
+        .spreadsheet-table td:hover {
+            background-color: #f0f8ff;
+        }
+        
+        .spreadsheet-table td.selected {
+            background-color: #e3f2fd;
         }
         
         .cell-cursor {
@@ -269,6 +293,18 @@
             padding: 10px;
             margin-bottom: 15px;
             font-size: 14px;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            80% { transform: translateY(-5px); }
         }
     </style>
 </head>
@@ -433,15 +469,80 @@
         <div id="systemLog" class="log-container"></div>
     </div>
 
+    <script src="websocket-gateway-sdk.js"></script>
     <script>
         class MultiModeCursorClient {
             constructor() {
-                this.ws = null;
+                this.sdk = null;
                 this.connected = false;
                 this.currentMode = 'freeform';
                 this.cursors = new Map();
+                this.activeChannels = new Map();
+                this.subscriptions = new Map(); // Track subscription status
+                this.selectedCell = null; // Track selected cell
                 this.setupEventListeners();
                 this.setupTable();
+                this.initializeSDK();
+            }
+
+            initializeSDK() {
+                this.sdk = new WebSocketGatewaySDK({
+                    wsUrl: 'ws://localhost:8080',
+                    debug: true,
+                    reconnectInterval: 3000,
+                    maxReconnectAttempts: 5
+                });
+                
+                // Set up SDK event listeners
+                this.sdk.on('connected', (data) => {
+                    this.connected = true;
+                    this.updateConnectionStatus('Connected', 'connected');
+                    this.updateButtons();
+                    this.log('Connected to WebSocket server', 'success');
+                });
+
+                this.sdk.on('clientIdAssigned', (clientId) => {
+                    document.getElementById('clientId').textContent = clientId;
+                    this.log(`Client ID: ${clientId}`, 'info');
+                });
+
+                this.sdk.on('disconnected', () => {
+                    this.connected = false;
+                    this.updateConnectionStatus('Disconnected', 'disconnected');
+                    this.updateButtons();
+                    this.log('Disconnected from WebSocket server', 'error');
+                    this.clearAllCursors();
+                });
+
+                this.sdk.on('error', (error) => {
+                    this.log(`WebSocket error: ${error.message}`, 'error');
+                });
+
+                this.sdk.on('cursor:update', (data) => {
+                    this.updateCursorDisplay(data);
+                });
+
+                this.sdk.on('cursor:remove', (data) => {
+                    this.removeCursorDisplay(data.clientId);
+                });
+
+                this.sdk.on('cursor:subscribed', (data) => {
+                    this.log(`✅ Subscribed to cursor channel: ${data.channel}`, 'success');
+                    this.activeChannels.set(data.channel, data.mode);
+                    this.subscriptions.set(data.channel, true);
+                    this.updateSubscriptionButtons();
+                    if (data.cursors && data.cursors.length > 0) {
+                        data.cursors.forEach(cursor => this.updateCursorDisplay(cursor));
+                    }
+                });
+
+                this.sdk.on('cursor:unsubscribed', (data) => {
+                    this.log(`⬅️ Unsubscribed from cursor channel: ${data.channel}`, 'info');
+                    this.activeChannels.delete(data.channel);
+                    this.subscriptions.delete(data.channel);
+                    this.updateSubscriptionButtons();
+                    this.clearAllCursors();
+                });
             }
 
             setupEventListeners() {
@@ -451,7 +552,16 @@
 
                 // Mode selection
                 document.querySelectorAll('.mode-button').forEach(button => {
-                    button.addEventListener('click', (e) => this.switchMode(e.target.dataset.mode));
+                    button.addEventListener('click', (e) => {
+                        // Get the mode from the button element, not the clicked target
+                        const modeButton = e.target.closest('.mode-button');
+                        const mode = modeButton ? modeButton.dataset.mode : null;
+                        if (mode) {
+                            this.switchMode(mode);
+                        } else {
+                            console.error('No mode data found on button:', e.target);
+                        }
+                    });
                 });
 
                 // Freeform mode
@@ -479,6 +589,12 @@
 
                 // Text document selection changes
                 document.addEventListener('selectionchange', () => this.handleTextSelectionChange());
+
+                // Channel input changes
+                document.getElementById('freeformChannel').addEventListener('input', () => this.updateSubscriptionButtons());
+                document.getElementById('tableChannel').addEventListener('input', () => this.updateSubscriptionButtons());
+                document.getElementById('textChannel').addEventListener('input', () => this.updateSubscriptionButtons());
+                document.getElementById('canvasChannel').addEventListener('input', () => this.updateSubscriptionButtons());
             }
 
             setupTable() {
@@ -511,83 +627,51 @@
 
                 // Update active mode button
                 document.querySelectorAll('.mode-button').forEach(btn => btn.classList.remove('active'));
-                document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+                const modeButton = document.querySelector(`[data-mode="${mode}"]`);
+                if (modeButton) {
+                    modeButton.classList.add('active');
+                } else {
+                    console.error(`Mode button not found for mode: ${mode}`);
+                    return;
+                }
 
                 // Update active mode content
                 document.querySelectorAll('.mode-content').forEach(content => content.classList.remove('active'));
-                document.getElementById(`${mode}-mode`).classList.add('active');
+                const modeContent = document.getElementById(`${mode}-mode`);
+                if (modeContent) {
+                    modeContent.classList.add('active');
+                } else {
+                    console.error(`Mode content not found for mode: ${mode}`);
+                    return;
+                }
 
                 this.currentMode = mode;
                 document.getElementById('activeMode').textContent = mode;
 
                 // Clear all cursors when switching modes
                 this.clearAllCursors();
+                
+                // Clear selected cell when switching modes
+                if (this.selectedCell) {
+                    this.selectedCell.classList.remove('selected');
+                    this.selectedCell = null;
+                }
 
                 this.log(`Switched to ${mode} mode`, 'info');
             }
 
             connect() {
                 const url = document.getElementById('wsUrl').value;
-                this.ws = new WebSocket(url);
-
-                this.ws.onopen = () => {
-                    this.connected = true;
-                    this.updateConnectionStatus('Connected', 'connected');
-                    this.updateButtons();
-                    this.log('Connected to WebSocket server', 'success');
-                };
-
-                this.ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        this.handleMessage(data);
-                    } catch (error) {
-                        this.log(`Error parsing message: ${error.message}`, 'error');
-                    }
-                };
-
-                this.ws.onclose = () => {
-                    this.connected = false;
-                    this.updateConnectionStatus('Disconnected', 'disconnected');
-                    this.updateButtons();
-                    this.log('Disconnected from WebSocket server', 'error');
-                };
-
-                this.ws.onerror = (error) => {
-                    this.log(`WebSocket error: ${error.message}`, 'error');
-                };
+                if (this.sdk) {
+                    this.sdk.wsUrl = url;
+                    this.sdk.connect();
+                }
             }
 
             disconnect() {
-                if (this.ws) {
-                    this.ws.close();
+                if (this.sdk) {
+                    this.sdk.disconnect();
                 }
-            }
-
-            handleMessage(data) {
-                if (data.type === 'connection') {
-                    document.getElementById('clientId').textContent = data.clientId;
-                    this.log(`Client ID: ${data.clientId}`, 'info');
-                } else if (data.type === 'cursor') {
-                    this.handleCursorMessage(data);
-                } else {
-                    this.log(`Unknown message type: ${data.type}`, 'info');
-                }
-            }
-
-            handleCursorMessage(data) {
-                if (data.action === 'update') {
-                    this.updateCursorDisplay(data.cursor);
-                } else if (data.action === 'subscribed') {
-                    this.log(`✅ Subscribed to cursor channel: ${data.channel}`, 'success');
-                    data.cursors.forEach(cursor => this.updateCursorDisplay(cursor));
-                } else if (data.action === 'unsubscribed') {
-                    this.log(`⬅️ Unsubscribed from cursor channel: ${data.channel}`, 'info');
-                    this.clearAllCursors();
-                } else if (data.action === 'remove') {
-                    this.removeCursorDisplay(data.clientId);
-                }
-                this.updateActiveUserCounts();
             }
 
             subscribe(mode) {
@@ -598,11 +682,16 @@
                     return;
                 }
 
-                this.send({
-                    service: 'cursor',
-                    action: 'subscribe',
-                    channel: channel
-                });
+                // Visual feedback for button press
+                const btn = document.getElementById(`subscribe${mode.charAt(0).toUpperCase() + mode.slice(1)}Btn`);
+                if (btn) {
+                    btn.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        btn.style.transform = '';
+                    }, 150);
+                }
+
+                this.sdk.cursor.subscribe(channel, mode);
             }
 
             unsubscribe(mode) {
@@ -613,11 +702,16 @@
                     return;
                 }
 
-                this.send({
-                    service: 'cursor',
-                    action: 'unsubscribe',
-                    channel: channel
-                });
+                // Visual feedback for button press
+                const btn = document.getElementById(`unsubscribe${mode.charAt(0).toUpperCase() + mode.slice(1)}Btn`);
+                if (btn) {
+                    btn.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        btn.style.transform = '';
+                    }, 150);
+                }
+
+                this.sdk.cursor.unsubscribe(channel);
             }
 
             handleFreeformMove(event) {
@@ -627,7 +721,10 @@
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
 
-                this.sendCursorUpdate('freeform', { x, y }, { mode: 'freeform' });
+                const channel = document.getElementById('freeformChannel').value;
+                if (!channel) return;
+
+                this.sdk.cursor.freeform.update(channel, x, y);
             }
 
             handleTableClick(event) {
@@ -637,7 +734,17 @@
                 const row = parseInt(cell.dataset.row);
                 const col = parseInt(cell.dataset.col);
 
-                this.sendCursorUpdate('table', { row, col }, { mode: 'table' });
+                // Visual feedback for selected cell
+                if (this.selectedCell) {
+                    this.selectedCell.classList.remove('selected');
+                }
+                cell.classList.add('selected');
+                this.selectedCell = cell;
+
+                const channel = document.getElementById('tableChannel').value;
+                if (!channel) return;
+
+                this.sdk.cursor.table.update(channel, row, col);
             }
 
             handleTextClick() {
@@ -657,11 +764,11 @@
                         text: range.toString()
                     };
 
-                    this.sendCursorUpdate('text', { position }, { 
-                        mode: 'text',
-                        selection: selectionData,
-                        hasSelection: range.toString().length > 0
-                    });
+                    const channel = document.getElementById('textChannel').value;
+                    if (!channel) return;
+
+                    const hasSelection = range.toString().length > 0;
+                    this.sdk.cursor.text.update(channel, position, selectionData, hasSelection);
                 }, 10);
             }
 
@@ -684,12 +791,10 @@
                 // Add trail effect for canvas
                 this.addCanvasTrail(x, y, tool, color, size);
 
-                this.sendCursorUpdate('canvas', { x, y }, { 
-                    mode: 'canvas', 
-                    tool, 
-                    color, 
-                    size 
-                });
+                const channel = document.getElementById('canvasChannel').value;
+                if (!channel) return;
+
+                this.sdk.cursor.canvas.update(channel, x, y, tool, color, size);
             }
 
             addCanvasTrail(x, y, tool, color, size) {
@@ -742,29 +847,6 @@
                 document.getElementById('currentTool').textContent = tool;
             }
 
-            sendCursorUpdate(mode, position, metadata) {
-                const channelInput = document.getElementById(`${mode}Channel`);
-                const channel = channelInput.value;
-                if (!channel) return;
-
-                this.send({
-                    service: 'cursor',
-                    action: 'update',
-                    channel: channel,
-                    position: position,
-                    mode: mode,
-                    metadata: metadata
-                });
-            }
-
-            getTextPosition(node, offset) {
-                const documentContent = document.getElementById('documentContent');
-                const range = document.createRange();
-                range.setStart(documentContent, 0);
-                range.setEnd(node, offset);
-                return range.toString().length;
-            }
-
             updateCursorDisplay(cursor) {
                 const mode = cursor.metadata.mode;
                 const clientId = cursor.clientId;
@@ -783,6 +865,15 @@
                 }
 
                 this.cursors.set(clientId, cursor);
+                this.updateActiveUserCounts();
+            }
+
+            getTextPosition(node, offset) {
+                const documentContent = document.getElementById('documentContent');
+                const range = document.createRange();
+                range.setStart(documentContent, 0);
+                range.setEnd(node, offset);
+                return range.toString().length;
             }
 
             displayFreeformCursor(cursor) {
@@ -806,6 +897,12 @@
                 const cell = document.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
                 if (!cell) return;
 
+                // Remove any existing cursor elements for this cell
+                const existingCursor = cell.querySelector('.cell-cursor');
+                const existingIndicator = cell.querySelector('.user-indicator');
+                if (existingCursor) existingCursor.remove();
+                if (existingIndicator) existingIndicator.remove();
+
                 const cursorBorder = document.createElement('div');
                 cursorBorder.className = 'cell-cursor';
                 cursorBorder.id = `cursor-${cursor.clientId}`;
@@ -818,12 +915,20 @@
                 const color = cursor.metadata.userColor || this.generateUserColor(cursor.clientId);
                 
                 cursorBorder.style.borderColor = color;
+                cursorBorder.style.boxShadow = `0 0 0 1px ${color}`;
                 userIndicator.style.backgroundColor = color;
                 userIndicator.textContent = initials;
                 
+                // Ensure cell has relative positioning
                 cell.style.position = 'relative';
+                
+                // Add elements to cell
                 cell.appendChild(cursorBorder);
                 cell.appendChild(userIndicator);
+                
+                // Brief animation to show cursor placement
+                cursorBorder.style.animation = 'pulse 0.3s ease-in-out';
+                userIndicator.style.animation = 'bounce 0.3s ease-in-out';
             }
 
             displayTextCursor(cursor) {
@@ -979,6 +1084,7 @@
                 });
                 
                 this.cursors.delete(clientId);
+                this.updateActiveUserCounts();
             }
 
             clearAllCursors() {
@@ -986,6 +1092,7 @@
                     this.removeCursorDisplay(clientId);
                 });
                 this.cursors.clear();
+                this.updateActiveUserCounts();
             }
 
             updateActiveUserCounts() {
@@ -1007,12 +1114,6 @@
                     hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
                 }
                 return colors[Math.abs(hash) % colors.length];
-            }
-
-            send(data) {
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(JSON.stringify(data));
-                }
             }
 
             updateConnectionStatus(status, className) {
@@ -1038,6 +1139,36 @@
                 
                 document.getElementById('connectBtn').disabled = this.connected;
                 document.getElementById('disconnectBtn').disabled = !this.connected;
+                
+                // Update subscription button states
+                this.updateSubscriptionButtons();
+            }
+
+            updateSubscriptionButtons() {
+                const modes = ['freeform', 'table', 'text', 'canvas'];
+                
+                modes.forEach(mode => {
+                    const channelInput = document.getElementById(`${mode}Channel`);
+                    const subscribeBtn = document.getElementById(`subscribe${mode.charAt(0).toUpperCase() + mode.slice(1)}Btn`);
+                    const unsubscribeBtn = document.getElementById(`unsubscribe${mode.charAt(0).toUpperCase() + mode.slice(1)}Btn`);
+                    
+                    if (channelInput && subscribeBtn && unsubscribeBtn) {
+                        const channel = channelInput.value;
+                        const isSubscribed = this.subscriptions.has(channel);
+                        
+                        if (isSubscribed) {
+                            subscribeBtn.classList.add('subscribed');
+                            subscribeBtn.textContent = `✅ Subscribed`;
+                            unsubscribeBtn.classList.remove('subscribed');
+                            unsubscribeBtn.textContent = 'Unsubscribe';
+                        } else {
+                            subscribeBtn.classList.remove('subscribed');
+                            subscribeBtn.textContent = 'Subscribe';
+                            unsubscribeBtn.classList.remove('subscribed');
+                            unsubscribeBtn.textContent = 'Unsubscribe';
+                        }
+                    }
+                });
             }
 
             log(message, level = 'info') {

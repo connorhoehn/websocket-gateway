@@ -1,0 +1,186 @@
+/* WebSocket Gateway SDK Cursor Styles */
+
+/* Common cursor styles */
+.cursor-freeform,
+.cursor-table,
+.cursor-text,
+.cursor-canvas {
+    position: absolute;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Freeform cursor styles */
+.cursor-freeform {
+    transition: left 0.1s ease, top 0.1s ease;
+}
+
+.cursor-freeform .cursor-user-info {
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #007bff;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Trail effect styles */
+.cursor-trail-dot {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* Table cursor styles */
+.cursor-table {
+    border: 2px solid #007bff;
+    background: rgba(0, 123, 255, 0.1);
+    transition: all 0.2s ease;
+}
+
+.cursor-table:hover {
+    background: rgba(0, 123, 255, 0.2);
+}
+
+.cursor-table .cursor-user-info {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    background: #007bff;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Text cursor styles */
+.cursor-text {
+    position: relative;
+}
+
+.cursor-text .cursor-line {
+    position: absolute;
+    width: 2px;
+    height: 20px;
+    background: #007bff;
+    animation: blink 1s infinite;
+}
+
+.cursor-selection {
+    position: absolute;
+    background: rgba(0, 123, 255, 0.2);
+    pointer-events: none;
+    z-index: 9998;
+}
+
+.cursor-text .cursor-user-info {
+    position: absolute;
+    top: -25px;
+    left: 0;
+    background: #007bff;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Canvas cursor styles */
+.cursor-canvas {
+    border: 2px solid #007bff;
+    background: rgba(0, 123, 255, 0.2);
+    transition: all 0.1s ease;
+}
+
+.cursor-canvas .cursor-tool-info {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #007bff;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Blink animation for text cursor */
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+    .cursor-user-info,
+    .cursor-tool-info {
+        font-size: 10px;
+        padding: 1px 4px;
+    }
+    
+    .cursor-freeform {
+        width: 16px;
+        height: 16px;
+    }
+    
+    .cursor-text .cursor-line {
+        width: 1px;
+        height: 16px;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .cursor-user-info,
+    .cursor-tool-info {
+        background: #0056b3;
+    }
+    
+    .cursor-table {
+        border-color: #4dabf7;
+        background: rgba(77, 171, 247, 0.1);
+    }
+    
+    .cursor-text .cursor-line {
+        background: #4dabf7;
+    }
+    
+    .cursor-selection {
+        background: rgba(77, 171, 247, 0.2);
+    }
+}
+
+/* Accessibility improvements */
+.cursor-user-info,
+.cursor-tool-info {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .cursor-table {
+        border-width: 3px;
+        background: rgba(0, 123, 255, 0.3);
+    }
+    
+    .cursor-text .cursor-line {
+        width: 3px;
+        background: #000;
+    }
+    
+    .cursor-selection {
+        background: rgba(0, 123, 255, 0.4);
+    }
+}

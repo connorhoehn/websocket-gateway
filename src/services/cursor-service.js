@@ -90,16 +90,19 @@ class CursorService {
             return;
         }
 
+        // Extract mode from metadata if available, otherwise use the top-level mode parameter
+        const effectiveMode = metadata.mode || mode;
+
         // Validate mode
-        if (!this.supportedModes[mode]) {
-            this.sendError(clientId, `Unsupported cursor mode: ${mode}. Supported modes: ${Object.keys(this.supportedModes).join(', ')}`);
+        if (!this.supportedModes[effectiveMode]) {
+            this.sendError(clientId, `Unsupported cursor mode: ${effectiveMode}. Supported modes: ${Object.keys(this.supportedModes).join(', ')}`);
             return;
         }
 
         // Validate position structure based on mode
-        if (!this.validatePositionForMode(position, mode)) {
-            const modeConfig = this.supportedModes[mode];
-            this.sendError(clientId, `Invalid position for mode ${mode}. Required fields: ${modeConfig.requiredFields.join(', ')}`);
+        if (!this.validatePositionForMode(position, effectiveMode)) {
+            const modeConfig = this.supportedModes[effectiveMode];
+            this.sendError(clientId, `Invalid position for mode ${effectiveMode}. Required fields: ${modeConfig.requiredFields.join(', ')}`);
             return;
         }
 
@@ -114,7 +117,7 @@ class CursorService {
             position,
             metadata: {
                 ...metadata,
-                mode,
+                mode: effectiveMode,
                 userInitials: metadata.userInitials || this.generateInitials(clientId),
                 userColor: metadata.userColor || this.generateUserColor(clientId)
             },
@@ -127,7 +130,7 @@ class CursorService {
         // Broadcast cursor update to channel subscribers
         await this.broadcastCursorUpdate(channel, cursorData, clientId);
 
-        this.logger.info(`Cursor updated for client ${clientId} in channel ${channel} (mode: ${mode})`);
+        this.logger.info(`Cursor updated for client ${clientId} in channel ${channel} (mode: ${effectiveMode})`);
     }
 
     async storeCursorData(clientId, channel, cursorData) {
