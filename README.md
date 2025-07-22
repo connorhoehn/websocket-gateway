@@ -1,6 +1,7 @@
 # WebSocket Gateway
 
 ![WebSocket Gateway Demo](./assets/websocket_gateway_demo.gif)
+![Cursor Demo](./assets/cursor_multimode.gif)
 
 A scalable WebSocket gateway built with Node.js, Redis, and AWS CDK for pub/sub messaging across multiple instances.
 
