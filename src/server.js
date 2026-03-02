@@ -57,6 +57,15 @@ class DistributedWebSocketServer {
         // Connection tracking
         this.connections = new Map(); // clientId -> { ws, metadata }
 
+        // Connection limits (configurable via environment variables)
+        this.connectionsByIp = new Map(); // IP -> count
+        this.totalConnections = 0;
+        this.MAX_CONNECTIONS_PER_IP = parseInt(process.env.MAX_CONNECTIONS_PER_IP || '100', 10);
+        this.MAX_TOTAL_CONNECTIONS = parseInt(process.env.MAX_TOTAL_CONNECTIONS || '10000', 10);
+
+        // CORS configuration
+        this.allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',').map(o => o.trim());
+
         this.setupHttpServer();
     }
 
@@ -200,10 +209,34 @@ class DistributedWebSocketServer {
 
         // Handle HTTP upgrade for WebSocket connections
         this.httpServer.on('upgrade', async (request, socket, head) => {
+            const clientIp = request.socket.remoteAddress;
+
+            // Check connection limits BEFORE authentication to save resources
+            // Check global connection limit
+            if (this.totalConnections >= this.MAX_TOTAL_CONNECTIONS) {
+                this.logger.warn(`Global connection limit reached: ${this.totalConnections}/${this.MAX_TOTAL_CONNECTIONS}`);
+                socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+                socket.destroy();
+                return;
+            }
+
+            // Check per-IP connection limit
+            const ipCount = this.connectionsByIp.get(clientIp) || 0;
+            if (ipCount >= this.MAX_CONNECTIONS_PER_IP) {
+                this.logger.warn(`Per-IP connection limit reached for ${clientIp}: ${ipCount}/${this.MAX_CONNECTIONS_PER_IP}`);
+                socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+                socket.destroy();
+                return;
+            }
+
             try {
                 // Validate JWT token BEFORE accepting WebSocket upgrade
                 const userContext = await this.authMiddleware.validateToken(request);
                 this.logger.info(`Client authenticated: ${userContext.userId}`);
+
+                // Increment connection counters after successful auth
+                this.totalConnections++;
+                this.connectionsByIp.set(clientIp, ipCount + 1);
 
                 // Accept the WebSocket upgrade
                 this.wss.handleUpgrade(request, socket, head, (ws) => {
@@ -241,13 +274,13 @@ class DistributedWebSocketServer {
             // Setup close handler
             ws.on("close", () => {
                 this.logger.info(`Client ${clientId} disconnected`);
-                this.handleClientDisconnect(clientId);
+                this.handleClientDisconnect(clientId, clientIP);
             });
 
             // Setup error handler
             ws.on("error", (error) => {
                 this.logger.error(`WebSocket error for client ${clientId}:`, error);
-                this.handleClientDisconnect(clientId);
+                this.handleClientDisconnect(clientId, clientIP);
             });
 
             // Send welcome message
@@ -303,7 +336,19 @@ class DistributedWebSocketServer {
         }
     }
 
-    async handleClientDisconnect(clientId) {
+    async handleClientDisconnect(clientId, clientIP) {
+        // Decrement connection counters
+        this.totalConnections--;
+
+        const ipCount = this.connectionsByIp.get(clientIP);
+        if (ipCount !== undefined) {
+            if (ipCount <= 1) {
+                this.connectionsByIp.delete(clientIP);
+            } else {
+                this.connectionsByIp.set(clientIP, ipCount - 1);
+            }
+        }
+
         // Notify services about disconnect
         for (const [serviceName, service] of this.services) {
             if (service.handleDisconnect) {
