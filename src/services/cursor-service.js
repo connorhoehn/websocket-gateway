@@ -136,6 +136,10 @@ class CursorService {
     }
 
     async storeCursorData(clientId, channel, cursorData) {
+        // ALWAYS write to local cache first (cache-aside pattern)
+        this.storeLocalCursorData(clientId, channel, cursorData);
+
+        // Then try to write to Redis if available
         if (this.useRedis) {
             try {
                 // Store client cursor data with TTL
@@ -151,7 +155,7 @@ class CursorService {
                     clientId,
                     JSON.stringify(cursorData)
                 );
-                
+
                 // Set TTL for channel cursor list
                 await this.redisClient.expire(
                     this.redisKeys.channelCursors(channel),
@@ -160,13 +164,8 @@ class CursorService {
 
                 this.logger.debug(`Stored cursor data in Redis for client ${clientId} in channel ${channel}`);
             } catch (error) {
-                this.logger.error(`Failed to store cursor data in Redis for client ${clientId}:`, error);
-                // Fallback to local storage
-                this.storeLocalCursorData(clientId, channel, cursorData);
+                this.logger.warn(`Redis write failed for client ${clientId}, using local cache only: ${error.message}`);
             }
-        } else {
-            // Fallback to local storage
-            this.storeLocalCursorData(clientId, channel, cursorData);
         }
     }
 
