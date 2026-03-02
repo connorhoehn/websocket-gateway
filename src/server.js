@@ -266,6 +266,18 @@ class DistributedWebSocketServer {
             this.messageRouter.registerLocalClient(clientId, ws, metadata);
             this.connections.set(clientId, { ws, metadata });
 
+            // WebSocket ping/pong keepalive (every 30 seconds)
+            const pingInterval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.ping();
+                    this.logger.debug(`[keepalive] Ping sent to client ${clientId}`);
+                }
+            }, 30000); // 30 seconds
+
+            ws.on('pong', () => {
+                this.logger.debug(`[keepalive] Pong received from client ${clientId}`);
+            });
+
             // Setup message handler
             ws.on("message", async (message) => {
                 await this.handleMessage(clientId, message);
@@ -273,12 +285,14 @@ class DistributedWebSocketServer {
 
             // Setup close handler
             ws.on("close", () => {
+                clearInterval(pingInterval);
                 this.logger.info(`Client ${clientId} disconnected`);
                 this.handleClientDisconnect(clientId, clientIP);
             });
 
             // Setup error handler
             ws.on("error", (error) => {
+                clearInterval(pingInterval);
                 this.logger.error(`WebSocket error for client ${clientId}:`, error);
                 this.handleClientDisconnect(clientId, clientIP);
             });
