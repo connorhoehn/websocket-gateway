@@ -21,15 +21,21 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ Reaction service (ephemeral emoji broadcasts) — existing
 - ✓ Redis pub/sub integration for node coordination — existing
 
+<!-- Phase 01: Security Hardening -->
+
+- ✓ Cognito JWT authentication on WebSocket connect — Phase 01
+- ✓ Per-client rate limiting (100 msgs/sec, 40/sec cursor) — Phase 01
+- ✓ Memory leak prevention in presence service — Phase 01
+- ✓ Memory leak prevention in chat service — Phase 01
+- ✓ Cursor service Redis fallback with cache-aside pattern — Phase 01
+- ✓ Message validation (schema, size limits, channel format) — Phase 01
+- ✓ Connection limits (per-IP and global) — Phase 01
+- ✓ Channel-level authorization — Phase 01
+
 ### Active
 
 <!-- Current milestone: Harden and deploy to AWS -->
 
-- [ ] Add Cognito JWT authentication on WebSocket connect
-- [ ] Implement per-client rate limiting
-- [ ] Fix memory leak in presence service (unbounded Map growth)
-- [ ] Fix memory leak in chat service (no TTL on channel history)
-- [ ] Fix cursor service Redis fallback logic
 - [ ] Deploy to ECS Fargate with auto-scaling
 - [ ] Migrate to ElastiCache Redis (managed, HA)
 - [ ] Add Application Load Balancer for WebSocket connections
@@ -83,8 +89,12 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | Use ECS Fargate for hosting | Auto-scaling, managed containers, no EC2 ops | — Pending |
 | Use ElastiCache Redis | Managed Redis with HA, unlimited pub/sub messages for fixed cost (~$12/month) | — Pending |
 | Use AWS IVS for persistent chat | Managed chat service tied to video streaming, offloads chat persistence | — Pending |
-| Use Cognito for authentication | Solves auth/authz security gap, integrates with WebSocket gateway | — Pending |
+| Use Cognito for authentication | Solves auth/authz security gap, integrates with WebSocket gateway | ✅ Phase 01: JWT validation with JWKS caching, channel-level authz |
 | CRDT snapshots every 5min | Balance between data safety and DynamoDB write costs | — Pending |
+| Use jsonwebtoken + jwks-rsa for JWT validation | Industry standard libraries (50M+ downloads/week), battle-tested | ✅ Phase 01: Implemented with RS256 verification |
+| Rate limiting before authentication | Saves resources during DDoS by rejecting before auth overhead | ✅ Phase 01: Connection limits checked first, then auth, then rate limits |
+| LRU cache for chat history | Automatic eviction without manual TTL management | ✅ Phase 01: 100 messages/channel with lru-cache library |
+| Cache-aside pattern for cursor service | Ensures availability during Redis intermittency | ✅ Phase 01: Local-first writes, Redis sync with fallback |
 
 ---
-*Last updated: 2026-03-02 after project initialization*
+*Last updated: 2026-03-02 after Phase 01*
