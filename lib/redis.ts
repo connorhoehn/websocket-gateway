@@ -23,11 +23,11 @@ export function createRedis(scope: Construct, vpc: Vpc): RedisClusterResult {
     subnetIds: vpc.isolatedSubnets.map(subnet => subnet.subnetId),
   });
 
-  // Create Redis replication group  
+  // Create Redis replication group
   const replicationGroup = new CfnReplicationGroup(scope, 'RedisCluster', {
     replicationGroupId: 'websocket-redis',
     replicationGroupDescription: 'Redis for WebSocket pub/sub',
-    cacheNodeType: 'cache.t3.micro',
+    cacheNodeType: 'cache.t4g.micro',
     engine: 'redis',
     numNodeGroups: 1,
     replicasPerNodeGroup: 1,
