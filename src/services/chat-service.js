@@ -5,19 +5,29 @@
  */
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const LRU = require('lru-cache');
 
 class ChatService {
     constructor(messageRouter, logger) {
         this.messageRouter = messageRouter;
         this.logger = logger;
-        
+
         // Local state management
         this.clientChannels = new Map(); // clientId -> Set of channels
-        this.channelHistory = new Map(); // channel -> Array of messages
-        this.maxHistorySize = 100; // Maximum messages to keep in memory
-        
+        this.channelCaches = new Map(); // channelId -> LRU cache
+        this.MAX_MESSAGES_PER_CHANNEL = 100;
+
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
+
+        // Periodic cleanup for empty channel caches
+        setInterval(() => {
+            for (const [channelId, cache] of this.channelCaches.entries()) {
+                if (cache.size === 0) {
+                    this.channelCaches.delete(channelId);
+                }
+            }
+        }, 300000); // Every 5 minutes
     }
 
     async handleAction(clientId, action, data) {
@@ -209,23 +219,27 @@ class ChatService {
         }
     }
 
+    getChannelCache(channelId) {
+        if (!this.channelCaches.has(channelId)) {
+            const cache = new LRU({
+                max: this.MAX_MESSAGES_PER_CHANNEL,
+                updateAgeOnGet: false,
+                updateAgeOnHas: false
+            });
+            this.channelCaches.set(channelId, cache);
+        }
+        return this.channelCaches.get(channelId);
+    }
+
     addToChannelHistory(channel, messageData) {
-        if (!this.channelHistory.has(channel)) {
-            this.channelHistory.set(channel, []);
-        }
-
-        const history = this.channelHistory.get(channel);
-        history.push(messageData);
-
-        // Trim history if it exceeds maximum size
-        if (history.length > this.maxHistorySize) {
-            history.splice(0, history.length - this.maxHistorySize);
-        }
+        const cache = this.getChannelCache(channel);
+        cache.set(messageData.id, messageData);
     }
 
     getChannelHistory(channel, limit = 50) {
-        const history = this.channelHistory.get(channel) || [];
-        return history.slice(-limit); // Return last 'limit' messages
+        const cache = this.getChannelCache(channel);
+        const allMessages = Array.from(cache.values());
+        return allMessages.slice(-limit); // Return last 'limit' messages
     }
 
     async sendChannelHistory(clientId, channel) {
@@ -319,17 +333,22 @@ class ChatService {
     async shutdown() {
         // Clear all data
         this.clientChannels.clear();
-        this.channelHistory.clear();
-        
+        this.channelCaches.clear();
+
         this.logger.info('Chat service shut down');
     }
 
     // Utility methods for debugging/monitoring
     getStats() {
+        let totalMessages = 0;
+        for (const cache of this.channelCaches.values()) {
+            totalMessages += cache.size;
+        }
+
         return {
             connectedClients: this.clientChannels.size,
-            activeChannels: this.channelHistory.size,
-            totalMessages: Array.from(this.channelHistory.values()).reduce((sum, history) => sum + history.length, 0),
+            activeChannels: this.channelCaches.size,
+            totalMessages: totalMessages,
             isDistributed: this.isDistributed
         };
     }
