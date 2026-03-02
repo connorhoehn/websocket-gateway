@@ -4,6 +4,8 @@
  * Supports both local and distributed modes based on configuration
  */
 
+const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+
 class ReactionService {
     constructor(messageRouter, logger) {
         this.messageRouter = messageRouter;
@@ -66,24 +68,46 @@ class ReactionService {
             return;
         }
 
-        // Track client subscription
-        if (!this.clientChannels.has(clientId)) {
-            this.clientChannels.set(clientId, new Set());
+        try {
+            // Check channel authorization
+            const clientData = this.messageRouter.getClientData(clientId);
+            if (!clientData || !clientData.userContext) {
+                this.sendError(clientId, 'User context not found');
+                return;
+            }
+
+            try {
+                checkChannelPermission(clientData.userContext, channel, this.logger);
+            } catch (error) {
+                if (error instanceof AuthzError) {
+                    this.sendError(clientId, error.message);
+                    return;
+                }
+                throw error;
+            }
+
+            // Track client subscription
+            if (!this.clientChannels.has(clientId)) {
+                this.clientChannels.set(clientId, new Set());
+            }
+            this.clientChannels.get(clientId).add(channel);
+
+            // Subscribe to channel updates via message router
+            if (this.isDistributed) {
+                await this.messageRouter.subscribeToChannel(clientId, `reactions:${channel}`);
+            }
+
+            this.sendSuccess(clientId, 'reaction_subscribed', {
+                channel,
+                message: `Subscribed to reactions in channel: ${channel}`,
+                availableReactions: Object.keys(this.availableReactions)
+            });
+
+            this.logger.info(`Client ${clientId} subscribed to reactions in channel: ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error subscribing to reactions for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to subscribe to reactions');
         }
-        this.clientChannels.get(clientId).add(channel);
-
-        // Subscribe to channel updates via message router
-        if (this.isDistributed) {
-            await this.messageRouter.subscribeToChannel(clientId, `reactions:${channel}`);
-        }
-
-        this.sendSuccess(clientId, 'reaction_subscribed', {
-            channel,
-            message: `Subscribed to reactions in channel: ${channel}`,
-            availableReactions: Object.keys(this.availableReactions)
-        });
-
-        this.logger.info(`Client ${clientId} subscribed to reactions in channel: ${channel}`);
     }
 
     async handleUnsubscribeFromReactions(clientId, { channel }) {

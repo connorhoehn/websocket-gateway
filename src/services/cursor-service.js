@@ -5,6 +5,8 @@
  * Enhanced with multi-mode support for different cursor tracking types
  */
 
+const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+
 class CursorService {
     constructor(messageRouter, logger, redisClient = null) {
         this.messageRouter = messageRouter;
@@ -241,22 +243,44 @@ class CursorService {
             return;
         }
 
-        if (this.isDistributed) {
-            // In distributed mode, subscribe to Redis channel
-            await this.messageRouter.subscribeToChannel(clientId, `cursor:${channel}`);
+        try {
+            // Check channel authorization
+            const clientData = this.messageRouter.getClientData(clientId);
+            if (!clientData || !clientData.userContext) {
+                this.sendError(clientId, 'User context not found');
+                return;
+            }
+
+            try {
+                checkChannelPermission(clientData.userContext, channel, this.logger);
+            } catch (error) {
+                if (error instanceof AuthzError) {
+                    this.sendError(clientId, error.message);
+                    return;
+                }
+                throw error;
+            }
+
+            if (this.isDistributed) {
+                // In distributed mode, subscribe to Redis channel
+                await this.messageRouter.subscribeToChannel(clientId, `cursor:${channel}`);
+            }
+
+            // Send current cursors in the channel
+            const channelCursors = await this.getChannelCursors(channel);
+            this.sendToClient(clientId, {
+                type: 'cursor',
+                action: 'subscribed',
+                channel,
+                cursors: channelCursors,
+                timestamp: new Date().toISOString()
+            });
+
+            this.logger.info(`Client ${clientId} subscribed to cursors for channel: ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error subscribing to cursors for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to subscribe to cursors');
         }
-
-        // Send current cursors in the channel
-        const channelCursors = await this.getChannelCursors(channel);
-        this.sendToClient(clientId, {
-            type: 'cursor',
-            action: 'subscribed',
-            channel,
-            cursors: channelCursors,
-            timestamp: new Date().toISOString()
-        });
-
-        this.logger.info(`Client ${clientId} subscribed to cursors for channel: ${channel}`);
     }
 
     async handleUnsubscribeCursors(clientId, { channel }) {

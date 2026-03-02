@@ -1,8 +1,5 @@
 // core/message-router.js
 
-const RateLimiter = require('../middleware/rate-limiter');
-const { MessageValidator, ValidationError } = require('../validators/message-validator');
-
 /**
  * Handles intelligent message routing in a distributed WebSocket system
  * Routes messages only to nodes that have clients subscribed to specific channels
@@ -15,10 +12,6 @@ class MessageRouter {
         this.logger = logger;
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
-
-        // Initialize rate limiter and validator
-        this.rateLimiter = new RateLimiter(redisPublisher, logger);
-        this.validator = new MessageValidator();
 
         // Message types for node-to-node communication
         this.messageTypes = {

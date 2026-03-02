@@ -4,6 +4,8 @@
  * Supports both local and distributed modes based on configuration
  */
 
+const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+
 class PresenceService {
     constructor(messageRouter, nodeManager, logger) {
         this.messageRouter = messageRouter;
@@ -127,22 +129,44 @@ class PresenceService {
             return;
         }
 
-        if (this.isDistributed) {
-            // Subscribe to presence updates for this channel
-            await this.messageRouter.subscribeToChannel(clientId, `presence:${channel}`);
+        try {
+            // Check channel authorization
+            const clientData = this.messageRouter.getClientData(clientId);
+            if (!clientData || !clientData.userContext) {
+                this.sendError(clientId, 'User context not found');
+                return;
+            }
+
+            try {
+                checkChannelPermission(clientData.userContext, channel, this.logger);
+            } catch (error) {
+                if (error instanceof AuthzError) {
+                    this.sendError(clientId, error.message);
+                    return;
+                }
+                throw error;
+            }
+
+            if (this.isDistributed) {
+                // Subscribe to presence updates for this channel
+                await this.messageRouter.subscribeToChannel(clientId, `presence:${channel}`);
+            }
+
+            // Send current presence data for the channel
+            const channelPresence = this.getChannelPresence(channel);
+            this.sendToClient(clientId, {
+                type: 'presence',
+                action: 'subscribed',
+                channel,
+                presence: channelPresence,
+                timestamp: new Date().toISOString()
+            });
+
+            this.logger.info(`Client ${clientId} subscribed to presence for channel: ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error subscribing to presence for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to subscribe to presence');
         }
-
-        // Send current presence data for the channel
-        const channelPresence = this.getChannelPresence(channel);
-        this.sendToClient(clientId, {
-            type: 'presence',
-            action: 'subscribed',
-            channel,
-            presence: channelPresence,
-            timestamp: new Date().toISOString()
-        });
-
-        this.logger.info(`Client ${clientId} subscribed to presence for channel: ${channel}`);
     }
 
     async handleUnsubscribePresence(clientId, { channel }) {
