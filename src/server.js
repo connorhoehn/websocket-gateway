@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const NodeManager = require("./core/node-manager");
 const MessageRouter = require("./core/message-router");
 const Logger = require("./utils/logger");
+const AuthMiddleware = require("./middleware/auth-middleware");
 
 // Service modules - Unified services supporting both local and distributed modes
 const ChatService = require("./services/chat-service");
@@ -34,19 +35,28 @@ class DistributedWebSocketServer {
         this.nodeManager = null;
         this.messageRouter = null;
         this.services = new Map();
-        
+
+        // Validate required environment variables for authentication
+        if (!process.env.COGNITO_REGION || !process.env.COGNITO_USER_POOL_ID) {
+            this.logger.error('Missing required environment variables: COGNITO_REGION and COGNITO_USER_POOL_ID');
+            process.exit(1);
+        }
+
+        // Initialize authentication middleware
+        this.authMiddleware = new AuthMiddleware(this.logger);
+
         // Redis clients
         this.redisPublisher = null;
         this.redisSubscriber = null;
         this.redisConnected = false;
-        
+
         // HTTP server and WebSocket server
         this.httpServer = null;
         this.wss = null;
-        
+
         // Connection tracking
         this.connections = new Map(); // clientId -> { ws, metadata }
-        
+
         this.setupHttpServer();
     }
 
@@ -186,21 +196,40 @@ class DistributedWebSocketServer {
     }
 
     setupWebSocketServer() {
-        this.wss = new WebSocket.Server({ server: this.httpServer });
+        this.wss = new WebSocket.Server({ noServer: true });
 
-        this.wss.on("connection", (ws, req) => {
+        // Handle HTTP upgrade for WebSocket connections
+        this.httpServer.on('upgrade', async (request, socket, head) => {
+            try {
+                // Validate JWT token BEFORE accepting WebSocket upgrade
+                const userContext = await this.authMiddleware.validateToken(request);
+                this.logger.info(`Client authenticated: ${userContext.userId}`);
+
+                // Accept the WebSocket upgrade
+                this.wss.handleUpgrade(request, socket, head, (ws) => {
+                    this.wss.emit('connection', ws, request, userContext);
+                });
+            } catch (error) {
+                this.logger.error(`Authentication failed: ${error.message}`);
+                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                socket.destroy();
+            }
+        });
+
+        this.wss.on("connection", (ws, req, userContext) => {
             const clientId = this.generateClientId();
             const clientIP = req.socket.remoteAddress;
-            
-            this.logger.info(`Client ${clientId} connected from ${clientIP}`);
-            
+
+            this.logger.info(`Client ${clientId} connected from ${clientIP} (user: ${userContext.userId})`);
+
             // Register client with message router
             const metadata = {
                 ip: clientIP,
                 userAgent: req.headers['user-agent'],
-                connectedAt: new Date().toISOString()
+                connectedAt: new Date().toISOString(),
+                userContext: userContext  // Store userContext in metadata
             };
-            
+
             this.messageRouter.registerLocalClient(clientId, ws, metadata);
             this.connections.set(clientId, { ws, metadata });
 
