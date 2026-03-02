@@ -39,9 +39,9 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 
 ### Reliability & Resilience
 
-- [ ] **REL-01**: Fix memory leak in presence service (unbounded clientPresence Map growth)
-- [ ] **REL-02**: Fix memory leak in chat service (no TTL on channelHistory Map)
-- [ ] **REL-03**: Fix cursor service Redis fallback logic (queries only Redis, not local storage)
+- [x] **REL-01**: Fix memory leak in presence service (unbounded clientPresence Map growth)
+- [x] **REL-02**: Fix memory leak in chat service (no TTL on channelHistory Map)
+- [x] **REL-03**: Fix cursor service Redis fallback logic (queries only Redis, not local storage)
 - [ ] **REL-04**: Implement graceful Redis degradation (local cache during outage)
 - [ ] **REL-05**: Add connection state recovery (session token + reconnection with same clientId)
 
@@ -125,9 +125,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MON-03 | Phase 3 | Pending |
 | MON-04 | Phase 3 | Pending |
 | MON-05 | Phase 3 | Pending |
-| REL-01 | Phase 1 | Pending |
-| REL-02 | Phase 1 | Pending |
-| REL-03 | Phase 1 | Pending |
+| REL-01 | Phase 1 | Complete |
+| REL-02 | Phase 1 | Complete |
+| REL-03 | Phase 1 | Complete |
 | REL-04 | Phase 5 | Pending |
 | REL-05 | Phase 5 | Pending |
 | PERSIST-01 | Phase 4 | Pending |
