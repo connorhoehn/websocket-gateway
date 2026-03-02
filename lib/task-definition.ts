@@ -1,7 +1,7 @@
-import { ContainerImage, FargateTaskDefinition, LogDrivers } from 'aws-cdk-lib/aws-ecs';
+import { ContainerImage, FargateTaskDefinition, LogDriver } from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
 import { Role, ServicePrincipal, ManagedPolicy } from 'aws-cdk-lib/aws-iam';
-import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 
 interface TaskDefinitionProps {
   redisEndpoint?: string;
@@ -17,13 +17,10 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     ],
   });
 
-  // Create CloudWatch log group
-  const logGroup = new LogGroup(scope, 'WebSocketLogGroup', {
-    logGroupName: '/ecs/websocket-gateway',
-  });
-
   const taskDef = new FargateTaskDefinition(scope, 'TaskDef', {
     executionRole: executionRole,
+    cpu: 256,
+    memoryLimitMiB: 512,
   });
   
   const environment: { [key: string]: string } = {};
@@ -44,9 +41,9 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     cpu: 256,
     portMappings: [{ containerPort: 8080 }],
     environment,
-    logging: LogDrivers.awsLogs({
+    logging: LogDriver.awsLogs({
       streamPrefix: 'websocket-gateway',
-      logGroup: logGroup,
+      logRetention: RetentionDays.ONE_WEEK,
     }),
   });
   
