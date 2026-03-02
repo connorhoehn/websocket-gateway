@@ -1,5 +1,8 @@
 // core/message-router.js
 
+const RateLimiter = require('../middleware/rate-limiter');
+const { MessageValidator, ValidationError } = require('../validators/message-validator');
+
 /**
  * Handles intelligent message routing in a distributed WebSocket system
  * Routes messages only to nodes that have clients subscribed to specific channels
@@ -12,7 +15,11 @@ class MessageRouter {
         this.logger = logger;
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
-        
+
+        // Initialize rate limiter and validator
+        this.rateLimiter = new RateLimiter(redisPublisher, logger);
+        this.validator = new MessageValidator();
+
         // Message types for node-to-node communication
         this.messageTypes = {
             DIRECT_MESSAGE: 'direct_message',
@@ -43,6 +50,23 @@ class MessageRouter {
     }
 
     /**
+     * Get client data including userContext
+     */
+    getClientData(clientId) {
+        const client = this.localClients.get(clientId);
+        if (!client) {
+            return null;
+        }
+        return {
+            clientId,
+            metadata: client.metadata,
+            userContext: client.metadata.userContext,
+            channels: Array.from(client.channels),
+            joinedAt: client.joinedAt
+        };
+    }
+
+    /**
      * Unregister a local WebSocket connection
      */
     async unregisterLocalClient(clientId) {
@@ -52,10 +76,10 @@ class MessageRouter {
             for (const channel of client.channels) {
                 await this.unsubscribeFromChannel(clientId, channel);
             }
-            
+
             this.localClients.delete(clientId);
             await this.nodeManager.unregisterClient(clientId);
-            
+
             this.logger.debug(`Unregistered local client ${clientId}`);
         }
     }
@@ -101,6 +125,68 @@ class MessageRouter {
 
             this.logger.debug(`Client ${clientId} unsubscribed from channel ${channel}`);
         }
+    }
+
+    /**
+     * Validate and rate-limit a message before processing
+     * @param {string} clientId - Client identifier
+     * @param {string} rawMessage - Raw message string from client
+     * @returns {Promise<object|null>} - Parsed and validated message, or null if rejected
+     */
+    async validateAndRateLimit(clientId, rawMessage) {
+        try {
+            // Parse JSON
+            const message = JSON.parse(rawMessage);
+
+            // Validate structure (service + action required, service whitelist)
+            this.validator.validateStructure(message);
+
+            // Validate payload size (64KB limit)
+            this.validator.validatePayloadSize(message);
+
+            // Validate channel name if present
+            if (message.channelId) {
+                this.validator.validateChannelName(message.channelId);
+            }
+
+            // Detect message type for rate limiting
+            const messageType = this.rateLimiter.detectMessageType(message);
+
+            // Check rate limit
+            const rateLimitResult = await this.rateLimiter.checkLimit(clientId, messageType);
+            if (!rateLimitResult.allowed) {
+                this.sendError(clientId, 'RATE_LIMIT_EXCEEDED',
+                    `Rate limit exceeded: ${rateLimitResult.current}/${rateLimitResult.limit} msgs/sec`);
+                return null;
+            }
+
+            return message;
+        } catch (error) {
+            if (error instanceof ValidationError) {
+                this.sendError(clientId, error.code, error.message);
+            } else if (error instanceof SyntaxError) {
+                this.sendError(clientId, 'INVALID_JSON', 'Message must be valid JSON');
+            } else {
+                this.logger.error(`Message validation error for ${clientId}:`, error);
+                this.sendError(clientId, 'INTERNAL_ERROR', 'Failed to process message');
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Send an error message to a client
+     * @param {string} clientId - Client identifier
+     * @param {string} code - Error code
+     * @param {string} message - Error message
+     */
+    sendError(clientId, code, message) {
+        this.sendToClient(clientId, {
+            type: 'error',
+            code,
+            message,
+            timestamp: new Date().toISOString()
+        });
     }
 
     /**

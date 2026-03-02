@@ -296,41 +296,40 @@ class DistributedWebSocketServer {
     }
 
     async handleMessage(clientId, rawMessage) {
-        try {
-            const message = JSON.parse(rawMessage);
-            this.logger.debug(`Message from ${clientId}:`, message);
+        // Validate and rate-limit message using message router
+        const message = await this.messageRouter.validateAndRateLimit(clientId, rawMessage);
 
-            const { service, action, ...data } = message;
+        // If validation or rate limiting failed, validateAndRateLimit already sent error
+        if (!message) {
+            return;
+        }
 
-            if (!service || !action) {
-                this.sendToClient(clientId, {
-                    type: 'error',
-                    message: 'Invalid message format. Required: service, action',
-                    timestamp: new Date().toISOString()
-                });
-                return;
-            }
+        this.logger.debug(`Message from ${clientId}:`, message);
 
-            // Route to appropriate service
-            const serviceInstance = this.services.get(service);
-            if (!serviceInstance) {
-                this.sendToClient(clientId, {
-                    type: 'error',
-                    message: `Service '${service}' not available`,
-                    availableServices: Array.from(this.services.keys()),
-                    timestamp: new Date().toISOString()
-                });
-                return;
-            }
+        const { service, action, ...data } = message;
 
-            // Call service method
-            await serviceInstance.handleAction(clientId, action, data);
-
-        } catch (error) {
-            this.logger.error(`Error handling message from ${clientId}:`, error);
+        // Route to appropriate service
+        const serviceInstance = this.services.get(service);
+        if (!serviceInstance) {
             this.sendToClient(clientId, {
                 type: 'error',
-                message: 'Invalid JSON message',
+                code: 'SERVICE_NOT_AVAILABLE',
+                message: `Service '${service}' not available`,
+                availableServices: Array.from(this.services.keys()),
+                timestamp: new Date().toISOString()
+            });
+            return;
+        }
+
+        try {
+            // Call service method
+            await serviceInstance.handleAction(clientId, action, data);
+        } catch (error) {
+            this.logger.error(`Error in service ${service} for client ${clientId}:`, error);
+            this.sendToClient(clientId, {
+                type: 'error',
+                code: 'SERVICE_ERROR',
+                message: 'Failed to process message',
                 timestamp: new Date().toISOString()
             });
         }
