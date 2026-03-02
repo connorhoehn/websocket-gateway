@@ -13,7 +13,7 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 - [x] **SEC-02**: Channel-level authorization (verify user can subscribe to requested channel)
 - [x] **SEC-03**: Per-client rate limiting (100 msgs/sec general, 40/sec for cursor updates)
 - [x] **SEC-04**: Input validation and schema validation at message routing layer
-- [ ] **SEC-05**: TLS/SSL termination for wss:// connections (via ALB)
+- [x] **SEC-05**: TLS/SSL termination for wss:// connections (via ALB)
 - [x] **SEC-06**: Message size limits to prevent memory exhaustion
 - [x] **SEC-07**: Connection limits (per-IP and global) to prevent connection floods
 - [x] **SEC-08**: CORS configuration for cross-origin WebSocket connections
@@ -21,13 +21,13 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 ### AWS Infrastructure Deployment
 
 - [x] **INFRA-01**: Deploy WebSocket server to ECS Fargate with Docker containers
-- [ ] **INFRA-02**: Configure Application Load Balancer with sticky sessions and 300s idle timeout
+- [x] **INFRA-02**: Configure Application Load Balancer with sticky sessions and 300s idle timeout
 - [x] **INFRA-03**: Migrate to ElastiCache Redis (Multi-AZ, automatic failover)
 - [x] **INFRA-04**: Set up VPC with isolated subnets and VPC endpoints (no NAT gateway)
-- [ ] **INFRA-05**: Configure ECS auto-scaling based on connection count (5000/task threshold)
-- [ ] **INFRA-06**: Implement graceful shutdown and connection draining (30s deregistration delay)
+- [x] **INFRA-05**: Configure ECS auto-scaling based on connection count (5000/task threshold)
+- [x] **INFRA-06**: Implement graceful shutdown and connection draining (30s deregistration delay)
 - [ ] **INFRA-07**: Add health check HTTP endpoint for ALB routing
-- [ ] **INFRA-08**: Configure server-side ping/pong to keep connections alive
+- [x] **INFRA-08**: Configure server-side ping/pong to keep connections alive
 
 ### Monitoring & Observability
 
@@ -108,18 +108,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-02 | Phase 1 | Complete |
 | SEC-03 | Phase 1 | Complete |
 | SEC-04 | Phase 1 | Complete |
-| SEC-05 | Phase 2 | Pending |
+| SEC-05 | Phase 2 | Complete |
 | SEC-06 | Phase 1 | Complete |
 | SEC-07 | Phase 1 | Complete |
 | SEC-08 | Phase 1 | Complete |
 | INFRA-01 | Phase 2 | Complete |
-| INFRA-02 | Phase 2 | Pending |
+| INFRA-02 | Phase 2 | Complete |
 | INFRA-03 | Phase 2 | Complete |
 | INFRA-04 | Phase 2 | Complete |
-| INFRA-05 | Phase 2 | Pending |
-| INFRA-06 | Phase 2 | Pending |
+| INFRA-05 | Phase 2 | Complete |
+| INFRA-06 | Phase 2 | Complete |
 | INFRA-07 | Phase 2 | Pending |
-| INFRA-08 | Phase 2 | Pending |
+| INFRA-08 | Phase 2 | Complete |
 | MON-01 | Phase 3 | Pending |
 | MON-02 | Phase 3 | Pending |
 | MON-03 | Phase 3 | Pending |

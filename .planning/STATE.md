@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-02T19:23:06.306Z"
+last_updated: "2026-03-02T19:42:56.995Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -23,35 +23,35 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 2 of 5 (AWS Infrastructure Foundation)
-Plan: 2 of 4 in current phase
+Plan: 3 of 4 in current phase
 Status: In progress
-Last activity: 2026-03-02 — Completed 02-02-PLAN.md (Cost-Optimized Resource Sizing)
+Last activity: 2026-03-02 — Completed 02-03-PLAN.md (ALB with Auto-Scaling)
 
-Progress: [█████░░░░░] 50% (2/4 plans in phase 02 complete)
+Progress: [███████░░░] 75% (3/4 plans in phase 02 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 2 min 46s
-- Total execution time: 0.23 hours
+- Total plans completed: 6
+- Average duration: 3 min 35s
+- Total execution time: 0.43 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 3 | 428s | 143s |
-| 02 | 2 | 373s | 187s |
+| 02 | 3 | 1088s | 363s |
 
 **Recent Plans:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| 02-03 | 715s (12m) | 2 | 2 |
 | 02-02 | 175s (3m) | 2 | 2 |
 | 02-01 | 198s (3m) | 2 | 2 |
 | 01-03 | 66s (1m) | 5 | 5 |
 | 01-02 | 42s (1m) | 4 | 4 |
-| 01-01 | 320s (5m) | 5 | 9 |
 
 ## Accumulated Context
 
@@ -68,6 +68,11 @@ Recent decisions affecting current work:
 - [Phase 01-01]: Validate JWT at HTTP upgrade layer (reject before WebSocket handshake)
 - [Phase 01-01]: Store userContext in client metadata (accessed via MessageRouter.getClientData)
 - [Phase 01-01]: Check permissions at service subscription layer (fail-fast pattern)
+- [Phase 02-03]: Use ACM certificate ARN from environment variable (process.env.ACM_CERTIFICATE_ARN) for TLS termination
+- [Phase 02-03]: Configure sticky sessions with 1-hour cookie duration for WebSocket connection affinity
+- [Phase 02-03]: Set ALB idle timeout to 300 seconds (5 minutes) for long-lived WebSocket connections
+- [Phase 02-03]: Use CPU utilization as proxy for connection count to avoid CloudWatch custom metrics costs
+- [Phase 02-03]: Configure aggressive scale-down (5-minute cooldown) for cost optimization
 - [Phase 02-02]: Use 0.25 vCPU (256 units) and 0.5GB RAM (512 MiB) for Fargate tasks targeting <1000 connections with ~$6/mo per task cost
 - [Phase 02-02]: Use cache.t4g.micro (Graviton2) for Redis instead of cache.t3.micro for better price/performance at same ~$12/mo Multi-AZ cost
 - [Phase 02-02]: Set CloudWatch log retention to 7 days for cost optimization while maintaining operational visibility
@@ -84,5 +89,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 02-02-PLAN.md (Cost-Optimized Resource Sizing)
+Stopped at: Completed 02-03-PLAN.md (ALB with Auto-Scaling)
 Resume file: None
