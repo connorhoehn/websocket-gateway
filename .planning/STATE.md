@@ -32,23 +32,21 @@ Progress: [███░░░░░░░] 33% (1/3 plans in phase 01 complete)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
-- Average duration: ~5 min
-- Total execution time: 0.2 hours
+- Total plans completed: 1
+- Average duration: 5 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 2 | 602s | 301s |
+| 01 | 1 | 320s | 320s |
 
 **Recent Plans:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
-| 01-02 | 301s (5m) | 4 | 4 |
-| 01-01 | 301s (5m) | 3 | 3 |
-| Phase 01 P01 | 5 | 5 tasks | 9 files |
+| 01-01 | 320s (5m) | 5 | 9 |
 
 ## Accumulated Context
 
@@ -57,9 +55,10 @@ Progress: [███░░░░░░░] 33% (1/3 plans in phase 01 complete)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- (pending AWS deployment decisions)
-- [Phase 01-02]: Rate limits checked BEFORE authentication to save resources on DDoS
-- [Phase 01-02]: Validation order: structure → size → channel → rate limit (fail fast)
+- [Phase 01-01]: Use jsonwebtoken + jwks-rsa for Cognito JWT validation (industry standard, battle-tested)
+- [Phase 01-01]: Validate JWT at HTTP upgrade layer (reject before WebSocket handshake)
+- [Phase 01-01]: Store userContext in client metadata (accessed via MessageRouter.getClientData)
+- [Phase 01-01]: Check permissions at service subscription layer (fail-fast pattern)
 
 ### Pending Todos
 
@@ -71,6 +70,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-02T16:21:34Z
-Stopped at: Completed 01-02-PLAN.md (Rate Limiting, Input Validation & Connection Limits)
-Resume file: .planning/phases/01-security-hardening/01-02-SUMMARY.md
+Last session: 2026-03-02T16:21:52Z
+Stopped at: Completed 01-01-PLAN.md (JWT Authentication & Channel Authorization)
+Resume file: .planning/phases/01-security-hardening/01-01-SUMMARY.md

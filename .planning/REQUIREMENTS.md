@@ -9,8 +9,8 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 
 ### Security (Critical - Blocks Production)
 
-- [ ] **SEC-01**: User authentication via Cognito JWT validation on WebSocket connect
-- [ ] **SEC-02**: Channel-level authorization (verify user can subscribe to requested channel)
+- [x] **SEC-01**: User authentication via Cognito JWT validation on WebSocket connect
+- [x] **SEC-02**: Channel-level authorization (verify user can subscribe to requested channel)
 - [x] **SEC-03**: Per-client rate limiting (100 msgs/sec general, 40/sec for cursor updates)
 - [x] **SEC-04**: Input validation and schema validation at message routing layer
 - [ ] **SEC-05**: TLS/SSL termination for wss:// connections (via ALB)
@@ -104,8 +104,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
+| SEC-02 | Phase 1 | Complete |
 | SEC-03 | Phase 1 | Complete |
 | SEC-04 | Phase 1 | Complete |
 | SEC-05 | Phase 2 | Pending |
