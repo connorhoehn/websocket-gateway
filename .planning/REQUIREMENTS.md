@@ -23,7 +23,7 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 - [x] **INFRA-01**: Deploy WebSocket server to ECS Fargate with Docker containers
 - [ ] **INFRA-02**: Configure Application Load Balancer with sticky sessions and 300s idle timeout
 - [x] **INFRA-03**: Migrate to ElastiCache Redis (Multi-AZ, automatic failover)
-- [ ] **INFRA-04**: Set up VPC with isolated subnets and VPC endpoints (no NAT gateway)
+- [x] **INFRA-04**: Set up VPC with isolated subnets and VPC endpoints (no NAT gateway)
 - [ ] **INFRA-05**: Configure ECS auto-scaling based on connection count (5000/task threshold)
 - [ ] **INFRA-06**: Implement graceful shutdown and connection draining (30s deregistration delay)
 - [ ] **INFRA-07**: Add health check HTTP endpoint for ALB routing
@@ -115,7 +115,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-01 | Phase 2 | Complete |
 | INFRA-02 | Phase 2 | Pending |
 | INFRA-03 | Phase 2 | Complete |
-| INFRA-04 | Phase 2 | Pending |
+| INFRA-04 | Phase 2 | Complete |
 | INFRA-05 | Phase 2 | Pending |
 | INFRA-06 | Phase 2 | Pending |
 | INFRA-07 | Phase 2 | Pending |
