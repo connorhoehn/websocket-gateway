@@ -11,18 +11,27 @@ class PresenceService {
         this.messageRouter = messageRouter;
         this.nodeManager = nodeManager;
         this.logger = logger;
-        
+
         // Local state management
         this.clientPresence = new Map(); // clientId -> presence data
         this.channelPresence = new Map(); // channel -> Map of clientId -> presence
         this.presenceHeartbeatInterval = null;
         this.heartbeatInterval = 30000; // 30 seconds
         this.presenceTimeout = 60000; // 60 seconds before marking as offline
-        
+
+        // Memory leak fix: TTL cleanup for stale clients
+        this.STALE_THRESHOLD = 90000; // 90 seconds
+        this.CLEANUP_INTERVAL = 30000; // 30 seconds
+
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
-        
+
         this.startPresenceHeartbeat();
+
+        // Start cleanup interval for stale clients
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupStaleClients();
+        }, this.CLEANUP_INTERVAL);
     }
 
     async handleAction(clientId, action, data) {
@@ -67,7 +76,8 @@ class PresenceService {
             channels,
             nodeId: this.nodeManager ? this.nodeManager.nodeId : 'local',
             timestamp: new Date().toISOString(),
-            lastSeen: new Date().toISOString()
+            lastSeen: new Date().toISOString(),
+            lastHeartbeat: Date.now() // Track lastHeartbeat for cleanup
         };
 
         // Store presence locally
@@ -194,6 +204,7 @@ class PresenceService {
         const presenceData = this.clientPresence.get(clientId);
         if (presenceData) {
             presenceData.lastSeen = new Date().toISOString();
+            presenceData.lastHeartbeat = Date.now(); // Update lastHeartbeat timestamp
             this.clientPresence.set(clientId, presenceData);
         }
     }
@@ -286,6 +297,33 @@ class PresenceService {
         }
     }
 
+    cleanupStaleClients() {
+        const now = Date.now();
+        let cleaned = 0;
+
+        for (const [clientId, entry] of this.clientPresence.entries()) {
+            if (now - entry.lastHeartbeat > this.STALE_THRESHOLD) {
+                this.clientPresence.delete(clientId);
+                cleaned++;
+                this.logger.debug(`Cleaned up stale presence: ${clientId}`);
+
+                // Remove from all channels
+                for (const [channel, channelPresenceMap] of this.channelPresence) {
+                    if (channelPresenceMap.has(clientId)) {
+                        channelPresenceMap.delete(clientId);
+                        if (channelPresenceMap.size === 0) {
+                            this.channelPresence.delete(channel);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (cleaned > 0) {
+            this.logger.info(`Presence cleanup: removed ${cleaned} stale clients`);
+        }
+    }
+
     async setClientOffline(clientId) {
         const presenceData = this.clientPresence.get(clientId);
         if (presenceData && presenceData.status !== 'offline') {
@@ -364,11 +402,17 @@ class PresenceService {
             this.presenceHeartbeatInterval = null;
         }
 
+        // Stop cleanup interval
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+
         // Clear all data
         this.clientPresence.clear();
         this.channelPresence.clear();
-        
-        this.logger.info('Presence service shut down');
+
+        this.logger.info('Presence service shutdown complete');
     }
 
     // Utility methods for debugging/monitoring
