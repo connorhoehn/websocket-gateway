@@ -45,5 +45,11 @@ export function createVpc(scope: Construct): Vpc {
     subnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
   });
 
+  // Add Secrets Manager VPC Endpoint for future secrets
+  vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
+    service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+    subnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+  });
+
   return vpc;
 }
