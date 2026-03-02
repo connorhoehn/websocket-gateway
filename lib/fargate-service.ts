@@ -141,6 +141,18 @@ export function createFargateService(
     }),
   });
 
+  // Configure auto-scaling for ECS service
+  const scaling = service.autoScaleTaskCount({
+    minCapacity: 2,
+    maxCapacity: 4,
+  });
+
+  scaling.scaleOnCpuUtilization('CpuScaling', {
+    targetUtilizationPercent: 70,
+    scaleInCooldown: Duration.seconds(300), // 5 minutes
+    scaleOutCooldown: Duration.seconds(60), // 1 minute
+  });
+
   return {
     alb,
     service,
