@@ -26,7 +26,7 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 - [x] **INFRA-04**: Set up VPC with isolated subnets and VPC endpoints (no NAT gateway)
 - [x] **INFRA-05**: Configure ECS auto-scaling based on connection count (5000/task threshold)
 - [x] **INFRA-06**: Implement graceful shutdown and connection draining (30s deregistration delay)
-- [ ] **INFRA-07**: Add health check HTTP endpoint for ALB routing
+- [x] **INFRA-07**: Add health check HTTP endpoint for ALB routing
 - [x] **INFRA-08**: Configure server-side ping/pong to keep connections alive
 
 ### Monitoring & Observability
@@ -118,7 +118,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-04 | Phase 2 | Complete |
 | INFRA-05 | Phase 2 | Complete |
 | INFRA-06 | Phase 2 | Complete |
-| INFRA-07 | Phase 2 | Pending |
+| INFRA-07 | Phase 2 | Complete |
 | INFRA-08 | Phase 2 | Complete |
 | MON-01 | Phase 3 | Pending |
 | MON-02 | Phase 3 | Pending |
