@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-02T18:41:15.483Z"
+last_updated: "2026-03-02T19:23:06.306Z"
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 7
+  completed_plans: 5
 ---
 
 # Project State
@@ -22,30 +22,33 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 1 of 5 (Security Hardening)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-03-02 — Completed 01-03-PLAN.md (Memory Leak Fixes)
+Phase: 2 of 5 (AWS Infrastructure Foundation)
+Plan: 2 of 4 in current phase
+Status: In progress
+Last activity: 2026-03-02 — Completed 02-02-PLAN.md (Cost-Optimized Resource Sizing)
 
-Progress: [██████████] 100% (3/3 plans in phase 01 complete)
+Progress: [█████░░░░░] 50% (2/4 plans in phase 02 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 2 min 22s
-- Total execution time: 0.2 hours
+- Total plans completed: 5
+- Average duration: 2 min 46s
+- Total execution time: 0.23 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 3 | 428s | 143s |
+| 02 | 2 | 373s | 187s |
 
 **Recent Plans:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| 02-02 | 175s (3m) | 2 | 2 |
+| 02-01 | 198s (3m) | 2 | 2 |
 | 01-03 | 66s (1m) | 5 | 5 |
 | 01-02 | 42s (1m) | 4 | 4 |
 | 01-01 | 320s (5m) | 5 | 9 |
@@ -65,6 +68,10 @@ Recent decisions affecting current work:
 - [Phase 01-01]: Validate JWT at HTTP upgrade layer (reject before WebSocket handshake)
 - [Phase 01-01]: Store userContext in client metadata (accessed via MessageRouter.getClientData)
 - [Phase 01-01]: Check permissions at service subscription layer (fail-fast pattern)
+- [Phase 02-02]: Use 0.25 vCPU (256 units) and 0.5GB RAM (512 MiB) for Fargate tasks targeting <1000 connections with ~$6/mo per task cost
+- [Phase 02-02]: Use cache.t4g.micro (Graviton2) for Redis instead of cache.t3.micro for better price/performance at same ~$12/mo Multi-AZ cost
+- [Phase 02-02]: Set CloudWatch log retention to 7 days for cost optimization while maintaining operational visibility
+- [Phase 02-01]: Added 4 interface VPC endpoints (ECR, ECR Docker, CloudWatch Logs, Secrets Manager) and 1 gateway endpoint (S3) for AWS service access from private subnets at /mo vs /mo NAT Gateway
 
 ### Pending Todos
 
@@ -77,5 +84,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Phase 01 complete, ready to plan Phase 02
+Stopped at: Completed 02-02-PLAN.md (Cost-Optimized Resource Sizing)
 Resume file: None
