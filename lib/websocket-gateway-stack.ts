@@ -32,9 +32,9 @@ export class WebsocketGatewayStack extends Stack {
       redisSecurityGroup: redis?.securityGroup,
     });
 
-    // Output WebSocket URL
+    // Output WebSocket URL (HTTPS for secure WebSocket connections)
     new CfnOutput(this, 'WebSocketURL', {
-      value: `ws://${fargateResources.nlb.loadBalancerDnsName}`,
+      value: `wss://${fargateResources.alb.loadBalancerDnsName}`,
     });
 
     // Output all resource ARNs
@@ -59,8 +59,8 @@ export class WebsocketGatewayStack extends Stack {
     });
 
     new CfnOutput(this, 'LoadBalancerArn', {
-      value: fargateResources.nlb.loadBalancerArn,
-      description: 'Network Load Balancer ARN',
+      value: fargateResources.alb.loadBalancerArn,
+      description: 'Application Load Balancer ARN',
     });
 
     new CfnOutput(this, 'SecurityGroupId', {

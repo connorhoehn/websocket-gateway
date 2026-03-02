@@ -5,11 +5,13 @@ import {
 } from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
 import {
-  NetworkLoadBalancer,
-  NetworkTargetGroup,
-  Protocol,
+  ApplicationLoadBalancer,
+  ApplicationProtocol,
+  ListenerAction,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Vpc, SecurityGroup, Port, Peer, SubnetType } from 'aws-cdk-lib/aws-ec2';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { Duration } from 'aws-cdk-lib';
 
 interface FargateServiceProps {
   vpc: Vpc;
@@ -19,7 +21,7 @@ interface FargateServiceProps {
 }
 
 interface FargateServiceResult {
-  nlb: NetworkLoadBalancer;
+  alb: ApplicationLoadBalancer;
   service: FargateService;
   securityGroup: SecurityGroup;
 }
@@ -28,6 +30,25 @@ export function createFargateService(
   scope: Construct,
   props: FargateServiceProps
 ): FargateServiceResult {
+  // Create security group for the ALB
+  const albSecurityGroup = new SecurityGroup(scope, 'ALBSecurityGroup', {
+    vpc: props.vpc,
+    description: 'Security group for Application Load Balancer',
+    allowAllOutbound: true,
+  });
+
+  // Allow inbound HTTP and HTTPS traffic from anywhere
+  albSecurityGroup.addIngressRule(
+    Peer.anyIpv4(),
+    Port.tcp(80),
+    'Allow HTTP traffic from internet'
+  );
+  albSecurityGroup.addIngressRule(
+    Peer.anyIpv4(),
+    Port.tcp(443),
+    'Allow HTTPS traffic from internet'
+  );
+
   // Create security group for the ECS service
   const ecsSecurityGroup = new SecurityGroup(scope, 'ECSSecurityGroup', {
     vpc: props.vpc,
@@ -35,11 +56,11 @@ export function createFargateService(
     allowAllOutbound: true,
   });
 
-  // Allow inbound traffic on port 8080 from anywhere (NLB will forward traffic)
+  // Allow inbound traffic on port 8080 from ALB only
   ecsSecurityGroup.addIngressRule(
-    Peer.anyIpv4(),
+    albSecurityGroup,
     Port.tcp(8080),
-    'Allow traffic from NLB to ECS tasks'
+    'Allow traffic from ALB to ECS tasks'
   );
 
   // Add outbound rules for VPC endpoints (ECR, S3, CloudWatch Logs)
@@ -64,7 +85,7 @@ export function createFargateService(
   const service = new FargateService(scope, 'FargateWebSocketService', {
     cluster: props.cluster,
     taskDefinition: props.taskDef,
-    desiredCount: 0,
+    desiredCount: 2, // Always maintain redundancy
     assignPublicIp: false, // Tasks run in isolated private subnets
     vpcSubnets: {
       subnetType: SubnetType.PRIVATE_ISOLATED, // Use isolated subnets
@@ -72,23 +93,56 @@ export function createFargateService(
     securityGroups: [ecsSecurityGroup],
   });
 
-  const nlb = new NetworkLoadBalancer(scope, 'WebSocketNLB', {
+  const alb = new ApplicationLoadBalancer(scope, 'WebSocketALB', {
     vpc: props.vpc,
     internetFacing: true,
+    idleTimeout: Duration.seconds(300), // 5 minutes for long-lived WebSocket connections
+    securityGroup: albSecurityGroup,
     vpcSubnets: {
-      subnetType: SubnetType.PUBLIC, // NLB in public subnets
+      subnetType: SubnetType.PUBLIC, // ALB in public subnets
     },
   });
 
-  const listener = nlb.addListener('Listener', { port: 80 });
+  // Certificate ARN from environment variable
+  const certificateArn = process.env.ACM_CERTIFICATE_ARN || '<PLACEHOLDER>';
+  const certificate = Certificate.fromCertificateArn(scope, 'Certificate', certificateArn);
 
-  listener.addTargets('ECS', {
+  // HTTPS listener with certificate
+  const httpsListener = alb.addListener('HttpsListener', {
+    port: 443,
+    protocol: ApplicationProtocol.HTTPS,
+    certificates: [certificate],
+  });
+
+  // Add targets to HTTPS listener with sticky sessions and health checks
+  httpsListener.addTargets('ECS', {
     port: 8080,
+    protocol: ApplicationProtocol.HTTP, // wss:// -> ws:// internally
     targets: [service],
+    healthCheck: {
+      path: '/health',
+      interval: Duration.seconds(30),
+      timeout: Duration.seconds(5),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+    },
+    deregistrationDelay: Duration.seconds(30), // Graceful shutdown window
+    stickinessCookieDuration: Duration.hours(1), // Enable sticky sessions
+  });
+
+  // HTTP listener with redirect to HTTPS
+  alb.addListener('HttpListener', {
+    port: 80,
+    protocol: ApplicationProtocol.HTTP,
+    defaultAction: ListenerAction.redirect({
+      protocol: ApplicationProtocol.HTTPS,
+      port: '443',
+      permanent: true,
+    }),
   });
 
   return {
-    nlb,
+    alb,
     service,
     securityGroup: ecsSecurityGroup,
   };
