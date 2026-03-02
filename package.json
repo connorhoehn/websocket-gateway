@@ -35,6 +35,7 @@
     "constructs": "^10.0.0",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
+    "lru-cache": "^10.4.3",
     "redis": "^4.6.0",
     "ws": "^8.14.0"
   }
