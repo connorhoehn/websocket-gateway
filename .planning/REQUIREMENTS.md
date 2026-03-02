@@ -11,12 +11,12 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 
 - [ ] **SEC-01**: User authentication via Cognito JWT validation on WebSocket connect
 - [ ] **SEC-02**: Channel-level authorization (verify user can subscribe to requested channel)
-- [ ] **SEC-03**: Per-client rate limiting (100 msgs/sec general, 40/sec for cursor updates)
-- [ ] **SEC-04**: Input validation and schema validation at message routing layer
+- [x] **SEC-03**: Per-client rate limiting (100 msgs/sec general, 40/sec for cursor updates)
+- [x] **SEC-04**: Input validation and schema validation at message routing layer
 - [ ] **SEC-05**: TLS/SSL termination for wss:// connections (via ALB)
-- [ ] **SEC-06**: Message size limits to prevent memory exhaustion
-- [ ] **SEC-07**: Connection limits (per-IP and global) to prevent connection floods
-- [ ] **SEC-08**: CORS configuration for cross-origin WebSocket connections
+- [x] **SEC-06**: Message size limits to prevent memory exhaustion
+- [x] **SEC-07**: Connection limits (per-IP and global) to prevent connection floods
+- [x] **SEC-08**: CORS configuration for cross-origin WebSocket connections
 
 ### AWS Infrastructure Deployment
 
@@ -106,12 +106,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | SEC-01 | Phase 1 | Pending |
 | SEC-02 | Phase 1 | Pending |
-| SEC-03 | Phase 1 | Pending |
-| SEC-04 | Phase 1 | Pending |
+| SEC-03 | Phase 1 | Complete |
+| SEC-04 | Phase 1 | Complete |
 | SEC-05 | Phase 2 | Pending |
-| SEC-06 | Phase 1 | Pending |
-| SEC-07 | Phase 1 | Pending |
-| SEC-08 | Phase 1 | Pending |
+| SEC-06 | Phase 1 | Complete |
+| SEC-07 | Phase 1 | Complete |
+| SEC-08 | Phase 1 | Complete |
 | INFRA-01 | Phase 2 | Pending |
 | INFRA-02 | Phase 2 | Pending |
 | INFRA-03 | Phase 2 | Pending |
