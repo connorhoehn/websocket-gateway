@@ -1,5 +1,17 @@
 # Milestones
 
+## v1.1 Enhanced Reliability (Shipped: 2026-03-03)
+
+**Phases completed:** 1 phases, 4 plans, 2 tasks
+
+**Key accomplishments:**
+- Redis graceful degradation with local cache fallback - services survive Redis outages
+- WebSocket session token reconnection with 24hr expiry and subscription restoration
+- AWS IVS Chat integration with Lambda-based content moderation (optional feature)
+- Comprehensive IVS deployment documentation and migration tooling
+
+---
+
 ## v1.0 MVP - Production-Ready WebSocket Gateway (Shipped: 2026-03-03)
 
 **Phases completed:** 4 phases, 13 plans, 9 tasks

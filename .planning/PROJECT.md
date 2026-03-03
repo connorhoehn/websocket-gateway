@@ -53,13 +53,18 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ Periodic snapshot persistence (time/operation/disconnect triggers) — v1.0
 - ✓ Snapshot retrieval for client reconnection — v1.0
 
+<!-- Phase 05: Enhanced Reliability -->
+
+- ✓ Redis graceful degradation with local cache fallback — v1.1
+- ✓ WebSocket session token reconnection with subscription restoration — v1.1
+- ✓ AWS IVS Chat integration with Lambda-based moderation (optional) — v1.1
+- ✓ IVS Chat deployment documentation and migration tooling — v1.1
+
 ### Active
 
-<!-- Next milestone work -->
+<!-- Future work -->
 
-- [ ] Integrate AWS IVS for persistent chat (optional)
-- [ ] Connection state recovery with session tokens
-- [ ] Graceful Redis degradation (local cache fallback)
+- [ ] Additional reliability enhancements TBD
 
 ### Out of Scope
 
@@ -120,4 +125,4 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | AWS IVS for persistent chat | Managed chat service tied to video streaming, offloads chat persistence | — Deferred: Evaluate in v2 based on user needs |
 
 ---
-*Last updated: 2026-03-03 after v1.0 milestone completion*
+*Last updated: 2026-03-03 after v1.1 milestone completion*
