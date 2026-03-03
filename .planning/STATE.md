@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
-status: defining_requirements
+status: ready_to_plan
 last_updated: "2026-03-03T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
-  total_plans: 0
+  total_plans: 12
   completed_plans: 0
 ---
 
@@ -18,21 +18,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-03)
 
 **Core value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
-**Current focus:** Defining requirements for v1.2 Frontend Layer
+**Current focus:** Phase 6 — Foundation (React+Vite scaffold, useWebSocket hook, connection status UI)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-03 — Milestone v1.2 started
+Phase: 6 of 10 (Foundation)
+Plan: 0 of 3 in current phase
+Status: Ready to plan
+Last activity: 2026-03-03 — Roadmap created for v1.2 Frontend Layer
+
+Progress: [░░░░░░░░░░] 0% (v1.2: 0/12 plans)
 
 ## Performance Metrics
 
 **Velocity (prior milestones):**
-- Total plans completed: 16
+- Total plans completed: 17 (across v1.0 + v1.1)
 - Average duration: 5 min 2s
-- Total execution time: 1.31 hours
+- Total execution time: ~1.4 hours
 
 **By Phase:**
 
@@ -49,12 +51,12 @@ Last activity: 2026-03-03 — Milestone v1.2 started
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Key decisions from prior milestones affecting frontend work:
+Key decisions affecting v1.2 frontend work:
 
 - [Phase 01-01]: Cognito JWT auth — frontend must obtain and send valid Cognito JWT on connect
-- [Phase 05-02]: Session token reconnection with 24hr expiry — frontend hook should store/reuse session token
-- [Phase 04-01]: CRDT uses Y.js cumulative buffer snapshots — frontend needs yjs library for doc sync
-- [Phase 05-03]: IVS Chat optional via feature flag — frontend chat works without IVS deployed
+- [Phase 05-02]: Session token reconnection with 24hr expiry — useWebSocket hook should store/reuse session token
+- [Phase 04-01]: CRDT uses Y.js cumulative buffer snapshots — useCRDT hook needs yjs library for doc sync
+- [Phase 05-03]: IVS Chat optional via feature flag — chat component works without IVS deployed
 
 ### Pending Todos
 
@@ -67,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Started milestone v1.2 — defining requirements
+Stopped at: Roadmap created — ready to plan Phase 6
 Resume file: None
