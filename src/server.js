@@ -174,27 +174,27 @@ class DistributedWebSocketServer {
 
     async initializeServices() {
         this.logger.info(`Initializing services: ${config.server.enabledServices.join(', ')}`);
-        
+
         if (config.server.enabledServices.includes('chat')) {
-            const chatService = new ChatService(this.messageRouter, this.logger);
+            const chatService = new ChatService(this.messageRouter, this.logger, this.metricsCollector);
             this.services.set('chat', chatService);
             this.logger.info('✅ Chat service initialized');
         }
-        
+
         if (config.server.enabledServices.includes('presence')) {
-            const presenceService = new PresenceService(this.messageRouter, this.nodeManager, this.logger);
+            const presenceService = new PresenceService(this.messageRouter, this.nodeManager, this.logger, this.metricsCollector);
             this.services.set('presence', presenceService);
             this.logger.info('✅ Presence service initialized');
         }
-        
+
         if (config.server.enabledServices.includes('cursor')) {
-            const cursorService = new CursorService(this.messageRouter, this.logger);
+            const cursorService = new CursorService(this.messageRouter, this.logger, this.metricsCollector);
             this.services.set('cursor', cursorService);
             this.logger.info('✅ Cursor service initialized');
         }
-        
+
         if (config.server.enabledServices.includes('reaction')) {
-            const reactionService = new ReactionService(this.messageRouter, this.logger);
+            const reactionService = new ReactionService(this.messageRouter, this.logger, this.metricsCollector);
             this.services.set('reaction', reactionService);
             this.logger.info('✅ Reaction service initialized');
         }
@@ -254,7 +254,15 @@ class DistributedWebSocketServer {
                     this.wss.emit('connection', ws, request, userContext);
                 });
             } catch (error) {
-                this.logger.error(`Authentication failed: ${error.message}`);
+                // Record connection failure metric for CloudWatch alarm
+                this.metricsCollector.recordMetric('ConnectionFailures', 1);
+
+                this.logger.error('Connection authentication failed', {
+                    ip: request.socket.remoteAddress,
+                    reason: 'invalid_token',
+                    error: error.message
+                });
+
                 socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
                 socket.destroy();
             }

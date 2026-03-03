@@ -26,6 +26,9 @@ class MetricsCollector {
         this.activeConnections = 0;
         this.messageCount = 0;
 
+        // Custom metrics for alarms (connection failures, authorization denials)
+        this.customMetrics = [];
+
         // Latency histogram buckets (in milliseconds)
         // Buckets: 0-10ms, 10-50ms, 50-100ms, 100-500ms, 500ms+
         this.latencyBuckets = {
@@ -114,6 +117,51 @@ class MetricsCollector {
     }
 
     /**
+     * Record a custom metric for CloudWatch alarms
+     * @param {string} metricName - Name of the metric (e.g., ConnectionFailures, AuthorizationDenials)
+     * @param {number} value - Metric value
+     * @param {string} unit - CloudWatch unit (default: Count)
+     */
+    recordMetric(metricName, value, unit = 'Count') {
+        this.customMetrics.push({
+            MetricName: metricName,
+            Value: value,
+            Unit: unit,
+            Timestamp: new Date(),
+            Dimensions: [
+                {
+                    Name: 'ServiceName',
+                    Value: 'websocket-gateway'
+                }
+            ]
+        });
+    }
+
+    /**
+     * Record an error by code, mapping to the appropriate CloudWatch metric
+     * @param {string} errorCode - Error code from ErrorCodes
+     */
+    recordError(errorCode) {
+        // Map error codes to metric names
+        const metricNameMap = {
+            'AUTHZ_': 'AuthorizationDenials',
+            'INVALID_': 'ValidationErrors',
+            'RATE_LIMIT_': 'RateLimitExceeded',
+            'SERVICE_': 'ServiceErrors',
+        };
+
+        let metricName = 'UnknownErrors';
+        for (const [prefix, name] of Object.entries(metricNameMap)) {
+            if (errorCode.startsWith(prefix)) {
+                metricName = name;
+                break;
+            }
+        }
+
+        this.recordMetric(metricName, 1);
+    }
+
+    /**
      * Get current metrics summary
      * @returns {Object} Current metrics
      */
@@ -178,6 +226,18 @@ class MetricsCollector {
                 StorageResolution: 60
             });
 
+            // Add custom metrics (connection failures, authorization denials)
+            for (const customMetric of this.customMetrics) {
+                metricData.push({
+                    MetricName: customMetric.MetricName,
+                    Value: customMetric.Value,
+                    Unit: customMetric.Unit,
+                    Timestamp: customMetric.Timestamp,
+                    Dimensions: customMetric.Dimensions,
+                    StorageResolution: 60
+                });
+            }
+
             // Send metrics to CloudWatch (batched)
             const command = new PutMetricDataCommand({
                 Namespace: this.namespace,
@@ -190,6 +250,7 @@ class MetricsCollector {
 
             // Reset per-interval counters after successful flush
             this.messageCount = 0;
+            this.customMetrics = [];
 
             // Reset latency histogram for next interval
             for (const bucket in this.latencyBuckets) {

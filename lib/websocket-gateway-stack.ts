@@ -6,6 +6,8 @@ import { createTaskDefinition } from './task-definition';
 import { createFargateService } from './fargate-service';
 import { createRedis } from './redis';
 import { createDashboard } from './dashboard';
+import { createAlarmTopic } from './sns';
+import { createAlarms } from './alarms';
 
 export class WebsocketGatewayStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -41,6 +43,13 @@ export class WebsocketGatewayStack extends Stack {
       alb: fargateResources.alb,
     });
 
+    // Create SNS topic for alarms
+    const alarmEmail = process.env.ALARM_EMAIL;
+    const alarmTopic = createAlarmTopic(this, alarmEmail);
+
+    // Create CloudWatch alarms
+    createAlarms(this, fargateResources.service, alarmTopic);
+
     // Output WebSocket URL (HTTPS for secure WebSocket connections)
     new CfnOutput(this, 'WebSocketURL', {
       value: `wss://${fargateResources.alb.loadBalancerDnsName}`,
@@ -49,6 +58,11 @@ export class WebsocketGatewayStack extends Stack {
     new CfnOutput(this, 'DashboardURL', {
       value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=WebSocketGateway-Operations`,
       description: 'CloudWatch Dashboard URL',
+    });
+
+    new CfnOutput(this, 'AlarmTopicArn', {
+      value: alarmTopic.topicArn,
+      description: 'SNS topic ARN for CloudWatch alarms',
     });
 
     // Output all resource ARNs

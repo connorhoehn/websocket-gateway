@@ -8,10 +8,11 @@
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 
 class CursorService {
-    constructor(messageRouter, logger, redisClient = null) {
+    constructor(messageRouter, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
-        this.redisClient = redisClient;
+        this.metricsCollector = metricsCollector;
+        this.redisClient = null; // Legacy parameter, not used
         
         // Local state management (fallback when Redis is not available)
         this.clientCursors = new Map(); // clientId -> cursor data
@@ -251,7 +252,7 @@ class CursorService {
             }
 
             try {
-                checkChannelPermission(clientData.userContext, channel, this.logger);
+                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
                     this.sendError(clientId, error.message);

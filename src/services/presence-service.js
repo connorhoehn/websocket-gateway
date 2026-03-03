@@ -7,10 +7,11 @@
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 
 class PresenceService {
-    constructor(messageRouter, nodeManager, logger) {
+    constructor(messageRouter, nodeManager, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
         this.nodeManager = nodeManager;
         this.logger = logger;
+        this.metricsCollector = metricsCollector;
 
         // Local state management
         this.clientPresence = new Map(); // clientId -> presence data
@@ -148,7 +149,7 @@ class PresenceService {
             }
 
             try {
-                checkChannelPermission(clientData.userContext, channel, this.logger);
+                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
                     this.sendError(clientId, error.message);

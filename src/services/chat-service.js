@@ -8,9 +8,10 @@ const { checkChannelPermission, AuthzError } = require('../middleware/authz-midd
 const LRU = require('lru-cache');
 
 class ChatService {
-    constructor(messageRouter, logger) {
+    constructor(messageRouter, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
+        this.metricsCollector = metricsCollector;
 
         // Local state management
         this.clientChannels = new Map(); // clientId -> Set of channels
@@ -71,7 +72,7 @@ class ChatService {
             }
 
             try {
-                checkChannelPermission(clientData.userContext, channel, this.logger);
+                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
                     this.sendError(clientId, error.message);
