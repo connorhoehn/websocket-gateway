@@ -242,7 +242,7 @@ class PresenceService {
 
     async broadcastPresenceUpdate(presenceData) {
         const { channels, clientId } = presenceData;
-        
+
         const message = {
             type: 'presence',
             action: 'update',
@@ -250,9 +250,13 @@ class PresenceService {
             timestamp: new Date().toISOString()
         };
 
+        // Check if Redis is available
+        const redisAvailable = this.messageRouter && this.messageRouter.redisAvailable !== false;
+
         // Broadcast to all channels the client is in
         for (const channel of channels) {
             if (this.isDistributed) {
+                // MessageRouter will handle fallback to local-only broadcast if Redis is down
                 await this.messageRouter.sendToChannel(
                     `presence:${channel}`,
                     message,
@@ -261,6 +265,10 @@ class PresenceService {
             } else {
                 await this.broadcastToLocalClients(channel, message, clientId);
             }
+        }
+
+        if (!redisAvailable && channels.length > 0) {
+            this.logger.debug(`Redis unavailable, presence update local only`);
         }
     }
 

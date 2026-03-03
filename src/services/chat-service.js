@@ -267,11 +267,19 @@ class ChatService {
         };
 
         if (this.isDistributed) {
+            // Check if Redis is available
+            const redisAvailable = this.messageRouter.redisAvailable !== false;
+
             // In distributed mode, publish to Redis channel
+            // MessageRouter will handle fallback to local-only broadcast if Redis is down
             await this.messageRouter.sendToChannel(
                 channel,
                 broadcastMessage
             );
+
+            if (!redisAvailable) {
+                this.logger.debug(`Redis unavailable, message delivered to local clients only`);
+            }
         } else {
             // In local mode, broadcast directly to local clients
             await this.broadcastToLocalClients(channel, broadcastMessage);

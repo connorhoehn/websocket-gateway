@@ -141,8 +141,11 @@ class CursorService {
         // ALWAYS write to local cache first (cache-aside pattern)
         this.storeLocalCursorData(clientId, channel, cursorData);
 
+        // Check if Redis is available via messageRouter
+        const redisAvailable = this.messageRouter && this.messageRouter.redisAvailable !== false;
+
         // Then try to write to Redis if available
-        if (this.useRedis) {
+        if (this.useRedis && redisAvailable) {
             try {
                 // Store client cursor data with TTL
                 await this.redisClient.setEx(
@@ -168,6 +171,8 @@ class CursorService {
             } catch (error) {
                 this.logger.warn(`Redis write failed for client ${clientId}, using local cache only: ${error.message}`);
             }
+        } else if (!redisAvailable) {
+            this.logger.debug(`Redis unavailable, cursor cached locally only for client ${clientId}`);
         }
     }
 
