@@ -1,24 +1,38 @@
-const IvsChatService = require('../src/services/ivs-chat-service');
-const { IvschatClient, CreateChatTokenCommand, SendMessageCommand, ListMessagesCommand } = require('@aws-sdk/client-ivschat');
+// Mock AWS SDK before importing the service
+const mockSend = jest.fn();
+const mockIvschatClient = jest.fn();
+const mockCreateChatTokenCommand = jest.fn();
+const mockSendMessageCommand = jest.fn();
+const mockListMessagesCommand = jest.fn();
 
-// Mock AWS SDK
-jest.mock('@aws-sdk/client-ivschat');
+jest.mock('@aws-sdk/client-ivschat', () => ({
+  IvschatClient: mockIvschatClient,
+  CreateChatTokenCommand: mockCreateChatTokenCommand,
+  SendMessageCommand: mockSendMessageCommand,
+  ListMessagesCommand: mockListMessagesCommand
+}));
+
+const IvsChatService = require('../src/services/ivs-chat-service');
 
 describe('IvsChatService', () => {
   let service;
   let mockMessageRouter;
   let mockLogger;
-  let mockIvsClient;
 
   beforeEach(() => {
     // Reset mocks
     jest.clearAllMocks();
+    mockSend.mockReset();
 
-    // Mock IVS Client
-    mockIvsClient = {
-      send: jest.fn()
-    };
-    IvschatClient.mockImplementation(() => mockIvsClient);
+    // Setup AWS SDK client mock
+    mockIvschatClient.mockImplementation(() => ({
+      send: mockSend
+    }));
+
+    // Setup command mocks to return objects with input property
+    mockCreateChatTokenCommand.mockImplementation((input) => ({ input }));
+    mockSendMessageCommand.mockImplementation((input) => ({ input }));
+    mockListMessagesCommand.mockImplementation((input) => ({ input }));
 
     // Mock MessageRouter
     mockMessageRouter = {
@@ -50,7 +64,7 @@ describe('IvsChatService', () => {
       const userContext = { sub: 'user-456', email: 'test@example.com' };
 
       mockMessageRouter.getClientData.mockReturnValue({ userContext });
-      mockIvsClient.send.mockResolvedValue({
+      mockSend.mockResolvedValue({
         token: 'mock-ivs-token',
         tokenExpirationTime: new Date('2026-03-03T15:00:00Z')
       });
@@ -61,11 +75,11 @@ describe('IvsChatService', () => {
       await service.handleGetChatToken(clientId, { channel: 'test-channel' });
 
       // Assert
-      expect(mockIvsClient.send).toHaveBeenCalledWith(
-        expect.any(CreateChatTokenCommand)
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.any(Object) })
       );
 
-      const command = mockIvsClient.send.mock.calls[0][0];
+      const command = mockSend.mock.calls[0][0];
       expect(command.input.roomIdentifier).toBe('arn:aws:ivschat:us-east-1:123456789012:room/test-room');
       expect(command.input.userId).toBe('user-456');
       expect(command.input.capabilities).toContain('SEND_MESSAGE');
@@ -88,7 +102,7 @@ describe('IvsChatService', () => {
       await service.handleGetChatToken('client-123', { channel: 'test' });
 
       // Assert
-      expect(mockIvsClient.send).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
       expect(mockMessageRouter.sendToClient).toHaveBeenCalledWith('client-123', {
         type: 'error',
         service: 'ivs-chat',
@@ -104,18 +118,18 @@ describe('IvsChatService', () => {
       const channel = 'test-channel';
       const message = 'Hello from IVS';
 
-      mockIvsClient.send.mockResolvedValue({});
+      mockSend.mockResolvedValue({});
       service = new IvsChatService(mockMessageRouter, mockLogger);
 
       // Act
       await service.handleSendMessage(clientId, { channel, message });
 
       // Assert
-      expect(mockIvsClient.send).toHaveBeenCalledWith(
-        expect.any(SendMessageCommand)
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.any(Object) })
       );
 
-      const command = mockIvsClient.send.mock.calls[0][0];
+      const command = mockSend.mock.calls[0][0];
       expect(command.input.roomIdentifier).toBe('arn:aws:ivschat:us-east-1:123456789012:room/test-room');
       expect(command.input.content).toBe('Hello from IVS');
       expect(command.input.attributes).toEqual({
@@ -135,7 +149,7 @@ describe('IvsChatService', () => {
       const clientId = 'client-123';
       const channel = 'test-channel';
 
-      mockIvsClient.send.mockResolvedValue({
+      mockSend.mockResolvedValue({
         messages: [
           {
             Id: 'msg-1',
@@ -167,11 +181,11 @@ describe('IvsChatService', () => {
       await service.handleGetHistory(clientId, { channel, limit: 50 });
 
       // Assert
-      expect(mockIvsClient.send).toHaveBeenCalledWith(
-        expect.any(ListMessagesCommand)
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({ input: expect.any(Object) })
       );
 
-      const command = mockIvsClient.send.mock.calls[0][0];
+      const command = mockSend.mock.calls[0][0];
       expect(command.input.roomIdentifier).toBe('arn:aws:ivschat:us-east-1:123456789012:room/test-room');
       expect(command.input.maxResults).toBe(50);
 
@@ -219,7 +233,7 @@ describe('IvsChatService', () => {
       await service.handleAction('client-123', 'send', { channel: 'test', message: 'Hello' });
 
       // Assert
-      expect(mockIvsClient.send).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
       expect(mockMessageRouter.sendToClient).toHaveBeenCalledWith('client-123', {
         type: 'error',
         service: 'ivs-chat',
@@ -232,7 +246,7 @@ describe('IvsChatService', () => {
     it('should handle IVS API errors gracefully', async () => {
       // Arrange
       mockMessageRouter.getClientData.mockReturnValue({ userContext: { sub: 'user-1' } });
-      mockIvsClient.send.mockRejectedValue(new Error('IVS API Error'));
+      mockSend.mockRejectedValue(new Error('IVS API Error'));
       service = new IvsChatService(mockMessageRouter, mockLogger);
 
       // Act
@@ -240,7 +254,7 @@ describe('IvsChatService', () => {
 
       // Assert
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('IVS Chat error'),
+        expect.stringContaining('IVS Chat error for client client-123'),
         expect.any(Error)
       );
       expect(mockMessageRouter.sendToClient).toHaveBeenCalledWith('client-123', {
