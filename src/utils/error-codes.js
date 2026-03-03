@@ -1,0 +1,101 @@
+/**
+ * Standardized error codes for WebSocket Gateway
+ * Format: CATEGORY_DESCRIPTION
+ *
+ * Categories:
+ * - AUTH: Authentication failures
+ * - AUTHZ: Authorization failures
+ * - RATE_LIMIT: Rate limiting
+ * - VALIDATION: Input validation
+ * - SERVICE: Service-level errors
+ */
+const ErrorCodes = {
+  // Authentication (401 Unauthorized)
+  AUTH_TOKEN_MISSING: 'AUTH_TOKEN_MISSING',
+  AUTH_TOKEN_EXPIRED: 'AUTH_TOKEN_EXPIRED',
+  AUTH_TOKEN_INVALID: 'AUTH_TOKEN_INVALID',
+  AUTH_FAILED: 'AUTH_FAILED',
+
+  // Authorization (403 Forbidden)
+  AUTHZ_FORBIDDEN: 'AUTHZ_FORBIDDEN',
+  AUTHZ_CHANNEL_DENIED: 'AUTHZ_CHANNEL_DENIED',
+  AUTHZ_ADMIN_REQUIRED: 'AUTHZ_ADMIN_REQUIRED',
+
+  // Rate Limiting (429 Too Many Requests)
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+  RATE_LIMIT_MESSAGE_QUOTA: 'RATE_LIMIT_MESSAGE_QUOTA',
+  RATE_LIMIT_CURSOR_QUOTA: 'RATE_LIMIT_CURSOR_QUOTA',
+
+  // Validation (400 Bad Request)
+  INVALID_MESSAGE: 'INVALID_MESSAGE',
+  INVALID_MESSAGE_STRUCTURE: 'INVALID_MESSAGE_STRUCTURE',
+  INVALID_MESSAGE_SERVICE: 'INVALID_MESSAGE_SERVICE',
+  INVALID_CHANNEL_NAME: 'INVALID_CHANNEL_NAME',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+
+  // Service Errors (500 Internal Server Error)
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  SERVICE_REDIS_ERROR: 'SERVICE_REDIS_ERROR',
+  SERVICE_INTERNAL_ERROR: 'SERVICE_INTERNAL_ERROR',
+
+  // Connection Errors (503 Service Unavailable)
+  CONNECTION_LIMIT_EXCEEDED: 'CONNECTION_LIMIT_EXCEEDED',
+  CONNECTION_IP_LIMIT_EXCEEDED: 'CONNECTION_IP_LIMIT_EXCEEDED',
+};
+
+/**
+ * Map error codes to HTTP status codes
+ */
+const ErrorCodeToStatus = {
+  // 401
+  AUTH_TOKEN_MISSING: 401,
+  AUTH_TOKEN_EXPIRED: 401,
+  AUTH_TOKEN_INVALID: 401,
+  AUTH_FAILED: 401,
+
+  // 403
+  AUTHZ_FORBIDDEN: 403,
+  AUTHZ_CHANNEL_DENIED: 403,
+  AUTHZ_ADMIN_REQUIRED: 403,
+
+  // 429
+  RATE_LIMIT_EXCEEDED: 429,
+  RATE_LIMIT_MESSAGE_QUOTA: 429,
+  RATE_LIMIT_CURSOR_QUOTA: 429,
+
+  // 400
+  INVALID_MESSAGE: 400,
+  INVALID_MESSAGE_STRUCTURE: 400,
+  INVALID_MESSAGE_SERVICE: 400,
+  INVALID_CHANNEL_NAME: 400,
+  PAYLOAD_TOO_LARGE: 400,
+
+  // 500
+  SERVICE_UNAVAILABLE: 500,
+  SERVICE_REDIS_ERROR: 500,
+  SERVICE_INTERNAL_ERROR: 500,
+
+  // 503
+  CONNECTION_LIMIT_EXCEEDED: 503,
+  CONNECTION_IP_LIMIT_EXCEEDED: 503,
+};
+
+/**
+ * Create standardized error response
+ */
+function createErrorResponse(code, message, context = {}) {
+  return {
+    error: {
+      code,
+      message,
+      timestamp: new Date().toISOString(),
+      ...context,
+    },
+  };
+}
+
+module.exports = {
+  ErrorCodes,
+  ErrorCodeToStatus,
+  createErrorResponse,
+};
