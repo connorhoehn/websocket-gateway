@@ -84,8 +84,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — DynamoDB table setup and CRDT operation broadcasting
-- [ ] 04-02-PLAN.md — Snapshot persistence with time/operation/disconnect triggers
+- [x] 04-01-PLAN.md — DynamoDB table setup and CRDT operation broadcasting
+- [x] 04-02-PLAN.md — Snapshot persistence with time/operation/disconnect triggers
 - [ ] 04-03-PLAN.md — Snapshot retrieval for client reconnection
 
 ### Phase 5: Enhanced Reliability (Optional)
@@ -113,5 +113,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Security Hardening | 0/TBD | Not started | - |
 | 2. AWS Infrastructure Foundation | 0/TBD | Not started | - |
 | 3. Monitoring & Observability | 3/3 | Complete   | 2026-03-03 |
-| 4. Persistent State & CRDT Support | 0/TBD | Not started | - |
+| 4. Persistent State & CRDT Support | 2/3 | In Progress | - |
 | 5. Enhanced Reliability (Optional) | 0/TBD | Not started | - |

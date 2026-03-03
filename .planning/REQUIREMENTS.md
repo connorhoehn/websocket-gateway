@@ -49,7 +49,7 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 
 - [x] **PERSIST-01**: Add DynamoDB table for CRDT snapshots with TTL
 - [x] **PERSIST-02**: Implement CRDT operation broadcasting via existing Redis pub/sub
-- [ ] **PERSIST-03**: Implement periodic CRDT snapshot writes to DynamoDB (every 5 minutes)
+- [x] **PERSIST-03**: Implement periodic CRDT snapshot writes to DynamoDB (every 5 minutes)
 - [ ] **PERSIST-04**: Add CRDT snapshot retrieval on client reconnection
 
 ### AWS IVS Chat Integration (Optional)
@@ -132,7 +132,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-05 | Phase 5 | Pending |
 | PERSIST-01 | Phase 4 | Complete |
 | PERSIST-02 | Phase 4 | Complete |
-| PERSIST-03 | Phase 4 | Pending |
+| PERSIST-03 | Phase 4 | Complete |
 | PERSIST-04 | Phase 4 | Pending |
 | IVS-01 | Phase 5 | Pending (Optional) |
 | IVS-02 | Phase 5 | Pending (Optional) |
