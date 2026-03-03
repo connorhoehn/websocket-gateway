@@ -5,6 +5,7 @@ import { createCluster } from './cluster';
 import { createTaskDefinition } from './task-definition';
 import { createFargateService } from './fargate-service';
 import { createRedis } from './redis';
+import { createDashboard } from './dashboard';
 
 export class WebsocketGatewayStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -32,9 +33,22 @@ export class WebsocketGatewayStack extends Stack {
       redisSecurityGroup: redis?.securityGroup,
     });
 
+    // Create CloudWatch Dashboard
+    createDashboard(this, {
+      ecsService: fargateResources.service,
+      ecsCluster: cluster,
+      redisCluster: redis?.replicationGroup,
+      alb: fargateResources.alb,
+    });
+
     // Output WebSocket URL (HTTPS for secure WebSocket connections)
     new CfnOutput(this, 'WebSocketURL', {
       value: `wss://${fargateResources.alb.loadBalancerDnsName}`,
+    });
+
+    new CfnOutput(this, 'DashboardURL', {
+      value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=WebSocketGateway-Operations`,
+      description: 'CloudWatch Dashboard URL',
     });
 
     // Output all resource ARNs
