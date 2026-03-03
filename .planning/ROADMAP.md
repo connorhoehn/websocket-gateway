@@ -43,7 +43,7 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full details
 Plans:
 - [ ] 05-01-PLAN.md — Redis degradation with graceful fallback
 - [ ] 05-02-PLAN.md — Session recovery with reconnection tokens
-- [ ] 05-03-PLAN.md — IVS Chat integration (optional)
+- [x] 05-03-PLAN.md — IVS Chat integration (optional) — completed 2026-03-03
 
 ## Progress
 
@@ -55,7 +55,7 @@ Plans:
 | 2. AWS Infrastructure Foundation | v1.0 | 4/4 | Complete | 2026-03-02 |
 | 3. Monitoring & Observability | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 4. Persistent State & CRDT Support | v1.0 | 3/3 | Complete | 2026-03-03 |
-| 5. Enhanced Reliability (Optional) | v1.1 | 0/3 | Not started | - |
+| 5. Enhanced Reliability (Optional) | v1.1 | 1/3 | In Progress | - |
 
 ---
 
