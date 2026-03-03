@@ -16,6 +16,7 @@ const ChatService = require("./services/chat-service");
 const PresenceService = require("./services/presence-service");
 const CursorService = require("./services/cursor-service");
 const ReactionService = require("./services/reaction-service");
+const CRDTService = require("./services/crdt-service");
 
 // Configuration
 const config = {
@@ -26,7 +27,7 @@ const config = {
     },
     server: {
         port: process.env.PORT || 8080,
-        enabledServices: (process.env.ENABLED_SERVICES || 'chat,presence,cursor,reaction').split(',')
+        enabledServices: (process.env.ENABLED_SERVICES || 'chat,presence,cursor,reaction,crdt').split(',')
     }
 };
 
@@ -197,6 +198,12 @@ class DistributedWebSocketServer {
             const reactionService = new ReactionService(this.messageRouter, this.logger, this.metricsCollector);
             this.services.set('reaction', reactionService);
             this.logger.info('✅ Reaction service initialized');
+        }
+
+        if (config.server.enabledServices.includes('crdt')) {
+            const crdtService = new CRDTService(this.messageRouter, this.logger, this.metricsCollector);
+            this.services.set('crdt', crdtService);
+            this.logger.info('✅ CRDT service initialized');
         }
     }
 
