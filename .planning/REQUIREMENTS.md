@@ -1,102 +1,72 @@
-# Requirements: WebSocket Gateway - AWS Migration & Hardening
+# Requirements: WebSocket Gateway Frontend Layer
 
-**Defined:** 2026-03-02
-**Core Value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data
+**Defined:** 2026-03-03
+**Milestone:** v1.2 Frontend Layer
+**Core Value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models would be cost-prohibitive at scale.
 
-## v1 Requirements
+## v1.2 Requirements
 
-Requirements for production-ready AWS deployment. Each maps to roadmap phases.
+### Connection & Auth
 
-### Security (Critical - Blocks Production)
+- [ ] **CONN-01**: User can connect to the WebSocket gateway using a Cognito JWT configured via `.env`
+- [ ] **CONN-02**: UI displays connection status (connecting / connected / disconnected / reconnecting)
+- [ ] **CONN-03**: UI automatically reconnects using session token on disconnect
+- [ ] **CONN-04**: Connection errors display inline with error code and human-readable message
+- [ ] **CONN-05**: User can switch channels without reloading the page
 
-- [x] **SEC-01**: User authentication via Cognito JWT validation on WebSocket connect
-- [x] **SEC-02**: Channel-level authorization (verify user can subscribe to requested channel)
-- [x] **SEC-03**: Per-client rate limiting (100 msgs/sec general, 40/sec for cursor updates)
-- [x] **SEC-04**: Input validation and schema validation at message routing layer
-- [x] **SEC-05**: TLS/SSL termination for wss:// connections (via ALB)
-- [x] **SEC-06**: Message size limits to prevent memory exhaustion
-- [x] **SEC-07**: Connection limits (per-IP and global) to prevent connection floods
-- [x] **SEC-08**: CORS configuration for cross-origin WebSocket connections
+### Presence
 
-### AWS Infrastructure Deployment
+- [ ] **PRES-01**: User can see a live list of connected users in the current channel
+- [ ] **PRES-02**: User list updates in real-time as tabs join and leave
+- [ ] **PRES-03**: Typing indicators show when other users are active in the channel
 
-- [x] **INFRA-01**: Deploy WebSocket server to ECS Fargate with Docker containers
-- [x] **INFRA-02**: Configure Application Load Balancer with sticky sessions and 300s idle timeout
-- [x] **INFRA-03**: Migrate to ElastiCache Redis (Multi-AZ, automatic failover)
-- [x] **INFRA-04**: Set up VPC with isolated subnets and VPC endpoints (no NAT gateway)
-- [x] **INFRA-05**: Configure ECS auto-scaling based on connection count (5000/task threshold)
-- [x] **INFRA-06**: Implement graceful shutdown and connection draining (30s deregistration delay)
-- [x] **INFRA-07**: Add health check HTTP endpoint for ALB routing
-- [x] **INFRA-08**: Configure server-side ping/pong to keep connections alive
+### Cursors
 
-### Monitoring & Observability
+- [ ] **CURS-01**: User's cursor broadcasts to other tabs in real-time on a shared canvas
+- [ ] **CURS-02**: Other users' cursors render with per-user color and label
+- [ ] **CURS-03**: Cursors fade out when a tab disconnects
 
-- [x] **MON-01**: Emit CloudWatch custom metrics (connection count, messages/sec, latency)
-- [x] **MON-02**: Configure structured logging with JSON format and correlation IDs
-- [x] **MON-03**: Set up CloudWatch alarms for critical metrics (error rate, memory, connections)
-- [x] **MON-04**: Create CloudWatch dashboard for real-time system visibility
-- [x] **MON-05**: Add error codes and standardized error response format
+### Chat
 
-### Reliability & Resilience
+- [ ] **CHAT-01**: User can send text messages to the current channel
+- [ ] **CHAT-02**: Last 100 messages load from history on join
+- [ ] **CHAT-03**: New messages from other tabs appear in real-time
 
-- [x] **REL-01**: Fix memory leak in presence service (unbounded clientPresence Map growth)
-- [x] **REL-02**: Fix memory leak in chat service (no TTL on channelHistory Map)
-- [x] **REL-03**: Fix cursor service Redis fallback logic (queries only Redis, not local storage)
-- [ ] **REL-04**: Implement graceful Redis degradation (local cache during outage)
-- [ ] **REL-05**: Add connection state recovery (session token + reconnection with same clientId)
+### CRDT
 
-### Persistent State (CRDT Support)
+- [ ] **CRDT-01**: User can edit a shared text document that syncs across tabs in real-time
+- [ ] **CRDT-02**: Concurrent edits from multiple tabs merge correctly using Y.js
+- [ ] **CRDT-03**: Document state restores from DynamoDB snapshot on reconnect
 
-- [x] **PERSIST-01**: Add DynamoDB table for CRDT snapshots with TTL
-- [x] **PERSIST-02**: Implement CRDT operation broadcasting via existing Redis pub/sub
-- [x] **PERSIST-03**: Implement periodic CRDT snapshot writes to DynamoDB (every 5 minutes)
-- [x] **PERSIST-04**: Add CRDT snapshot retrieval on client reconnection
+### Reactions
 
-### AWS IVS Chat Integration (Optional)
+- [ ] **REAC-01**: User can send an emoji reaction that broadcasts to the channel
+- [ ] **REAC-02**: Incoming reactions appear ephemerally with an animation
 
-- [ ] **IVS-01**: Integrate AWS IVS Chat service for persistent chat with moderation
-- [ ] **IVS-02**: Configure IVS Chat webhooks for message events
-- [ ] **IVS-03**: Migrate chat persistence from in-memory to IVS backend
+### Dev Tools
 
-## v2 Requirements
+- [ ] **DEV-01**: Real-time event log shows all WebSocket messages sent and received
+- [ ] **DEV-02**: Error panel displays error code, message, and timestamp
+- [ ] **DEV-03**: User can manually trigger disconnect/reconnect to test recovery flow
 
-Deferred to future release. Tracked but not in current roadmap.
+## Future Requirements
 
-### Enhanced Collaboration
+### Enhancements
 
-- **COLLAB-01**: Message replay (clients request message history after reconnect)
-- **COLLAB-02**: Presence enrichment (typing indicators, custom status, away detection)
-- **COLLAB-03**: Cursor replay (show historical cursor trails)
-- **COLLAB-04**: Message compression (gzip/brotli for high-frequency updates)
-
-### Advanced Scaling
-
-- **SCALE-01**: Multi-region active-active deployment with cross-region Redis replication
-- **SCALE-02**: Geographic routing (Route 53 latency-based DNS)
-- **SCALE-03**: Dead letter queue for failed message deliveries
-- **SCALE-04**: Custom service plugin system (dynamic service loading)
-
-### Developer Experience
-
-- **DEV-01**: WebRTC signaling support for P2P video/audio
-- **DEV-02**: Client SDK with auto-reporting of connection quality metrics
-- **DEV-03**: API Gateway HTTP REST fallback for non-realtime operations
+- Multi-room support (join multiple channels simultaneously)
+- User avatar/display name configuration
+- Chat message reactions (emoji on specific messages)
+- Cursor history trails
 
 ## Out of Scope
 
-Explicitly excluded. Documented to prevent scope creep.
-
 | Feature | Reason |
 |---------|--------|
-| Lambda/AppSync for cursor updates | Per-message pricing costs $10k-20k/month vs $60/month self-hosted at scale |
-| AWS IoT Core for pub/sub | $1/million messages = $10k/month vs unlimited Redis pub/sub for $82/month |
-| Message persistence in WebSocket gateway | Mixing concerns; use dedicated services (IVS for chat, DynamoDB for snapshots) |
-| Exactly-once delivery guarantees | Requires distributed transactions; massive complexity for marginal benefit |
-| Complex authentication logic in gateway | Auth belongs in separate service; gateway only validates JWT claims |
-| User management in gateway | Don't rebuild Cognito; use managed service for users |
-| Real-time analytics in gateway | Analytics adds overhead; stream to Kinesis/Firehose for separate processing |
-| Mobile native apps | Web-first; mobile apps deferred to v2+ |
-| EC2 instance management | Use ECS Fargate for Docker consistency and no instance ops |
+| User signup/registration flow | Personal dev toolbox — single user with Cognito JWT via env |
+| Marketplace distribution | Internal template/skills library only |
+| Mobile responsive design | Desktop developer toolbox, multi-tab workflow |
+| Real-time video/audio | Out of gateway scope |
+| Message persistence beyond gateway | DynamoDB snapshots handle CRDT; chat history is in-memory LRU |
 
 ## Traceability
 
@@ -104,45 +74,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 1 | Complete |
-| SEC-02 | Phase 1 | Complete |
-| SEC-03 | Phase 1 | Complete |
-| SEC-04 | Phase 1 | Complete |
-| SEC-05 | Phase 2 | Complete |
-| SEC-06 | Phase 1 | Complete |
-| SEC-07 | Phase 1 | Complete |
-| SEC-08 | Phase 1 | Complete |
-| INFRA-01 | Phase 2 | Complete |
-| INFRA-02 | Phase 2 | Complete |
-| INFRA-03 | Phase 2 | Complete |
-| INFRA-04 | Phase 2 | Complete |
-| INFRA-05 | Phase 2 | Complete |
-| INFRA-06 | Phase 2 | Complete |
-| INFRA-07 | Phase 2 | Complete |
-| INFRA-08 | Phase 2 | Complete |
-| MON-01 | Phase 3 | Complete |
-| MON-02 | Phase 3 | Complete |
-| MON-03 | Phase 3 | Complete |
-| MON-04 | Phase 3 | Complete |
-| MON-05 | Phase 3 | Complete |
-| REL-01 | Phase 1 | Complete |
-| REL-02 | Phase 1 | Complete |
-| REL-03 | Phase 1 | Complete |
-| REL-04 | Phase 5 | Pending |
-| REL-05 | Phase 5 | Pending |
-| PERSIST-01 | Phase 4 | Complete |
-| PERSIST-02 | Phase 4 | Complete |
-| PERSIST-03 | Phase 4 | Complete |
-| PERSIST-04 | Phase 4 | Complete |
-| IVS-01 | Phase 5 | Pending (Optional) |
-| IVS-02 | Phase 5 | Pending (Optional) |
-| IVS-03 | Phase 5 | Pending (Optional) |
+| CONN-01 | Phase 6 | Pending |
+| CONN-02 | Phase 6 | Pending |
+| CONN-03 | Phase 6 | Pending |
+| CONN-04 | Phase 6 | Pending |
+| CONN-05 | Phase 6 | Pending |
+| PRES-01 | Phase 7 | Pending |
+| PRES-02 | Phase 7 | Pending |
+| PRES-03 | Phase 7 | Pending |
+| CURS-01 | Phase 7 | Pending |
+| CURS-02 | Phase 7 | Pending |
+| CURS-03 | Phase 7 | Pending |
+| CHAT-01 | Phase 8 | Pending |
+| CHAT-02 | Phase 8 | Pending |
+| CHAT-03 | Phase 8 | Pending |
+| CRDT-01 | Phase 9 | Pending |
+| CRDT-02 | Phase 9 | Pending |
+| CRDT-03 | Phase 9 | Pending |
+| REAC-01 | Phase 10 | Pending |
+| REAC-02 | Phase 10 | Pending |
+| DEV-01 | Phase 10 | Pending |
+| DEV-02 | Phase 10 | Pending |
+| DEV-03 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 31 total
-- Mapped to phases: 31/31
-- Unmapped: 0
+- v1.2 requirements: 23 total
+- Mapped to phases: 23
+- Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after roadmap creation*
+*Requirements defined: 2026-03-03*
+*Last updated: 2026-03-03 after initial definition*
