@@ -28,22 +28,22 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full details
 
 ### 📋 v1.1 Enhanced Reliability (Planned)
 
-- [ ] **Phase 5: Enhanced Reliability (Optional)** - Connection state recovery and IVS chat integration
-
+### Phase 5: Enhanced Reliability (Optional)
 **Goal**: Improved user experience through connection state recovery and optional IVS chat integration
-
 **Depends on**: Phase 4
-
 **Requirements**: REL-04, REL-05, IVS-01, IVS-02, IVS-03
+**Success Criteria** (what must be TRUE):
+  1. Server gracefully degrades to local cache when Redis becomes unavailable (no connection drops)
+  2. Clients can reconnect with session token and restore previous subscription state
+  3. AWS IVS Chat service handles persistent chat messages with moderation capabilities (if opted in)
+  4. IVS Chat webhooks forward message events to WebSocket clients via pub/sub (if opted in)
+  5. Chat persistence migrates from in-memory channelHistory to IVS backend (if opted in)
+**Plans**: 3 plans
 
-**Success Criteria**:
-1. Server gracefully degrades to local cache when Redis becomes unavailable (no connection drops)
-2. Clients can reconnect with session token and restore previous subscription state
-3. AWS IVS Chat service handles persistent chat messages with moderation capabilities (if opted in)
-4. IVS Chat webhooks forward message events to WebSocket clients via pub/sub (if opted in)
-5. Chat persistence migrates from in-memory channelHistory to IVS backend (if opted in)
-
-**Plans**: TBD (use `/gsd:plan-phase 5`)
+Plans:
+- [ ] 05-01-PLAN.md — Redis degradation with graceful fallback
+- [ ] 05-02-PLAN.md — Session recovery with reconnection tokens
+- [ ] 05-03-PLAN.md — IVS Chat integration (optional)
 
 ## Progress
 
@@ -55,10 +55,9 @@ See: `.planning/milestones/v1.0-ROADMAP.md` for full details
 | 2. AWS Infrastructure Foundation | v1.0 | 4/4 | Complete | 2026-03-02 |
 | 3. Monitoring & Observability | v1.0 | 3/3 | Complete | 2026-03-03 |
 | 4. Persistent State & CRDT Support | v1.0 | 3/3 | Complete | 2026-03-03 |
-| 5. Enhanced Reliability (Optional) | v1.1 | 0/TBD | Not started | - |
+| 5. Enhanced Reliability (Optional) | v1.1 | 0/3 | Not started | - |
 
 ---
 
 **Next Steps:**
-- `/gsd:new-milestone` to define v1.1 requirements
-- `/gsd:plan-phase 5` to create execution plans for Phase 5
+- `/gsd:execute-phase 5` to implement enhanced reliability features
