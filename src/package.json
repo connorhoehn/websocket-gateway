@@ -9,6 +9,12 @@
     "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.1000.0",
+    "@aws-sdk/client-dynamodb": "^3.1000.0",
+    "@aws-sdk/client-ivschat": "^3.1000.0",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^3.2.2",
+    "lru-cache": "^10.4.3",
     "redis": "^4.6.0",
     "ws": "^8.14.0"
   },
