@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const NodeManager = require("./core/node-manager");
 const MessageRouter = require("./core/message-router");
 const Logger = require("./utils/logger");
+const MetricsCollector = require("./utils/metrics-collector");
 const AuthMiddleware = require("./middleware/auth-middleware");
 
 // Service modules - Unified services supporting both local and distributed modes
@@ -44,6 +45,10 @@ class DistributedWebSocketServer {
 
         // Initialize authentication middleware
         this.authMiddleware = new AuthMiddleware(this.logger);
+
+        // Initialize metrics collector
+        this.metricsCollector = new MetricsCollector(this.logger);
+        this.metricsInterval = null;
 
         // Redis clients
         this.redisPublisher = null;
@@ -93,10 +98,16 @@ class DistributedWebSocketServer {
         
         // Setup WebSocket server
         this.setupWebSocketServer();
-        
+
+        // Start metrics emission (every 60 seconds)
+        this.metricsInterval = setInterval(() => {
+            this.metricsCollector.flush();
+            this.logger.info('Metrics emitted to CloudWatch', this.metricsCollector.getMetricsSummary());
+        }, 60000);
+
         // Add cleanup handler to node manager
         this.nodeManager.addShutdownHandler(() => this.cleanup());
-        
+
         this.logger.info(`Server initialized with node ID: ${this.nodeManager.nodeId}`);
     }
 
@@ -253,7 +264,15 @@ class DistributedWebSocketServer {
             const clientId = this.generateClientId();
             const clientIP = req.socket.remoteAddress;
 
-            this.logger.info(`Client ${clientId} connected from ${clientIP} (user: ${userContext.userId})`);
+            // Record connection in metrics
+            this.metricsCollector.recordConnection(1);
+
+            this.logger.info('Client connected', {
+                clientId,
+                ip: clientIP,
+                userId: userContext.userId,
+                totalConnections: this.connections.size + 1
+            });
 
             // Register client with message router
             const metadata = {
@@ -286,14 +305,16 @@ class DistributedWebSocketServer {
             // Setup close handler
             ws.on("close", () => {
                 clearInterval(pingInterval);
-                this.logger.info(`Client ${clientId} disconnected`);
+                this.metricsCollector.recordConnection(-1);
+                this.logger.info('Client disconnected', { clientId, totalConnections: this.connections.size - 1 });
                 this.handleClientDisconnect(clientId, clientIP);
             });
 
             // Setup error handler
             ws.on("error", (error) => {
                 clearInterval(pingInterval);
-                this.logger.error(`WebSocket error for client ${clientId}:`, error);
+                this.metricsCollector.recordConnection(-1);
+                this.logger.error('WebSocket error', { clientId, error: error.message });
                 this.handleClientDisconnect(clientId, clientIP);
             });
 
@@ -310,6 +331,13 @@ class DistributedWebSocketServer {
     }
 
     async handleMessage(clientId, rawMessage) {
+        // Generate correlation ID for this message
+        const correlationId = crypto.randomUUID();
+        const correlatedLogger = this.logger.withCorrelation(correlationId);
+
+        // Record message start time for latency tracking
+        const startTime = Date.now();
+
         // Validate and rate-limit message using message router
         const message = await this.messageRouter.validateAndRateLimit(clientId, rawMessage);
 
@@ -318,7 +346,7 @@ class DistributedWebSocketServer {
             return;
         }
 
-        this.logger.debug(`Message from ${clientId}:`, message);
+        correlatedLogger.debug('Message received', { clientId, service: message.service, action: message.action });
 
         const { service, action, ...data } = message;
 
@@ -338,14 +366,27 @@ class DistributedWebSocketServer {
         try {
             // Call service method
             await serviceInstance.handleAction(clientId, action, data);
+
+            // Record successful message processing latency
+            const latency = Date.now() - startTime;
+            this.metricsCollector.recordMessage(latency);
         } catch (error) {
-            this.logger.error(`Error in service ${service} for client ${clientId}:`, error);
+            correlatedLogger.error('Message routing failed', {
+                error: error.message,
+                clientId,
+                service,
+                action
+            });
             this.sendToClient(clientId, {
                 type: 'error',
                 code: 'SERVICE_ERROR',
                 message: 'Failed to process message',
                 timestamp: new Date().toISOString()
             });
+
+            // Still record latency even for errors
+            const latency = Date.now() - startTime;
+            this.metricsCollector.recordMessage(latency);
         }
     }
 
@@ -433,14 +474,25 @@ class DistributedWebSocketServer {
 
     async cleanup() {
         this.logger.info('Cleaning up WebSocket server...');
-        
+
+        // Flush final metrics before shutdown
+        if (this.metricsCollector) {
+            await this.metricsCollector.flush();
+        }
+
+        // Clear metrics interval
+        if (this.metricsInterval) {
+            clearInterval(this.metricsInterval);
+            this.metricsInterval = null;
+        }
+
         // Close all WebSocket connections
         for (const [clientId, { ws }] of this.connections) {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.close(1001, 'Server shutting down');
             }
         }
-        
+
         // Cleanup message router
         if (this.messageRouter) {
             await this.messageRouter.cleanup();
