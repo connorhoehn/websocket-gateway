@@ -2,6 +2,7 @@
 
 const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
+const { ErrorCodes } = require('../utils/error-codes');
 
 /**
  * Custom error class for authentication failures
@@ -56,7 +57,7 @@ class AuthMiddleware {
             return key.getPublicKey();
         } catch (error) {
             this.logger.error('Failed to fetch signing key:', error);
-            throw new AuthError('AUTH_FAILED', 401, 'Authentication failed');
+            throw new AuthError(ErrorCodes.AUTH_FAILED, 401, 'Authentication failed');
         }
     }
 
@@ -73,7 +74,7 @@ class AuthMiddleware {
 
             if (!token) {
                 this.logger.warn('Connection attempt without token');
-                throw new AuthError('TOKEN_MISSING', 401, 'Authentication required');
+                throw new AuthError(ErrorCodes.AUTH_TOKEN_MISSING, 401, 'Authentication required');
             }
 
             // Decode token to get header (without verification)
@@ -82,12 +83,12 @@ class AuthMiddleware {
                 decoded = jwt.decode(token, { complete: true });
             } catch (error) {
                 this.logger.error('Token decode error:', error);
-                throw new AuthError('AUTH_FAILED', 401, 'Authentication failed');
+                throw new AuthError(ErrorCodes.AUTH_FAILED, 401, 'Authentication failed');
             }
 
             if (!decoded || !decoded.header || !decoded.header.kid) {
                 this.logger.warn('Invalid token structure - missing kid');
-                throw new AuthError('AUTH_FAILED', 401, 'Authentication failed');
+                throw new AuthError(ErrorCodes.AUTH_FAILED, 401, 'Authentication failed');
             }
 
             // Get signing key
@@ -108,10 +109,10 @@ class AuthMiddleware {
 
                 // Provide more specific error for expired tokens
                 if (error.name === 'TokenExpiredError') {
-                    throw new AuthError('TOKEN_EXPIRED', 401, 'Token expired');
+                    throw new AuthError(ErrorCodes.AUTH_TOKEN_EXPIRED, 401, 'Token expired');
                 }
 
-                throw new AuthError('AUTH_FAILED', 401, 'Authentication failed');
+                throw new AuthError(ErrorCodes.AUTH_FAILED, 401, 'Authentication failed');
             }
 
             // Extract user context from claims

@@ -1,5 +1,7 @@
 // middleware/authz-middleware.js
 
+const { ErrorCodes } = require('../utils/error-codes');
+
 /**
  * Custom error class for authorization failures
  */
@@ -17,10 +19,11 @@ class AuthzError extends Error {
  * @param {Object} userContext - User context from JWT (userId, email, channels, isAdmin)
  * @param {string} channelId - Channel ID to check permission for
  * @param {Object} logger - Logger instance for audit trail (optional)
+ * @param {Object} metricsCollector - MetricsCollector instance for emitting denial metrics (optional)
  * @returns {boolean} True if user has permission
  * @throws {AuthzError} If user does not have permission
  */
-function checkChannelPermission(userContext, channelId, logger = null) {
+function checkChannelPermission(userContext, channelId, logger = null, metricsCollector = null) {
     // Public channels are accessible to all authenticated users
     if (channelId.startsWith('public:')) {
         return true;
@@ -29,6 +32,11 @@ function checkChannelPermission(userContext, channelId, logger = null) {
     // Admin channels require isAdmin claim
     if (channelId.startsWith('admin:')) {
         if (!userContext.isAdmin) {
+            // Emit authorization denial metric for CloudWatch alarm
+            if (metricsCollector) {
+                metricsCollector.recordMetric('AuthorizationDenials', 1);
+            }
+
             if (logger) {
                 logger.warn('Authorization denied - admin access required', {
                     userId: userContext.userId,
@@ -36,13 +44,18 @@ function checkChannelPermission(userContext, channelId, logger = null) {
                     reason: 'not_admin'
                 });
             }
-            throw new AuthzError('FORBIDDEN', 403, 'Admin access required');
+            throw new AuthzError(ErrorCodes.AUTHZ_ADMIN_REQUIRED, 403, 'Admin access required');
         }
         return true;
     }
 
     // Check if channel is in user's channels array
     if (!userContext.channels.includes(channelId)) {
+        // Emit authorization denial metric for CloudWatch alarm
+        if (metricsCollector) {
+            metricsCollector.recordMetric('AuthorizationDenials', 1);
+        }
+
         if (logger) {
             logger.warn('Authorization denied - channel not in permissions', {
                 userId: userContext.userId,
@@ -51,7 +64,7 @@ function checkChannelPermission(userContext, channelId, logger = null) {
                 reason: 'channel_not_in_permissions'
             });
         }
-        throw new AuthzError('FORBIDDEN', 403, 'No permission for channel');
+        throw new AuthzError(ErrorCodes.AUTHZ_CHANNEL_DENIED, 403, 'No permission for channel');
     }
 
     return true;

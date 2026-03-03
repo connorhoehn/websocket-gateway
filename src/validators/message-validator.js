@@ -1,5 +1,7 @@
 // validators/message-validator.js
 
+const { ErrorCodes } = require('../utils/error-codes');
+
 /**
  * Custom validation error with code and message
  */
@@ -35,7 +37,7 @@ class MessageValidator {
         // Check for required fields
         if (!message.service || !message.action) {
             throw new ValidationError(
-                'INVALID_MESSAGE',
+                ErrorCodes.INVALID_MESSAGE_STRUCTURE,
                 'Missing required fields: service and action are required'
             );
         }
@@ -43,7 +45,7 @@ class MessageValidator {
         // Validate field types
         if (typeof message.service !== 'string' || typeof message.action !== 'string') {
             throw new ValidationError(
-                'INVALID_MESSAGE',
+                ErrorCodes.INVALID_MESSAGE_STRUCTURE,
                 'Invalid field types: service and action must be strings'
             );
         }
@@ -51,7 +53,7 @@ class MessageValidator {
         // Check service whitelist
         if (!this.allowedServices.includes(message.service)) {
             throw new ValidationError(
-                'INVALID_MESSAGE',
+                ErrorCodes.INVALID_MESSAGE_SERVICE,
                 `Invalid service: '${message.service}' is not in allowed services [${this.allowedServices.join(', ')}]`
             );
         }
@@ -67,7 +69,7 @@ class MessageValidator {
 
         if (payloadSize > this.maxPayloadSize) {
             throw new ValidationError(
-                'PAYLOAD_TOO_LARGE',
+                ErrorCodes.PAYLOAD_TOO_LARGE,
                 `Message exceeds 64KB limit: ${payloadSize} bytes > ${this.maxPayloadSize} bytes`
             );
         }
@@ -81,14 +83,14 @@ class MessageValidator {
     validateChannelName(channelId) {
         if (!channelId || typeof channelId !== 'string') {
             throw new ValidationError(
-                'INVALID_CHANNEL_NAME',
+                ErrorCodes.INVALID_CHANNEL_NAME,
                 'Channel name is required and must be a string'
             );
         }
 
         if (!this.channelNamePattern.test(channelId)) {
             throw new ValidationError(
-                'INVALID_CHANNEL_NAME',
+                ErrorCodes.INVALID_CHANNEL_NAME,
                 'Invalid channel name format: must be 1-50 characters, alphanumeric with hyphens/underscores/colons only'
             );
         }
@@ -111,7 +113,7 @@ class MessageValidator {
         // Reject null bytes (security issue)
         if (trimmed.includes('\0')) {
             throw new ValidationError(
-                'INVALID_MESSAGE',
+                ErrorCodes.INVALID_MESSAGE,
                 'String contains null bytes which are not allowed'
             );
         }

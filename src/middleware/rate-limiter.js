@@ -1,5 +1,7 @@
 // middleware/rate-limiter.js
 
+const { ErrorCodes } = require('../utils/error-codes');
+
 /**
  * Redis-backed token bucket rate limiter for distributed rate limiting
  * Supports differentiated rate limits for different message types
@@ -20,7 +22,7 @@ class RateLimiter {
      * Check if a client is within their rate limit
      * @param {string} clientId - Client identifier
      * @param {string} messageType - 'cursor' or 'general'
-     * @returns {Promise<{allowed: boolean, current: number, limit: number}>}
+     * @returns {Promise<{allowed: boolean, code: string, current: number, limit: number, remaining: number, resetIn: number}>}
      */
     async checkLimit(clientId, messageType) {
         const limit = this.limits[messageType] || this.limits.general;
@@ -30,6 +32,9 @@ class RateLimiter {
             // Atomic increment
             const current = await this.redis.incr(key);
 
+            // Get TTL
+            const ttl = await this.redis.ttl(key);
+
             // Set expiry on first increment (1 second window)
             if (current === 1) {
                 await this.redis.expire(key, 1);
@@ -38,14 +43,29 @@ class RateLimiter {
             // Check if limit exceeded
             if (current > limit) {
                 this.logger.warn(`Rate limit exceeded: ${clientId} ${messageType} ${current}/${limit}`);
-                return { allowed: false, current, limit };
+                return {
+                    allowed: false,
+                    code: messageType === 'cursor'
+                        ? ErrorCodes.RATE_LIMIT_CURSOR_QUOTA
+                        : ErrorCodes.RATE_LIMIT_MESSAGE_QUOTA,
+                    current,
+                    limit,
+                    remaining: 0,
+                    resetIn: ttl > 0 ? ttl : 1
+                };
             }
 
-            return { allowed: true, current, limit };
+            return {
+                allowed: true,
+                current,
+                limit,
+                remaining: limit - current,
+                resetIn: ttl > 0 ? ttl : 1
+            };
         } catch (error) {
             this.logger.error(`Rate limit check failed for ${clientId}:`, error);
             // Fail open - allow the message if Redis is down
-            return { allowed: true, current: 0, limit };
+            return { allowed: true, current: 0, limit, remaining: limit, resetIn: 1 };
         }
     }
 
