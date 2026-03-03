@@ -421,7 +421,7 @@ describe('CRDTService', () => {
         describe('Test 3: No snapshot exists - return {snapshot: null, timestamp: null} without error', () => {
             test('should return null values when no snapshot found', async () => {
                 const clientId = 'client1';
-                const channel = 'doc:new';
+                const channel = 'doc:test'; // Use authorized channel
 
                 // Mock empty DynamoDB response
                 mockDynamoClient.send.mockResolvedValue({

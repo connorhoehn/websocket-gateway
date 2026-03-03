@@ -6,10 +6,11 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
-const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 class CRDTService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -44,6 +45,8 @@ class CRDTService {
                     return await this.handleUpdate(clientId, data);
                 case 'unsubscribe':
                     return await this.handleUnsubscribe(clientId, data);
+                case 'getSnapshot':
+                    return await this.handleGetSnapshot(clientId, data);
                 default:
                     this.sendError(clientId, `Unknown CRDT action: ${action}`);
             }
@@ -190,6 +193,94 @@ class CRDTService {
         } catch (error) {
             this.logger.error(`Error unsubscribing from channel ${channel} for client ${clientId}:`, error);
             this.sendError(clientId, 'Failed to unsubscribe from channel');
+        }
+    }
+
+    async handleGetSnapshot(clientId, { channel }) {
+        // Validate channel
+        if (!channel || typeof channel !== 'string') {
+            this.sendError(clientId, 'Channel name is required');
+            return;
+        }
+
+        // Check authorization
+        try {
+            const clientData = this.messageRouter.getClientData(clientId);
+            if (!clientData || !clientData.userContext) {
+                this.sendError(clientId, 'User context not found');
+                return;
+            }
+
+            try {
+                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
+            } catch (error) {
+                if (error instanceof AuthzError) {
+                    this.sendError(clientId, error.message, error.code);
+                    return;
+                }
+                throw error;
+            }
+
+            // Retrieve latest snapshot
+            const snapshot = await this.retrieveLatestSnapshot(channel);
+
+            // Send response
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'snapshot',
+                channel,
+                snapshot: snapshot.data, // base64 string or null
+                timestamp: snapshot.timestamp, // epoch milliseconds or null
+                age: snapshot.timestamp ? Date.now() - snapshot.timestamp : null // for debugging
+            });
+
+            this.logger.debug(`Snapshot retrieved for channel ${channel}, timestamp: ${snapshot.timestamp}`);
+        } catch (error) {
+            this.logger.error(`Error handling getSnapshot for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to retrieve snapshot');
+        }
+    }
+
+    async retrieveLatestSnapshot(channelId) {
+        try {
+            const command = new QueryCommand({
+                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                KeyConditionExpression: 'documentId = :docId',
+                ExpressionAttributeValues: {
+                    ':docId': { S: channelId }
+                },
+                ScanIndexForward: false, // Descending order (newest first)
+                Limit: 1,
+                ProjectionExpression: 'snapshot, #ts',
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp' // Reserved word workaround
+                }
+            });
+
+            const result = await this.dynamoClient.send(command);
+
+            if (!result.Items || result.Items.length === 0) {
+                // No snapshot exists - new document
+                return { data: null, timestamp: null };
+            }
+
+            // Extract snapshot binary and timestamp
+            const item = result.Items[0];
+            const compressedSnapshot = item.snapshot.B; // Binary data
+            const timestamp = parseInt(item.timestamp.N, 10);
+
+            // Decompress gzip
+            const decompressed = await gunzip(Buffer.from(compressedSnapshot));
+
+            // Encode as base64 for WebSocket transmission
+            const base64Snapshot = decompressed.toString('base64');
+
+            return { data: base64Snapshot, timestamp };
+
+        } catch (error) {
+            // Graceful degradation: log error, return null
+            this.logger.error(`Failed to retrieve snapshot for ${channelId}:`, error.message);
+            return { data: null, timestamp: null };
         }
     }
 
