@@ -81,10 +81,12 @@ Plans:
   2. CRDT operations broadcast to subscribed clients via existing Redis pub/sub within <50ms
   3. CRDT snapshots write to DynamoDB every 5 minutes with document ID, timestamp, and snapshot payload
   4. Clients reconnecting after disconnect can retrieve latest CRDT snapshot from DynamoDB
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] (To be created by plan-phase)
+- [ ] 04-01-PLAN.md — DynamoDB table setup and CRDT operation broadcasting
+- [ ] 04-02-PLAN.md — Snapshot persistence with time/operation/disconnect triggers
+- [ ] 04-03-PLAN.md — Snapshot retrieval for client reconnection
 
 ### Phase 5: Enhanced Reliability (Optional)
 **Goal**: Improved user experience through connection state recovery and optional IVS chat integration
