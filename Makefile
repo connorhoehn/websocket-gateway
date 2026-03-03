@@ -21,6 +21,14 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-25s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # Local development
+.PHONY: dev-local
+dev-local: ## Start self-contained local environment (Redis included, no AWS or env vars needed)
+	docker compose -f docker-compose.local.yml up --build
+
+.PHONY: dev-local-stop
+dev-local-stop: ## Stop the local dev environment
+	docker compose -f docker-compose.local.yml down
+
 .PHONY: dev
 dev: ## Start local development environment
 	@echo "Starting $(SERVICE_TYPE) service in development mode..."

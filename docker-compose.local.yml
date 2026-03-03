@@ -1,0 +1,45 @@
+version: '3.8'
+
+# Self-contained local development environment.
+# Includes Redis — no external services or env vars required.
+# Usage: make dev-local
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: local-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - local-network
+
+  websocket-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: websocket-gateway-local
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_ENDPOINT=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - ENABLED_SERVICES=chat,presence,cursor,reaction
+      - PORT=8080
+      # Fake Cognito values for local dev — auth will reject all tokens,
+      # but the server starts and logs are observable.
+      - COGNITO_REGION=us-east-1
+      - COGNITO_USER_POOL_ID=us-east-1_localdev000
+    networks:
+      - local-network
+    depends_on:
+      - redis
+    volumes:
+      - ./src:/app/src:ro
+    command: node src/server.js
+
+networks:
+  local-network:
+    driver: bridge
