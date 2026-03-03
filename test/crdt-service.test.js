@@ -182,4 +182,161 @@ describe('CRDTService', () => {
             expect(errorCall[1].service).toBe('crdt');
         });
     });
+
+    describe('Snapshot Persistence Tests', () => {
+        let mockDynamoClient;
+
+        beforeEach(() => {
+            // Mock DynamoDB client
+            mockDynamoClient = {
+                send: jest.fn().mockResolvedValue({})
+            };
+
+            // Override CRDTService with mock DynamoDB client
+            crdtService.dynamoClient = mockDynamoClient;
+            crdtService.channelStates = new Map();
+        });
+
+        describe('Test 6: writeSnapshot gzips data and writes to DynamoDB with TTL', () => {
+            test('should write gzipped snapshot to DynamoDB with documentId, timestamp, and 7-day TTL', async () => {
+                const channelId = 'doc:test';
+                const snapshotData = Buffer.from('test snapshot data');
+
+                // Setup channel state
+                crdtService.channelStates.set(channelId, {
+                    currentSnapshot: snapshotData,
+                    operationsSinceSnapshot: 5,
+                    subscriberCount: 2
+                });
+
+                await crdtService.writeSnapshot(channelId);
+
+                // Verify DynamoDB send was called
+                expect(mockDynamoClient.send).toHaveBeenCalledTimes(1);
+
+                const command = mockDynamoClient.send.mock.calls[0][0];
+                expect(command.input.TableName).toBe('crdt-snapshots');
+                expect(command.input.Item.documentId.S).toBe(channelId);
+                expect(command.input.Item.timestamp.N).toBeDefined();
+                expect(command.input.Item.snapshot.B).toBeDefined(); // Gzipped snapshot
+                expect(command.input.Item.ttl.N).toBeDefined();
+
+                // Verify TTL is approximately 7 days from now
+                const ttl = parseInt(command.input.Item.ttl.N);
+                const expectedTtl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+                expect(Math.abs(ttl - expectedTtl)).toBeLessThan(5); // Allow 5 second variance
+
+                // Verify operation counter was reset
+                const state = crdtService.channelStates.get(channelId);
+                expect(state.operationsSinceSnapshot).toBe(0);
+            });
+        });
+
+        describe('Test 7: After 50 operations, snapshot auto-triggers', () => {
+            test('should trigger snapshot and reset counter after 50 operations', async () => {
+                const channelId = 'doc:test';
+                const clientId = 'client1';
+
+                // Initialize channel state
+                crdtService.channelStates.set(channelId, {
+                    currentSnapshot: Buffer.from('initial'),
+                    operationsSinceSnapshot: 49,
+                    subscriberCount: 1
+                });
+
+                // Mock writeSnapshot to track calls
+                const writeSnapshotSpy = jest.spyOn(crdtService, 'writeSnapshot').mockResolvedValue();
+
+                // Send one more update to trigger the 50th operation
+                await crdtService.handleUpdate(clientId, { channel: channelId, update: 'YmFzZTY0' });
+
+                // Wait for batch window
+                await new Promise(resolve => setTimeout(resolve, 15));
+
+                // Snapshot should have been triggered
+                expect(writeSnapshotSpy).toHaveBeenCalledWith(channelId);
+            });
+        });
+
+        describe('Test 8: Every 5 minutes, snapshot triggers for channels with pending operations', () => {
+            test('should write snapshots for all channels with operations > 0', async () => {
+                // Setup multiple channels with different operation counts
+                crdtService.channelStates.set('doc:channel1', {
+                    currentSnapshot: Buffer.from('data1'),
+                    operationsSinceSnapshot: 10,
+                    subscriberCount: 1
+                });
+
+                crdtService.channelStates.set('doc:channel2', {
+                    currentSnapshot: Buffer.from('data2'),
+                    operationsSinceSnapshot: 0, // No operations
+                    subscriberCount: 1
+                });
+
+                crdtService.channelStates.set('doc:channel3', {
+                    currentSnapshot: Buffer.from('data3'),
+                    operationsSinceSnapshot: 25,
+                    subscriberCount: 1
+                });
+
+                // Mock writeSnapshot
+                const writeSnapshotSpy = jest.spyOn(crdtService, 'writeSnapshot').mockResolvedValue();
+
+                // Trigger periodic snapshots
+                await crdtService.writePeriodicSnapshots();
+
+                // Should have written snapshots for channel1 and channel3 only
+                expect(writeSnapshotSpy).toHaveBeenCalledTimes(2);
+                expect(writeSnapshotSpy).toHaveBeenCalledWith('doc:channel1');
+                expect(writeSnapshotSpy).toHaveBeenCalledWith('doc:channel3');
+            });
+        });
+
+        describe('Test 9: When last client unsubscribes, final snapshot is written', () => {
+            test('should write final snapshot when subscriber count reaches 0', async () => {
+                const channelId = 'doc:test';
+                const clientId = 'client1';
+
+                // Setup channel state with 1 subscriber
+                crdtService.channelStates.set(channelId, {
+                    currentSnapshot: Buffer.from('final data'),
+                    operationsSinceSnapshot: 5,
+                    subscriberCount: 1
+                });
+
+                // Mock writeSnapshot
+                const writeSnapshotSpy = jest.spyOn(crdtService, 'writeSnapshot').mockResolvedValue();
+
+                // Unsubscribe last client
+                await crdtService.handleUnsubscribe(clientId, { channel: channelId });
+
+                // Should have written final snapshot
+                expect(writeSnapshotSpy).toHaveBeenCalledWith(channelId);
+            });
+        });
+
+        describe('Test 10: DynamoDB write failure logs error but does not crash', () => {
+            test('should gracefully handle DynamoDB write failures', async () => {
+                const channelId = 'doc:test';
+
+                // Setup channel state
+                crdtService.channelStates.set(channelId, {
+                    currentSnapshot: Buffer.from('test data'),
+                    operationsSinceSnapshot: 5,
+                    subscriberCount: 1
+                });
+
+                // Mock DynamoDB to throw error
+                mockDynamoClient.send.mockRejectedValue(new Error('DynamoDB connection failed'));
+
+                // writeSnapshot should not throw
+                await expect(crdtService.writeSnapshot(channelId)).resolves.not.toThrow();
+
+                // Error should be logged
+                expect(mockLogger.error).toHaveBeenCalled();
+                const errorCall = mockLogger.error.mock.calls[0];
+                expect(errorCall[0]).toContain('Failed to write snapshot');
+            });
+        });
+    });
 });
