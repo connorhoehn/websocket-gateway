@@ -2,6 +2,7 @@
 *.js
 !jest.config.js
 !src/**/*.js
+!test/**/*.js
 *.d.ts
 
 # Dependencies
