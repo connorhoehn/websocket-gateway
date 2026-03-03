@@ -13,7 +13,7 @@ This roadmap transforms a functional WebSocket gateway into a production-ready A
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Security Hardening** - Implement authentication, authorization, rate limiting, and fix critical memory leaks
-- [ ] **Phase 2: AWS Infrastructure Foundation** - Deploy to ECS Fargate with ElastiCache Redis, ALB, and production VPC
+- [x] **Phase 2: AWS Infrastructure Foundation** - Deploy to ECS Fargate with ElastiCache Redis, ALB, and production VPC (completed 2026-03-02)
 - [x] **Phase 3: Monitoring & Observability** - Add CloudWatch metrics, alarms, structured logging, and dashboard (completed 2026-03-03)
 - [ ] **Phase 4: Persistent State & CRDT Support** - Implement DynamoDB snapshots and CRDT operation broadcasting
 - [ ] **Phase 5: Enhanced Reliability (Optional)** - Connection state recovery, IVS chat integration, and reliability improvements
@@ -50,10 +50,13 @@ Plans:
   6. Health check endpoint (/health) returns 200 OK when server is ready
   7. Server receives SIGTERM and drains connections gracefully within 30 seconds
   8. ALB idle timeout is 300 seconds and server sends WebSocket pings every 30 seconds
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] (To be created by plan-phase)
+- [x] 02-01-PLAN.md — VPC endpoints for cost-optimized private subnet connectivity
+- [x] 02-02-PLAN.md — ECS Fargate task definition and ElastiCache Redis cluster setup
+- [x] 02-03-PLAN.md — Application Load Balancer with TLS, sticky sessions, and auto-scaling
+- [x] 02-04-PLAN.md — Health check endpoint and WebSocket keepalive implementation
 
 ### Phase 3: Monitoring & Observability
 **Goal**: Operational visibility via CloudWatch metrics, alarms, structured logging, and real-time dashboard
@@ -111,7 +114,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Security Hardening | 0/TBD | Not started | - |
-| 2. AWS Infrastructure Foundation | 0/TBD | Not started | - |
+| 2. AWS Infrastructure Foundation | 4/4 | Complete   | 2026-03-02 |
 | 3. Monitoring & Observability | 3/3 | Complete   | 2026-03-03 |
 | 4. Persistent State & CRDT Support | 2/3 | In Progress | - |
 | 5. Enhanced Reliability (Optional) | 0/TBD | Not started | - |
