@@ -340,6 +340,184 @@ describe('CRDTService', () => {
         });
     });
 
+    describe('Edge Cases & Coverage Tests', () => {
+        let mockDynamoClient;
+
+        beforeEach(() => {
+            mockDynamoClient = {
+                send: jest.fn().mockResolvedValue({})
+            };
+            crdtService.dynamoClient = mockDynamoClient;
+        });
+
+        describe('validateChannel direct tests', () => {
+            test('should return true for valid channel names', () => {
+                expect(crdtService.validateChannel('doc:test')).toBe(true);
+                expect(crdtService.validateChannel('a')).toBe(true);
+                expect(crdtService.validateChannel('a'.repeat(50))).toBe(true);
+            });
+
+            test('should return false for invalid channel names', () => {
+                expect(crdtService.validateChannel('')).toBe(false);
+                expect(crdtService.validateChannel('a'.repeat(51))).toBe(false);
+                expect(crdtService.validateChannel(null)).toBe(false);
+                expect(crdtService.validateChannel(12345)).toBe(false);
+            });
+        });
+
+        describe('handleAction unknown action sends error', () => {
+            test('should send error for unknown action', async () => {
+                await crdtService.handleAction('client1', 'unknownAction', { channel: 'doc:test' });
+
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const errorCall = mockMessageRouter.sendToClient.mock.calls[0];
+                expect(errorCall[1].type).toBe('error');
+                expect(errorCall[1].service).toBe('crdt');
+            });
+        });
+
+        describe('shutdown clears timer and pending batches', () => {
+            test('should clear periodicSnapshotTimer and all pending batch timeouts', async () => {
+                const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+                const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
+                const timerToCheck = crdtService.periodicSnapshotTimer;
+
+                const mockTimeout = setTimeout(() => {}, 10000);
+                crdtService.operationBatches.set('doc:test', {
+                    operations: [{ update: 'data', timestamp: new Date().toISOString() }],
+                    timeout: mockTimeout,
+                    senderClientId: 'client1'
+                });
+
+                await crdtService.shutdown();
+
+                expect(clearIntervalSpy).toHaveBeenCalledWith(timerToCheck);
+                expect(clearTimeoutSpy).toHaveBeenCalledWith(mockTimeout);
+                expect(crdtService.operationBatches.size).toBe(0);
+                expect(mockLogger.info).toHaveBeenCalledWith('CRDT service shut down');
+
+                clearIntervalSpy.mockRestore();
+                clearTimeoutSpy.mockRestore();
+            });
+        });
+
+        describe('getStats returns pending batch count', () => {
+            test('should return pendingBatches count', () => {
+                expect(crdtService.getStats()).toEqual({ pendingBatches: 0 });
+
+                crdtService.operationBatches.set('doc:a', { operations: [], timeout: null, senderClientId: 'c1' });
+                crdtService.operationBatches.set('doc:b', { operations: [], timeout: null, senderClientId: 'c2' });
+
+                expect(crdtService.getStats()).toEqual({ pendingBatches: 2 });
+            });
+        });
+
+        describe('handleUpdate buffer accumulation', () => {
+            test('should concatenate update buffers into currentSnapshot', async () => {
+                const channel = 'doc:test';
+                const update1 = Buffer.from('first').toString('base64');
+                const update2 = Buffer.from('second').toString('base64');
+
+                await crdtService.handleUpdate('client1', { channel, update: update1 });
+                await crdtService.handleUpdate('client1', { channel, update: update2 });
+
+                const state = crdtService.channelStates.get(channel);
+                const expected = Buffer.concat([Buffer.from('first'), Buffer.from('second')]);
+                expect(state.currentSnapshot).toEqual(expected);
+            });
+        });
+
+        describe('handleSubscribe when clientData is null', () => {
+            test('should send error when client data is not found', async () => {
+                mockMessageRouter.getClientData.mockReturnValue(null);
+
+                await crdtService.handleAction('client1', 'subscribe', { channel: 'doc:test' });
+
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const errorCall = mockMessageRouter.sendToClient.mock.calls[0];
+                expect(errorCall[1].type).toBe('error');
+                expect(errorCall[1].service).toBe('crdt');
+                expect(mockMessageRouter.subscribeToChannel).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('handleSubscribe increments subscriberCount for existing channel state', () => {
+            test('should increment subscriberCount without resetting existing snapshot data', async () => {
+                const channel = 'doc:test';
+                crdtService.channelStates.set(channel, {
+                    currentSnapshot: Buffer.from('existing data'),
+                    operationsSinceSnapshot: 5,
+                    subscriberCount: 2
+                });
+
+                await crdtService.handleAction('client1', 'subscribe', { channel });
+
+                const state = crdtService.channelStates.get(channel);
+                expect(state.subscriberCount).toBe(3);
+                expect(state.operationsSinceSnapshot).toBe(5);
+            });
+        });
+
+        describe('handleUnsubscribe with multiple subscribers', () => {
+            test('should NOT write snapshot when subscriber count is still > 0 after unsubscribe', async () => {
+                const channel = 'doc:test';
+                crdtService.channelStates.set(channel, {
+                    currentSnapshot: Buffer.from('data'),
+                    operationsSinceSnapshot: 10,
+                    subscriberCount: 2
+                });
+
+                const writeSnapshotSpy = jest.spyOn(crdtService, 'writeSnapshot').mockResolvedValue();
+
+                await crdtService.handleAction('client1', 'unsubscribe', { channel });
+
+                expect(writeSnapshotSpy).not.toHaveBeenCalled();
+                expect(crdtService.channelStates.get(channel).subscriberCount).toBe(1);
+            });
+        });
+
+        describe('handleUnsubscribe when no channel state exists', () => {
+            test('should unsubscribe cleanly and send confirmation even without channel state', async () => {
+                const channel = 'doc:no-state';
+
+                await crdtService.handleAction('client1', 'unsubscribe', { channel });
+
+                expect(mockMessageRouter.unsubscribeFromChannel).toHaveBeenCalledWith('client1', channel);
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const msg = mockMessageRouter.sendToClient.mock.calls[0][1];
+                expect(msg.type).toBe('crdt');
+                expect(msg.action).toBe('unsubscribed');
+            });
+        });
+
+        describe('writeSnapshot skips when no data', () => {
+            test('should not write to DynamoDB when currentSnapshot buffer is empty', async () => {
+                crdtService.channelStates.set('doc:empty', {
+                    currentSnapshot: Buffer.alloc(0),
+                    operationsSinceSnapshot: 0,
+                    subscriberCount: 1
+                });
+
+                await crdtService.writeSnapshot('doc:empty');
+
+                expect(mockDynamoClient.send).not.toHaveBeenCalled();
+            });
+
+            test('should not write to DynamoDB when channel state does not exist', async () => {
+                await crdtService.writeSnapshot('doc:nonexistent');
+
+                expect(mockDynamoClient.send).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('broadcastBatch when no batch exists', () => {
+            test('should return without error when batch does not exist for channel', async () => {
+                await expect(crdtService.broadcastBatch('doc:no-batch')).resolves.not.toThrow();
+                expect(mockMessageRouter.sendToChannel).not.toHaveBeenCalled();
+            });
+        });
+    });
+
     describe('Snapshot Retrieval Tests', () => {
         let mockDynamoClient;
 
