@@ -5,11 +5,12 @@
  * Routes messages only to nodes that have clients subscribed to specific channels
  */
 class MessageRouter {
-    constructor(nodeManager, redisPublisher, redisSubscriber, logger) {
+    constructor(nodeManager, redisPublisher, redisSubscriber, logger, sessionService = null) {
         this.nodeManager = nodeManager;
         this.redisPublisher = redisPublisher;
         this.redisSubscriber = redisSubscriber;
         this.logger = logger;
+        this.sessionService = sessionService; // Optional session service for subscription tracking
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
 
@@ -93,11 +94,14 @@ class MessageRouter {
 
         client.channels.add(channel);
         await this.nodeManager.subscribeClientToChannel(clientId, channel);
-        
+
         // Subscribe to Redis channel if not already subscribed
         if (!this.subscribedChannels.has(channel)) {
             await this.subscribeToRedisChannel(channel);
         }
+
+        // Update session subscriptions if session service is available
+        await this.updateSessionSubscriptions(clientId);
 
         this.logger.debug(`Client ${clientId} subscribed to channel ${channel}`);
         return true;
@@ -115,13 +119,43 @@ class MessageRouter {
             // Check if we still need to listen to this channel
             const stillNeeded = Array.from(this.localClients.values())
                 .some(c => c.channels.has(channel));
-            
+
             if (!stillNeeded) {
                 await this.unsubscribeFromRedisChannel(channel);
             }
 
+            // Update session subscriptions if session service is available
+            await this.updateSessionSubscriptions(clientId);
+
             this.logger.debug(`Client ${clientId} unsubscribed from channel ${channel}`);
         }
+    }
+
+    /**
+     * Update session subscriptions for a client
+     * Called after channel join/leave to keep session state in sync
+     */
+    async updateSessionSubscriptions(clientId) {
+        if (!this.sessionService) {
+            return; // Session tracking not enabled
+        }
+
+        const client = this.localClients.get(clientId);
+        if (!client) {
+            return;
+        }
+
+        // Get session token from client metadata
+        const sessionToken = client.metadata?.sessionToken;
+        if (!sessionToken) {
+            this.logger.debug(`No session token for client ${clientId}, skipping subscription update`);
+            return;
+        }
+
+        // Update session with current channels
+        const channels = Array.from(client.channels);
+        await this.sessionService.updateSubscriptions(sessionToken, channels);
+        this.logger.debug(`Updated session subscriptions for client ${clientId}: ${channels.length} channels`);
     }
 
     /**

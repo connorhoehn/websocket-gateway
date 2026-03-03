@@ -17,6 +17,10 @@ const PresenceService = require("./services/presence-service");
 const CursorService = require("./services/cursor-service");
 const ReactionService = require("./services/reaction-service");
 const CRDTService = require("./services/crdt-service");
+const SessionService = require("./services/session-service");
+
+// Middleware
+const { handleReconnection } = require("./middleware/reconnection-handler");
 
 // Configuration
 const config = {
@@ -36,6 +40,7 @@ class DistributedWebSocketServer {
         this.logger = new Logger('WebSocketServer');
         this.nodeManager = null;
         this.messageRouter = null;
+        this.sessionService = null;
         this.services = new Map();
 
         // Validate required environment variables for authentication
@@ -86,14 +91,27 @@ class DistributedWebSocketServer {
         await this.nodeManager.registerNode();
         this.nodeManager.setupGracefulShutdown();
         
-        // Initialize message router
-        this.messageRouter = new MessageRouter(
-            this.nodeManager, 
-            this.redisPublisher, 
-            this.redisSubscriber, 
-            this.logger
+        // Initialize session service first (MessageRouter needs it)
+        this.sessionService = new SessionService(
+            this.redisPublisher,
+            this.logger,
+            null  // Will set messageRouter reference after creation
         );
-        
+
+        // Initialize message router with session service
+        this.messageRouter = new MessageRouter(
+            this.nodeManager,
+            this.redisPublisher,
+            this.redisSubscriber,
+            this.logger,
+            this.sessionService
+        );
+
+        // Set messageRouter reference in session service for Redis health check
+        this.sessionService.messageRouter = this.messageRouter;
+
+        this.logger.info('✅ Session service initialized');
+
         // Initialize services
         await this.initializeServices();
         
@@ -275,9 +293,21 @@ class DistributedWebSocketServer {
             }
         });
 
-        this.wss.on("connection", (ws, req, userContext) => {
-            const clientId = this.generateClientId();
+        this.wss.on("connection", async (ws, req, userContext) => {
             const clientIP = req.socket.remoteAddress;
+
+            // Handle reconnection with session token recovery
+            const reconnectionResult = await handleReconnection(
+                ws,
+                req,
+                this.sessionService,
+                this.messageRouter,
+                this.logger
+            );
+
+            const clientId = reconnectionResult.clientId;
+            const restored = reconnectionResult.restored;
+            let sessionToken = reconnectionResult.sessionToken;
 
             // Record connection in metrics
             this.metricsCollector.recordConnection(1);
@@ -286,15 +316,22 @@ class DistributedWebSocketServer {
                 clientId,
                 ip: clientIP,
                 userId: userContext.userId,
+                restored,
                 totalConnections: this.connections.size + 1
             });
+
+            // For new connections (not restored), create session token
+            if (!restored) {
+                sessionToken = await this.sessionService.createSession(clientId, userContext);
+            }
 
             // Register client with message router
             const metadata = {
                 ip: clientIP,
                 userAgent: req.headers['user-agent'],
                 connectedAt: new Date().toISOString(),
-                userContext: userContext  // Store userContext in metadata
+                userContext: userContext,  // Store userContext in metadata
+                sessionToken: sessionToken  // Track session token
             };
 
             this.messageRouter.registerLocalClient(clientId, ws, metadata);
@@ -333,11 +370,13 @@ class DistributedWebSocketServer {
                 this.handleClientDisconnect(clientId, clientIP);
             });
 
-            // Send welcome message
+            // Send welcome message with session token
             this.sendToClient(clientId, {
-                type: 'connection',
+                type: 'session',
                 status: 'connected',
                 clientId,
+                sessionToken,
+                restored,
                 nodeId: this.nodeManager.nodeId,
                 enabledServices: config.server.enabledServices,
                 timestamp: new Date().toISOString()
