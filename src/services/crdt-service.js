@@ -6,6 +6,10 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
+const { DynamoDBClient, PutItemCommand } = require('@aws-sdk/client-dynamodb');
+const zlib = require('zlib');
+const { promisify } = require('util');
+const gzip = promisify(zlib.gzip);
 
 class CRDTService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -16,6 +20,19 @@ class CRDTService {
         // Operation batching for reduced Redis message volume
         this.operationBatches = new Map(); // channelId -> {operations: [], timeout: null, senderClientId: string}
         this.BATCH_WINDOW_MS = 10; // 10ms batch window for <50ms total latency
+
+        // DynamoDB client for snapshot persistence
+        this.dynamoClient = new DynamoDBClient({
+            region: process.env.AWS_REGION || 'us-east-1'
+        });
+
+        // Channel state tracking for snapshots
+        this.channelStates = new Map(); // channelId -> {currentSnapshot: Buffer, operationsSinceSnapshot: number, subscriberCount: number}
+
+        // Schedule periodic snapshot timer (every 5 minutes)
+        this.periodicSnapshotTimer = setInterval(() => {
+            this.writePeriodicSnapshots();
+        }, 300000); // 300,000ms = 5 minutes
     }
 
     async handleAction(clientId, action, data) {
@@ -64,6 +81,18 @@ class CRDTService {
             // Subscribe to channel through message router
             await this.messageRouter.subscribeToChannel(clientId, channel);
 
+            // Initialize or update channel state
+            let state = this.channelStates.get(channel);
+            if (!state) {
+                state = {
+                    currentSnapshot: Buffer.alloc(0),
+                    operationsSinceSnapshot: 0,
+                    subscriberCount: 0
+                };
+                this.channelStates.set(channel, state);
+            }
+            state.subscriberCount++;
+
             // Send confirmation to client
             this.sendToClient(clientId, {
                 type: 'crdt',
@@ -99,6 +128,27 @@ class CRDTService {
                 timestamp: new Date().toISOString()
             };
 
+            // Update channel state for snapshot tracking
+            let state = this.channelStates.get(channel);
+            if (!state) {
+                state = {
+                    currentSnapshot: Buffer.alloc(0),
+                    operationsSinceSnapshot: 0,
+                    subscriberCount: 0
+                };
+                this.channelStates.set(channel, state);
+            }
+
+            // Append update to current snapshot (Y.js updates are cumulative)
+            const updateBuffer = Buffer.from(update, 'base64');
+            state.currentSnapshot = Buffer.concat([state.currentSnapshot, updateBuffer]);
+            state.operationsSinceSnapshot++;
+
+            // Check if we should trigger snapshot (after 50 operations)
+            if (state.operationsSinceSnapshot >= 50) {
+                await this.writeSnapshot(channel);
+            }
+
             // Batch the operation for this channel
             this.batchOperation(channel, operation, clientId);
 
@@ -116,6 +166,17 @@ class CRDTService {
         }
 
         try {
+            // Update channel state
+            const state = this.channelStates.get(channel);
+            if (state) {
+                state.subscriberCount--;
+
+                // If last client is unsubscribing, write final snapshot
+                if (state.subscriberCount === 0 && state.operationsSinceSnapshot > 0) {
+                    await this.writeSnapshot(channel);
+                }
+            }
+
             await this.messageRouter.unsubscribeFromChannel(clientId, channel);
 
             this.sendToClient(clientId, {
@@ -190,6 +251,56 @@ class CRDTService {
     }
 
     /**
+     * Write snapshot to DynamoDB
+     */
+    async writeSnapshot(channelId) {
+        const state = this.channelStates.get(channelId);
+        if (!state || !state.currentSnapshot || state.currentSnapshot.length === 0) {
+            return; // No snapshot to write
+        }
+
+        try {
+            // Gzip compress snapshot
+            const compressed = await gzip(state.currentSnapshot);
+
+            // Calculate TTL (7 days from now)
+            const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+
+            // Write to DynamoDB
+            const command = new PutItemCommand({
+                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                Item: {
+                    documentId: { S: channelId },
+                    timestamp: { N: String(Date.now()) },
+                    snapshot: { B: compressed },
+                    ttl: { N: String(ttl) }
+                }
+            });
+
+            await this.dynamoClient.send(command);
+
+            // Reset operation counter
+            state.operationsSinceSnapshot = 0;
+
+            this.logger.info(`Snapshot written for channel ${channelId}`);
+        } catch (error) {
+            // Graceful degradation: log error but don't crash
+            this.logger.error(`Failed to write snapshot for ${channelId}:`, error.message);
+        }
+    }
+
+    /**
+     * Write periodic snapshots for all channels with pending operations
+     */
+    async writePeriodicSnapshots() {
+        for (const [channelId, state] of this.channelStates.entries()) {
+            if (state.operationsSinceSnapshot > 0) {
+                await this.writeSnapshot(channelId);
+            }
+        }
+    }
+
+    /**
      * Validate channel name
      */
     validateChannel(channel) {
@@ -229,6 +340,11 @@ class CRDTService {
 
     // Service lifecycle methods
     async shutdown() {
+        // Clear periodic snapshot timer
+        if (this.periodicSnapshotTimer) {
+            clearInterval(this.periodicSnapshotTimer);
+        }
+
         // Clear all pending batches
         for (const [channel, batch] of this.operationBatches.entries()) {
             if (batch.timeout) {
