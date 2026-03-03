@@ -1,7 +1,8 @@
 import { ContainerImage, FargateTaskDefinition, LogDriver } from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
-import { Role, ServicePrincipal, ManagedPolicy } from 'aws-cdk-lib/aws-iam';
+import { Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Stack } from 'aws-cdk-lib';
 
 interface TaskDefinitionProps {
   redisEndpoint?: string;
@@ -18,8 +19,28 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     ],
   });
 
+  // Create task role with DynamoDB permissions
+  const taskRole = new Role(scope, 'TaskRole', {
+    assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
+  });
+
+  // Get stack for region and account
+  const stack = Stack.of(scope);
+
+  // Add DynamoDB permissions to task role
+  taskRole.addToPolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: [
+      'dynamodb:PutItem',
+      'dynamodb:GetItem',
+      'dynamodb:Query'
+    ],
+    resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/crdt-snapshots`]
+  }));
+
   const taskDef = new FargateTaskDefinition(scope, 'TaskDef', {
     executionRole: executionRole,
+    taskRole: taskRole,
     cpu: 256,
     memoryLimitMiB: 512,
   });
