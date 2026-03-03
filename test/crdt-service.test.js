@@ -339,4 +339,183 @@ describe('CRDTService', () => {
             });
         });
     });
+
+    describe('Snapshot Retrieval Tests', () => {
+        let mockDynamoClient;
+
+        beforeEach(() => {
+            // Mock DynamoDB client
+            mockDynamoClient = {
+                send: jest.fn().mockResolvedValue({})
+            };
+
+            // Override CRDTService with mock DynamoDB client
+            crdtService.dynamoClient = mockDynamoClient;
+        });
+
+        describe('Test 1: handleGetSnapshot queries DynamoDB for latest snapshot by documentId', () => {
+            test('should query DynamoDB with correct parameters and descending order', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:test';
+
+                // Mock DynamoDB response with snapshot
+                const mockSnapshot = Buffer.from('test snapshot data');
+                const mockTimestamp = Date.now();
+                mockDynamoClient.send.mockResolvedValue({
+                    Items: [{
+                        snapshot: { B: mockSnapshot },
+                        timestamp: { N: String(mockTimestamp) }
+                    }]
+                });
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Verify DynamoDB was queried
+                expect(mockDynamoClient.send).toHaveBeenCalledTimes(1);
+
+                const command = mockDynamoClient.send.mock.calls[0][0];
+                expect(command.input.TableName).toBe('crdt-snapshots');
+                expect(command.input.KeyConditionExpression).toBe('documentId = :docId');
+                expect(command.input.ExpressionAttributeValues[':docId'].S).toBe(channel);
+                expect(command.input.ScanIndexForward).toBe(false); // Descending order
+                expect(command.input.Limit).toBe(1);
+            });
+        });
+
+        describe('Test 2: Snapshot found - decompress gzip, encode base64, send to client with timestamp', () => {
+            test('should decompress and base64 encode snapshot before sending', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:test';
+
+                // Create gzipped test data
+                const zlib = require('zlib');
+                const { promisify } = require('util');
+                const gzip = promisify(zlib.gzip);
+                const originalData = Buffer.from('test snapshot data');
+                const gzippedData = await gzip(originalData);
+
+                const mockTimestamp = Date.now();
+                mockDynamoClient.send.mockResolvedValue({
+                    Items: [{
+                        snapshot: { B: gzippedData },
+                        timestamp: { N: String(mockTimestamp) }
+                    }]
+                });
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Verify client received decompressed base64 data
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const responseCall = mockMessageRouter.sendToClient.mock.calls[0];
+
+                expect(responseCall[0]).toBe(clientId);
+                expect(responseCall[1].type).toBe('crdt');
+                expect(responseCall[1].action).toBe('snapshot');
+                expect(responseCall[1].channel).toBe(channel);
+                expect(responseCall[1].snapshot).toBe(originalData.toString('base64'));
+                expect(responseCall[1].timestamp).toBe(mockTimestamp);
+                expect(responseCall[1].age).toBeDefined();
+            });
+        });
+
+        describe('Test 3: No snapshot exists - return {snapshot: null, timestamp: null} without error', () => {
+            test('should return null values when no snapshot found', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:new';
+
+                // Mock empty DynamoDB response
+                mockDynamoClient.send.mockResolvedValue({
+                    Items: []
+                });
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Verify client received null response
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const responseCall = mockMessageRouter.sendToClient.mock.calls[0];
+
+                expect(responseCall[1].type).toBe('crdt');
+                expect(responseCall[1].action).toBe('snapshot');
+                expect(responseCall[1].channel).toBe(channel);
+                expect(responseCall[1].snapshot).toBeNull();
+                expect(responseCall[1].timestamp).toBeNull();
+                expect(responseCall[1].age).toBeNull();
+
+                // Verify no error was logged
+                expect(mockLogger.error).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('Test 4: DynamoDB query failure - return {snapshot: null} and log error (graceful degradation)', () => {
+            test('should gracefully handle DynamoDB query failures', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:test';
+
+                // Mock DynamoDB to throw error
+                mockDynamoClient.send.mockRejectedValue(new Error('DynamoDB connection failed'));
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Verify error was logged
+                expect(mockLogger.error).toHaveBeenCalled();
+                const errorCall = mockLogger.error.mock.calls[0];
+                expect(errorCall[0]).toContain('Failed to retrieve snapshot');
+
+                // Verify client received null response (graceful degradation)
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const responseCall = mockMessageRouter.sendToClient.mock.calls[0];
+
+                expect(responseCall[1].snapshot).toBeNull();
+                expect(responseCall[1].timestamp).toBeNull();
+            });
+        });
+
+        describe('Test 5: Authorization check - verify user has permission to access channel before retrieving snapshot', () => {
+            test('should reject getSnapshot for unauthorized channel', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:unauthorized';
+
+                // Override mock to return user without access to this channel
+                mockMessageRouter.getClientData.mockReturnValue({
+                    clientId,
+                    userContext: {
+                        userId: 'user123',
+                        channels: ['doc:test', 'doc:public'] // does not include 'doc:unauthorized'
+                    }
+                });
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Should have sent error to client
+                expect(mockMessageRouter.sendToClient).toHaveBeenCalled();
+                const errorCall = mockMessageRouter.sendToClient.mock.calls[0];
+
+                expect(errorCall[1].type).toBe('error');
+                expect(errorCall[1].service).toBe('crdt');
+
+                // Should NOT have queried DynamoDB
+                expect(mockDynamoClient.send).not.toHaveBeenCalled();
+            });
+
+            test('should allow getSnapshot for authorized channel', async () => {
+                const clientId = 'client1';
+                const channel = 'doc:test'; // User has access to this channel
+
+                // Mock empty DynamoDB response
+                mockDynamoClient.send.mockResolvedValue({
+                    Items: []
+                });
+
+                await crdtService.handleGetSnapshot(clientId, { channel });
+
+                // Should have queried DynamoDB
+                expect(mockDynamoClient.send).toHaveBeenCalled();
+
+                // Should NOT have sent error
+                const calls = mockMessageRouter.sendToClient.mock.calls;
+                const errorCalls = calls.filter(call => call[1].type === 'error');
+                expect(errorCalls).toHaveLength(0);
+            });
+        });
+    });
 });
