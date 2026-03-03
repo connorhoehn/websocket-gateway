@@ -5,6 +5,7 @@ import { createCluster } from './cluster';
 import { createTaskDefinition } from './task-definition';
 import { createFargateService } from './fargate-service';
 import { createRedis } from './redis';
+import { createCrdtSnapshotsTable } from './dynamodb-table';
 import { createDashboard } from './dashboard';
 import { createAlarmTopic } from './sns';
 import { createAlarms } from './alarms';
@@ -15,18 +16,26 @@ export class WebsocketGatewayStack extends Stack {
 
     const vpc = createVpc(this);
     const cluster = createCluster(this, vpc);
-    
+
     // Check if Redis should be enabled via environment variable
     const enableRedis = process.env.ENABLE_REDIS === 'true';
     let redis: any = null;
-    
+
     if (enableRedis) {
       redis = createRedis(this, vpc);
     }
-    
-    // Create task definition without Redis connection details
-    const taskDef = createTaskDefinition(this);
-    
+
+    // Create DynamoDB table for CRDT snapshots
+    const crdtTable = createCrdtSnapshotsTable(this, vpc);
+
+    // Create task definition with DynamoDB table name
+    const taskDef = createTaskDefinition(this, {
+      dynamodbTableName: crdtTable.tableName,
+    });
+
+    // Grant task role permissions to access DynamoDB table
+    crdtTable.table.grantReadWriteData(taskDef.taskRole);
+
     // Create Fargate service with optional Redis security group
     const fargateResources = createFargateService(this, {
       vpc,

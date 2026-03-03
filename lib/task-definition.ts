@@ -6,6 +6,7 @@ import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 interface TaskDefinitionProps {
   redisEndpoint?: string;
   redisPort?: string;
+  dynamodbTableName?: string;
 }
 
 export function createTaskDefinition(scope: Construct, props?: TaskDefinitionProps): FargateTaskDefinition {
@@ -24,15 +25,19 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
   });
   
   const environment: { [key: string]: string } = {};
-  
+
   if (props?.redisEndpoint) {
     environment.REDIS_ENDPOINT = props.redisEndpoint;
   }
-  
+
   if (props?.redisPort) {
     environment.REDIS_PORT = props.redisPort;
   } else {
     environment.REDIS_PORT = '6379'; // Default Redis port
+  }
+
+  if (props?.dynamodbTableName) {
+    environment.DYNAMODB_CRDT_TABLE = props.dynamodbTableName;
   }
 
   taskDef.addContainer('WebSocketContainer', {
