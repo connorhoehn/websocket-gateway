@@ -56,12 +56,12 @@ See: `.planning/milestones/v1.1-ROADMAP.md` for full details
   3. When the connection drops, the app automatically reconnects using the stored session token without user intervention
   4. Connection errors appear inline with their error code and a human-readable description
   5. Selecting a different channel updates the subscription without reloading the page
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: React+Vite+TypeScript scaffold with env-driven auth config
-- [ ] 06-02: useWebSocket hook — connect, session token, auto-reconnect, channel switching
-- [ ] 06-03: Connection status UI component and error display
+- [ ] 06-01-PLAN.md — React+Vite+TypeScript scaffold with env-driven auth config (CONN-01)
+- [ ] 06-02-PLAN.md — useWebSocket hook: connect, session token, auto-reconnect, channel switching (CONN-01, CONN-03, CONN-05)
+- [ ] 06-03-PLAN.md — Connection status UI, error display, channel selector wired to useWebSocket (CONN-02, CONN-04, CONN-05)
 
 ### Phase 7: Presence & Cursors
 **Goal**: Multiple browser tabs on the same channel can see each other's presence and cursors updating in real-time on a shared canvas
