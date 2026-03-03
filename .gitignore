@@ -3,6 +3,7 @@
 !jest.config.js
 !src/**/*.js
 !test/**/*.js
+!scripts/**/*.js
 *.d.ts
 
 # Dependencies

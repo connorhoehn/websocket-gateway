@@ -74,8 +74,31 @@ cdk deploy --all     # Deploy infrastructure first (required)
 ```
 
 ## Configuration
+
+### Required Environment Variables
 - `REDIS_ENDPOINT`: Redis hostname (default: localhost)
 - `PORT`: WebSocket server port (default: 8080)
+
+### Optional Features
+
+#### IVS Chat (Persistent Chat with Moderation)
+
+By default, the gateway uses ephemeral in-memory chat with 100 messages per channel stored in an LRU cache. For persistent chat history and content moderation, enable AWS IVS Chat integration.
+
+**To enable:**
+1. Deploy IVS Chat stack: `cdk deploy IvsChatStack`
+2. Set environment variable: `IVS_CHAT_ROOM_ARN=<room-arn-from-cdk-output>`
+3. Redeploy gateway: `cdk deploy WebSocketGatewayStack --force`
+
+**What it provides:**
+- Persistent chat history (stored in AWS IVS backend)
+- Lambda-based content moderation (profanity filtering)
+- Message delivery guarantees
+- Cost: ~$1.62 per 1M messages (vs $0 for in-memory)
+
+**Migration:** To preserve existing in-memory chat history when enabling IVS Chat, see `scripts/migrate-chat-to-ivs.js`
+
+**Full deployment guide:** [.planning/phases/05-enhanced-reliability-optional/IVS-DEPLOYMENT.md](.planning/phases/05-enhanced-reliability-optional/IVS-DEPLOYMENT.md)
 
 ## WebSocket API
 ```javascript
