@@ -13,6 +13,9 @@ class MessageRouter {
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
 
+        // Redis health tracking
+        this.redisAvailable = true; // Assume Redis is available initially
+
         // Message types for node-to-node communication
         this.messageTypes = {
             DIRECT_MESSAGE: 'direct_message',
@@ -22,6 +25,7 @@ class MessageRouter {
             CURSOR_UPDATE: 'cursor_update'
         };
 
+        this.setupRedisHealthMonitoring();
         this.setupNodeMessageHandlers();
     }
 
@@ -186,15 +190,16 @@ class MessageRouter {
      * Send a message to a specific channel with intelligent routing
      */
     async sendToChannel(channel, message, excludeClientId = null) {
-        if (!this.redisPublisher) {
-            // Fallback to local broadcast
+        if (!this.redisPublisher || !this.redisAvailable) {
+            // Fallback to local broadcast when Redis is unavailable
+            this.logger.debug(`Redis unavailable, broadcasting to local channel ${channel} only`);
             return this.broadcastToLocalChannel(channel, message, excludeClientId);
         }
 
         try {
             // Get nodes that have clients subscribed to this channel
             const targetNodes = await this.nodeManager.getNodesForChannel(channel);
-            
+
             if (targetNodes.length === 0) {
                 this.logger.debug(`No nodes found for channel ${channel}`);
                 return;
@@ -213,7 +218,7 @@ class MessageRouter {
             // Publish to Redis with node targeting
             const redisChannel = `websocket:route:${channel}`;
             await this.redisPublisher.publish(redisChannel, JSON.stringify(routedMessage));
-            
+
             this.logger.debug(`Message routed to ${targetNodes.length} nodes for channel ${channel}`);
         } catch (error) {
             this.logger.error(`Failed to route message to channel ${channel}:`, error);
@@ -294,6 +299,49 @@ class MessageRouter {
     }
 
     /**
+     * Setup Redis connection health monitoring
+     * Monitors error and ready events to track Redis availability
+     */
+    setupRedisHealthMonitoring() {
+        if (!this.redisPublisher || !this.redisSubscriber) {
+            this.redisAvailable = false;
+            return;
+        }
+
+        // Monitor redisPublisher errors
+        this.redisPublisher.on('error', (err) => {
+            const connectionErrors = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'];
+            if (connectionErrors.includes(err.code)) {
+                this.redisAvailable = false;
+                this.logger.warn('Redis unavailable, using local cache');
+            }
+        });
+
+        // Monitor redisPublisher ready state
+        this.redisPublisher.on('ready', () => {
+            this.redisAvailable = true;
+            this.logger.info('Redis connection restored');
+        });
+
+        // Monitor redisSubscriber errors
+        this.redisSubscriber.on('error', (err) => {
+            const connectionErrors = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'];
+            if (connectionErrors.includes(err.code)) {
+                this.redisAvailable = false;
+                this.logger.warn('Redis unavailable, using local cache');
+            }
+        });
+
+        // Monitor redisSubscriber ready state
+        this.redisSubscriber.on('ready', () => {
+            this.redisAvailable = true;
+            this.logger.info('Redis connection restored');
+        });
+
+        this.logger.debug('Redis health monitoring initialized');
+    }
+
+    /**
      * Setup Redis message handlers for node-to-node communication
      */
     async setupNodeMessageHandlers() {
@@ -303,10 +351,10 @@ class MessageRouter {
             // Subscribe to direct messages for this node
             const directChannel = `websocket:direct:${this.nodeManager.nodeId}`;
             await this.redisSubscriber.subscribe(directChannel, this.handleDirectMessage.bind(this));
-            
+
             // Subscribe to broadcast messages
             await this.redisSubscriber.subscribe('websocket:broadcast:all', this.handleBroadcastMessage.bind(this));
-            
+
             this.logger.info(`Node message handlers setup for node ${this.nodeManager.nodeId}`);
         } catch (error) {
             this.logger.error('Failed to setup node message handlers:', error);
@@ -319,14 +367,24 @@ class MessageRouter {
     async subscribeToRedisChannel(channel) {
         if (!this.redisSubscriber || this.subscribedChannels.has(channel)) return;
 
+        // Track subscription attempt even if Redis is unavailable
+        if (!this.redisAvailable) {
+            this.logger.debug(`Redis unavailable, deferring subscription to channel: ${channel}`);
+            // Still add to subscribedChannels to prevent repeated attempts
+            this.subscribedChannels.add(channel);
+            return;
+        }
+
         try {
             const redisChannel = `websocket:route:${channel}`;
             await this.redisSubscriber.subscribe(redisChannel, this.handleChannelMessage.bind(this));
             this.subscribedChannels.add(channel);
-            
+
             this.logger.debug(`Subscribed to Redis channel: ${redisChannel}`);
         } catch (error) {
             this.logger.error(`Failed to subscribe to Redis channel ${channel}:`, error);
+            // Still add to subscribedChannels to mark the attempt
+            this.subscribedChannels.add(channel);
         }
     }
 
