@@ -65,10 +65,12 @@ Plans:
   3. CloudWatch alarms trigger SNS notifications when memory exceeds 80%, connection failures spike, or authorization denials occur
   4. CloudWatch dashboard displays real-time graphs for connections, message throughput, error rates, and Redis health
   5. Error responses include standardized error codes (AUTH_FAILED, RATE_LIMIT_EXCEEDED, INVALID_MESSAGE, etc.)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] (To be created by plan-phase)
+- [ ] 03-01-PLAN.md — CloudWatch metrics emission and JSON-structured logging
+- [ ] 03-02-PLAN.md — CloudWatch alarms with SNS notifications for critical metrics
+- [ ] 03-03-PLAN.md — CloudWatch dashboard and standardized error codes
 
 ### Phase 4: Persistent State & CRDT Support
 **Goal**: CRDT operation broadcasting and periodic snapshot persistence to DynamoDB
