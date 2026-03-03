@@ -62,9 +62,16 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 
 ### Active
 
-<!-- Future work -->
+<!-- v1.2: Frontend Layer -->
 
-- [ ] Additional reliability enhancements TBD
+- [ ] React + Vite frontend app with WebSocket connection hook and status UI
+- [ ] Reusable presence component showing live user list per channel
+- [ ] Collaborative cursor canvas with real-time multi-tab cursor tracking
+- [ ] Chat component with real-time messages and scrollback history
+- [ ] Shared CRDT document editor syncing across tabs via Y.js
+- [ ] Ephemeral reactions overlay with emoji animations
+- [ ] Developer event log and error display panel
+- [ ] Local dev auth helper for generating Cognito JWT tokens
 
 ### Out of Scope
 
@@ -124,5 +131,18 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | Cache-aside pattern for cursor service | Ensures availability during Redis intermittency | ✅ v1.0: Local-first writes, Redis sync with fallback |
 | AWS IVS for persistent chat | Managed chat service tied to video streaming, offloads chat persistence | — Deferred: Evaluate in v2 based on user needs |
 
+## Current Milestone: v1.2 Frontend Layer
+
+**Goal:** Build a React + Vite developer toolbox that exercises every gateway feature (presence, cursors, chat, CRDT, reactions) with reusable hooks/components and full in-UI error visibility.
+
+**Target features:**
+- WebSocket connection hook with status, reconnect, and error display
+- Presence panel (live user list per channel)
+- Collaborative cursor canvas (multi-tab real-time tracking)
+- Chat panel with history
+- Shared CRDT document editor (Y.js)
+- Ephemeral reactions overlay
+- Developer event log panel
+
 ---
-*Last updated: 2026-03-03 after v1.1 milestone completion*
+*Last updated: 2026-03-03 after v1.2 milestone started*
