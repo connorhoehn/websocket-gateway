@@ -6,7 +6,7 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
-const LRU = require('lru-cache');
+const { LRUCache } = require('lru-cache');
 
 class ChatService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -223,7 +223,7 @@ class ChatService {
 
     getChannelCache(channelId) {
         if (!this.channelCaches.has(channelId)) {
-            const cache = new LRU({
+            const cache = new LRUCache({
                 max: this.MAX_MESSAGES_PER_CHANNEL,
                 updateAgeOnGet: false,
                 updateAgeOnHas: false

@@ -14,21 +14,21 @@ class CursorService {
         this.logger = logger;
         this.metricsCollector = metricsCollector;
         this.redisClient = null; // Legacy parameter, not used
-        
+
         // Local state management (fallback when Redis is not available)
         this.clientCursors = new Map(); // clientId -> cursor data
         this.channelCursors = new Map(); // channel -> Map of clientId -> cursor data
         this.cursorUpdateThrottle = new Map(); // clientId -> last update timestamp
         this.throttleInterval = 250; // 250ms throttle for updates
-        
+
         // TTL mechanism for cursor cleanup
         this.cursorTTL = 30000; // 30 seconds TTL for cursor data
         this.cleanupInterval = 10000; // Run cleanup every 10 seconds
         this.startCleanupTimer();
-        
+
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
-        this.useRedis = !!redisClient; // Use Redis if available
+        this.useRedis = !!this.redisClient; // Use Redis if available (fixed: was referencing undefined redisClient)
         
         // Redis keys
         this.redisKeys = {
