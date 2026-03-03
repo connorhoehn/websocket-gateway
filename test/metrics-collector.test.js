@@ -218,4 +218,95 @@ describe('MetricsCollector', () => {
             expect(summary.p95Latency).toBeGreaterThan(0);
         });
     });
+
+    describe('Test 6: recordMetric adds custom metric to queue', () => {
+        test('should add metric with correct structure to customMetrics array', () => {
+            // Arrange & Act
+            metricsCollector.recordMetric('ConnectionFailures', 1);
+
+            // Assert
+            expect(metricsCollector.customMetrics).toHaveLength(1);
+            const metric = metricsCollector.customMetrics[0];
+            expect(metric.MetricName).toBe('ConnectionFailures');
+            expect(metric.Value).toBe(1);
+            expect(metric.Unit).toBe('Count');
+        });
+
+        test('should respect a custom unit parameter', () => {
+            metricsCollector.recordMetric('Latency', 42, 'Milliseconds');
+
+            const metric = metricsCollector.customMetrics[0];
+            expect(metric.Unit).toBe('Milliseconds');
+        });
+
+        test('should include ServiceName dimension', () => {
+            metricsCollector.recordMetric('TestMetric', 5);
+
+            const metric = metricsCollector.customMetrics[0];
+            expect(metric.Dimensions).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({ Name: 'ServiceName', Value: 'websocket-gateway' })
+                ])
+            );
+        });
+    });
+
+    describe('Test 7: recordError maps error codes to CloudWatch metric names', () => {
+        test('AUTHZ_ prefix maps to AuthorizationDenials', () => {
+            metricsCollector.recordError('AUTHZ_CHANNEL_DENIED');
+
+            expect(metricsCollector.customMetrics[0].MetricName).toBe('AuthorizationDenials');
+        });
+
+        test('INVALID_ prefix maps to ValidationErrors', () => {
+            metricsCollector.recordError('INVALID_MESSAGE_STRUCTURE');
+
+            expect(metricsCollector.customMetrics[0].MetricName).toBe('ValidationErrors');
+        });
+
+        test('RATE_LIMIT_ prefix maps to RateLimitExceeded', () => {
+            metricsCollector.recordError('RATE_LIMIT_MESSAGE_QUOTA');
+
+            expect(metricsCollector.customMetrics[0].MetricName).toBe('RateLimitExceeded');
+        });
+
+        test('SERVICE_ prefix maps to ServiceErrors', () => {
+            metricsCollector.recordError('SERVICE_REDIS_ERROR');
+
+            expect(metricsCollector.customMetrics[0].MetricName).toBe('ServiceErrors');
+        });
+
+        test('unknown error code maps to UnknownErrors', () => {
+            metricsCollector.recordError('SOMETHING_TOTALLY_UNKNOWN');
+
+            expect(metricsCollector.customMetrics[0].MetricName).toBe('UnknownErrors');
+        });
+    });
+
+    describe('Test 8: flush includes custom metrics and resets the queue', () => {
+        test('should include custom metrics in CloudWatch PutMetricData payload', async () => {
+            // Arrange
+            metricsCollector.recordError('AUTHZ_CHANNEL_DENIED');
+
+            // Act
+            await metricsCollector.flush();
+
+            // Assert
+            const callArg = mockSend.mock.calls[0][0];
+            const metricNames = callArg.input.MetricData.map(m => m.MetricName);
+            expect(metricNames).toContain('AuthorizationDenials');
+        });
+
+        test('should reset customMetrics array after successful flush', async () => {
+            // Arrange
+            metricsCollector.recordMetric('ConnectionFailures', 3);
+            expect(metricsCollector.customMetrics).toHaveLength(1);
+
+            // Act
+            await metricsCollector.flush();
+
+            // Assert
+            expect(metricsCollector.customMetrics).toHaveLength(0);
+        });
+    });
 });
