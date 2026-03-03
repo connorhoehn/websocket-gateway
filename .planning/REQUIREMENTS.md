@@ -33,7 +33,7 @@ Requirements for production-ready AWS deployment. Each maps to roadmap phases.
 
 - [x] **MON-01**: Emit CloudWatch custom metrics (connection count, messages/sec, latency)
 - [x] **MON-02**: Configure structured logging with JSON format and correlation IDs
-- [ ] **MON-03**: Set up CloudWatch alarms for critical metrics (error rate, memory, connections)
+- [x] **MON-03**: Set up CloudWatch alarms for critical metrics (error rate, memory, connections)
 - [ ] **MON-04**: Create CloudWatch dashboard for real-time system visibility
 - [ ] **MON-05**: Add error codes and standardized error response format
 
@@ -122,7 +122,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-08 | Phase 2 | Complete |
 | MON-01 | Phase 3 | Complete |
 | MON-02 | Phase 3 | Complete |
-| MON-03 | Phase 3 | Pending |
+| MON-03 | Phase 3 | Complete |
 | MON-04 | Phase 3 | Pending |
 | MON-05 | Phase 3 | Pending |
 | REL-01 | Phase 1 | Complete |
