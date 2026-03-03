@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Enhanced Reliability
 status: unknown
-last_updated: "2026-03-03T14:31:43.512Z"
+last_updated: "2026-03-03T14:38:42.246Z"
 progress:
-  total_phases: 5
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 2
 ---
 
 # Project State
@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 Phase: 5 of 5 (Enhanced Reliability - Optional)
 Plan: 1 of 3 in current phase
-Status: In Progress
-Last activity: 2026-03-03 — Completed 05-03-PLAN.md (IVS Chat Integration)
+Status: Complete
+Last activity: 2026-03-03 — Completed 05-01-PLAN.md (Redis Graceful Degradation)
 
 Progress: [███░░░░░░░] 33% (1/3 plans in phase 05 complete)
 
@@ -55,6 +55,7 @@ Progress: [███░░░░░░░] 33% (1/3 plans in phase 05 complete)
 | 04-02 | 509s (8m) | 2 | 4 |
 | 04-01 | 296s (5m) | 2 | 6 |
 | 03-03 | 437s (7m) | 4 | 11 |
+| Phase 05 P01 | 729 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,9 @@ Recent decisions affecting current work:
 - [Phase 05-03]: Lambda handler fails open (ALLOW) on errors instead of failing closed (DENY) - prioritizes availability over strict moderation
 - [Phase 05-03]: Lambda publishes approved messages to Redis pub/sub instead of IVS delivering to clients - maintains WebSocket routing control for consistent delivery pattern
 - [Phase 05-03]: Use simple banned keyword list instead of ML-based moderation - keeps Lambda cold start fast and avoids ML inference costs
+- [Phase 05-01]: Use error event codes (ECONNREFUSED, ECONNRESET, ETIMEDOUT, EAI_AGAIN) to detect Redis connection failures for accurate health monitoring
+- [Phase 05-01]: Maintain redisAvailable flag at MessageRouter level for centralized health tracking and consistent behavior
+- [Phase 05-01]: Services delegate fallback logic to MessageRouter.sendToChannel for consistent cross-service degradation behavior
 
 ### Pending Todos
 
