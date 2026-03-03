@@ -6,6 +6,7 @@
  */
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 
 class CursorService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -255,7 +256,7 @@ class CursorService {
                 checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message);
+                    this.sendError(clientId, error.message, error.code);
                     return;
                 }
                 throw error;
@@ -405,13 +406,22 @@ class CursorService {
         }
     }
 
-    sendError(clientId, error) {
-        this.sendToClient(clientId, {
-            type: 'cursor',
-            action: 'error',
-            error,
-            timestamp: new Date().toISOString()
+    sendError(clientId, message, errorCode = ErrorCodes.SERVICE_INTERNAL_ERROR) {
+        const errorResponse = createErrorResponse(errorCode, message, {
+            service: 'cursor',
+            clientId,
         });
+
+        this.sendToClient(clientId, {
+            type: 'error',
+            service: 'cursor',
+            ...errorResponse,
+        });
+
+        // Record error metric
+        if (this.metricsCollector) {
+            this.metricsCollector.recordError(errorCode);
+        }
     }
 
     // Client lifecycle methods

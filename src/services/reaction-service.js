@@ -5,6 +5,7 @@
  */
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 
 class ReactionService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -81,7 +82,7 @@ class ReactionService {
                 checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message);
+                    this.sendError(clientId, error.message, error.code);
                     return;
                 }
                 throw error;
@@ -233,13 +234,22 @@ class ReactionService {
         });
     }
 
-    sendError(clientId, error) {
-        this.sendToClient(clientId, {
-            type: 'reaction',
-            action: 'error',
-            success: false,
-            error
+    sendError(clientId, message, errorCode = ErrorCodes.SERVICE_INTERNAL_ERROR) {
+        const errorResponse = createErrorResponse(errorCode, message, {
+            service: 'reaction',
+            clientId,
         });
+
+        this.sendToClient(clientId, {
+            type: 'error',
+            service: 'reaction',
+            ...errorResponse,
+        });
+
+        // Record error metric
+        if (this.metricsCollector) {
+            this.metricsCollector.recordError(errorCode);
+        }
     }
 
     // Clean up when a client disconnects

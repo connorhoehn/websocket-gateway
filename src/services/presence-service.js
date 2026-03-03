@@ -5,6 +5,7 @@
  */
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 
 class PresenceService {
     constructor(messageRouter, nodeManager, logger, metricsCollector = null) {
@@ -152,7 +153,7 @@ class PresenceService {
                 checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
             } catch (error) {
                 if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message);
+                    this.sendError(clientId, error.message, error.code);
                     return;
                 }
                 throw error;
@@ -349,13 +350,22 @@ class PresenceService {
         }
     }
 
-    sendError(clientId, error) {
-        this.sendToClient(clientId, {
-            type: 'presence',
-            action: 'error',
-            error,
-            timestamp: new Date().toISOString()
+    sendError(clientId, message, errorCode = ErrorCodes.SERVICE_INTERNAL_ERROR) {
+        const errorResponse = createErrorResponse(errorCode, message, {
+            service: 'presence',
+            clientId,
         });
+
+        this.sendToClient(clientId, {
+            type: 'error',
+            service: 'presence',
+            ...errorResponse,
+        });
+
+        // Record error metric
+        if (this.metricsCollector) {
+            this.metricsCollector.recordError(errorCode);
+        }
     }
 
     // Client lifecycle methods
