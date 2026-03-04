@@ -1,9 +1,97 @@
-// Placeholder shell — Plan 03 will add ConnectionStatus and ErrorDisplay
+// frontend/src/app/App.tsx
+import { useWebSocket } from '../hooks/useWebSocket';
+import { getGatewayConfig } from '../config/gateway';
+import { ConnectionStatus } from '../components/ConnectionStatus';
+import { ErrorDisplay } from '../components/ErrorDisplay';
+import { ChannelSelector } from '../components/ChannelSelector';
+import type { GatewayMessage } from '../types/gateway';
+import { useState } from 'react';
+
 export function App() {
+  // getGatewayConfig() throws a descriptive error if .env is not set up.
+  // Wrap in try/catch to show setup instructions instead of a white screen.
+  let config;
+  try {
+    config = getGatewayConfig();
+  } catch (err) {
+    return (
+      <div style={{ fontFamily: 'monospace', padding: '2rem', color: '#dc2626' }}>
+        <h2>Setup Required</h2>
+        <pre style={{ background: '#fef2f2', padding: '1rem', borderRadius: '4px' }}>
+          {err instanceof Error ? err.message : String(err)}
+        </pre>
+        <p>Copy <code>frontend/.env.example</code> to <code>frontend/.env</code> and fill in your values.</p>
+      </div>
+    );
+  }
+
+  return <GatewayDemo config={config} />;
+}
+
+function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }) {
+  const [messages, setMessages] = useState<GatewayMessage[]>([]);
+
+  const {
+    connectionState,
+    lastError,
+    currentChannel,
+    clientId,
+    sessionToken,
+    switchChannel,
+  } = useWebSocket({
+    config,
+    onMessage: (msg) => setMessages((prev) => [msg, ...prev].slice(0, 50)),
+  });
+
   return (
-    <div style={{ fontFamily: 'monospace', padding: '1rem' }}>
-      <h1>WebSocket Gateway Dev Client</h1>
-      <p>Phase 6 scaffold — connection UI coming in Plan 03</p>
+    <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>
+      <h1 style={{ marginBottom: '1rem' }}>WebSocket Gateway Dev Client</h1>
+
+      {/* Connection status row */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <ConnectionStatus state={connectionState} />
+      </div>
+
+      {/* Error display */}
+      <ErrorDisplay error={lastError} />
+
+      {/* Channel selector */}
+      <div style={{ margin: '1rem 0' }}>
+        <ChannelSelector currentChannel={currentChannel} onSwitch={switchChannel} />
+      </div>
+
+      {/* Debug info */}
+      <div style={{ color: '#6b7280', fontSize: '0.75rem', marginBottom: '1rem' }}>
+        <div>clientId: {clientId ?? '—'}</div>
+        <div>sessionToken: {sessionToken ? sessionToken.slice(0, 8) + '…' : '—'}</div>
+      </div>
+
+      {/* Live message log */}
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+        <h3 style={{ margin: '0 0 0.5rem' }}>Recent Messages</h3>
+        {messages.length === 0 ? (
+          <p style={{ color: '#9ca3af' }}>No messages yet.</p>
+        ) : (
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {messages.map((msg, i) => (
+              <pre
+                key={i}
+                style={{
+                  background: '#f9fafb',
+                  padding: '0.5rem',
+                  borderRadius: '4px',
+                  marginBottom: '0.25rem',
+                  fontSize: '0.75rem',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {JSON.stringify(msg, null, 2)}
+              </pre>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
