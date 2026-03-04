@@ -184,12 +184,15 @@ describe('useWebSocket', () => {
         MockWebSocket.instances[0].triggerClose();
       });
 
-      // Advance timers to trigger first reconnect (1000ms)
+      // Advance timers to trigger first reconnect (1000ms).
+      // After the timer fires, connect() is called again — state moves from
+      // 'reconnecting' → 'connecting' (new WS created but not yet open).
       act(() => {
         vi.advanceTimersByTime(1100);
       });
 
-      expect(result.current.connectionState).toBe('reconnecting');
+      // State is now 'connecting' (timer fired, new WS created but not open yet)
+      expect(result.current.connectionState).toBe('connecting');
       // A new WebSocket should have been created with the session token
       const secondWs = MockWebSocket.instances[1];
       expect(secondWs).toBeDefined();
