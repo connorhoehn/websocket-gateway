@@ -8,6 +8,7 @@ interface TaskDefinitionProps {
   redisEndpoint?: string;
   redisPort?: string;
   dynamodbTableName?: string;
+  imageUri?: string;
 }
 
 export function createTaskDefinition(scope: Construct, props?: TaskDefinitionProps): FargateTaskDefinition {
@@ -61,8 +62,10 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     environment.DYNAMODB_CRDT_TABLE = props.dynamodbTableName;
   }
 
+  const imageUri = props?.imageUri || process.env.IMAGE_URI || '264161986065.dkr.ecr.us-east-1.amazonaws.com/websocket-gateway:latest';
+
   taskDef.addContainer('WebSocketContainer', {
-    image: ContainerImage.fromRegistry('amazon/amazon-ecs-sample'),
+    image: ContainerImage.fromRegistry(imageUri),
     memoryLimitMiB: 512,
     cpu: 256,
     portMappings: [{ containerPort: 8080 }],
