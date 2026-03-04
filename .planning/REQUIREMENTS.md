@@ -9,9 +9,9 @@
 ### Connection & Auth
 
 - [x] **CONN-01**: User can connect to the WebSocket gateway using a Cognito JWT configured via `.env`
-- [ ] **CONN-02**: UI displays connection status (connecting / connected / disconnected / reconnecting)
+- [x] **CONN-02**: UI displays connection status (connecting / connected / disconnected / reconnecting)
 - [x] **CONN-03**: UI automatically reconnects using session token on disconnect
-- [ ] **CONN-04**: Connection errors display inline with error code and human-readable message
+- [x] **CONN-04**: Connection errors display inline with error code and human-readable message
 - [x] **CONN-05**: User can switch channels without reloading the page
 
 ### Presence
@@ -75,9 +75,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CONN-01 | Phase 6 | Complete |
-| CONN-02 | Phase 6 | Pending |
+| CONN-02 | Phase 6 | Complete |
 | CONN-03 | Phase 6 | Complete |
-| CONN-04 | Phase 6 | Pending |
+| CONN-04 | Phase 6 | Complete |
 | CONN-05 | Phase 6 | Complete |
 | PRES-01 | Phase 7 | Pending |
 | PRES-02 | Phase 7 | Pending |

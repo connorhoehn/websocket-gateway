@@ -38,7 +38,7 @@ See: `.planning/milestones/v1.1-ROADMAP.md` for full details
 
 ## Phase Checklist
 
-- [ ] **Phase 6: Foundation** - React+Vite scaffold, useWebSocket hook, auth config, connection status UI
+- [x] **Phase 6: Foundation** - React+Vite scaffold, useWebSocket hook, auth config, connection status UI (completed 2026-03-04)
 - [ ] **Phase 7: Presence & Cursors** - usePresence + PresencePanel, useCursors + CursorCanvas
 - [ ] **Phase 8: Chat** - useChat hook + ChatPanel with scrollback history
 - [ ] **Phase 9: CRDT Editor** - useCRDT + shared text editor with Y.js + snapshot restore
@@ -131,7 +131,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v1.0 | 13/13 | Complete | 2026-03-03 |
 | 5 | v1.1 | 4/4 | Complete | 2026-03-03 |
-| 6. Foundation | 2/3 | In Progress|  | - |
+| 6. Foundation | 3/3 | Complete   | 2026-03-04 | - |
 | 7. Presence & Cursors | v1.2 | 0/2 | Not started | - |
 | 8. Chat | v1.2 | 0/2 | Not started | - |
 | 9. CRDT Editor | v1.2 | 0/2 | Not started | - |
