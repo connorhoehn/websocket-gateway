@@ -9,6 +9,9 @@ import { ErrorDisplay } from '../components/ErrorDisplay';
 import { ChannelSelector } from '../components/ChannelSelector';
 import { PresencePanel } from '../components/PresencePanel';
 import { CursorCanvas } from '../components/CursorCanvas';
+import { TableCursorGrid } from '../components/TableCursorGrid';
+import { TextCursorEditor } from '../components/TextCursorEditor';
+import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage } from '../types/gateway';
 
 export function App() {
@@ -73,7 +76,7 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     connectionState,
   });
 
-  const { cursors, sendFreeformUpdate } = useCursors({
+  const { cursors, sendFreeformUpdate, sendTableUpdate, sendTextUpdate } = useCursors({
     sendMessage,
     onMessage,
     currentChannel,
@@ -112,6 +115,22 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
       {/* Freeform Cursors */}
       <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Freeform Cursors</h3>
       <CursorCanvas cursors={cursors} onMouseMove={sendFreeformUpdate} />
+
+      {/* Table Cursors */}
+      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Table Cursors</h3>
+      <TableCursorGrid
+        cursors={cursors}
+        onCellClick={sendTableUpdate}
+      />
+
+      {/* Text Cursors */}
+      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Text Cursors</h3>
+      <TextCursorEditor
+        cursors={cursors}
+        onPositionChange={(position: number, selectionData: TextSelectionData | null, hasSelection: boolean) =>
+          sendTextUpdate(position, selectionData, hasSelection)
+        }
+      />
 
       {/* Live message log */}
       <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>

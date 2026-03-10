@@ -1,0 +1,198 @@
+// frontend/src/components/TableCursorGrid.tsx
+//
+// 10-row x 6-column spreadsheet grid.
+// Broadcasts cell-click positions via the cursor service (mode: 'table').
+// Renders colored cell-border indicators with initials badges for remote cursors
+// that have metadata.mode === 'table'.
+
+import type { RemoteCursor } from '../hooks/useCursors';
+
+// ---------------------------------------------------------------------------
+// Color helpers (same 15-color palette as 07-01/07-02)
+// ---------------------------------------------------------------------------
+
+const COLOR_PALETTE = [
+  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
+  '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
+  '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838',
+];
+
+function clientIdToColor(clientId: string): string {
+  let hash = 0;
+  for (let i = 0; i < clientId.length; i++) {
+    hash = (hash * 31 + clientId.charCodeAt(i)) | 0;
+  }
+  return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
+}
+
+function clientIdToInitials(clientId: string): string {
+  return clientId.slice(0, 2).toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface TableCursorGridProps {
+  cursors: Map<string, RemoteCursor>;
+  onCellClick: (row: number, col: number) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const COL_HEADERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const ROW_COUNT = 10;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function TableCursorGrid({ cursors, onCellClick }: TableCursorGridProps) {
+  // Build a lookup: "row,col" -> RemoteCursor[] for efficient cell lookup.
+  const cellCursors = new Map<string, RemoteCursor[]>();
+  cursors.forEach((cursor) => {
+    if ((cursor.metadata as Record<string, unknown>).mode !== 'table') return;
+    const pos = cursor.position as { row?: number; col?: number };
+    if (pos.row == null || pos.col == null) return;
+    const key = `${pos.row},${pos.col}`;
+    const existing = cellCursors.get(key) ?? [];
+    existing.push(cursor);
+    cellCursors.set(key, existing);
+  });
+
+  return (
+    <div
+      style={{
+        overflow: 'auto',
+        border: '1px solid #e5e7eb',
+        borderRadius: 4,
+      }}
+    >
+      <table
+        style={{
+          borderCollapse: 'collapse',
+          width: '100%',
+        }}
+      >
+        <thead>
+          <tr>
+            {/* empty corner cell */}
+            <th
+              style={{
+                fontWeight: 'bold',
+                background: '#f9fafb',
+                padding: '6px',
+                minWidth: 40,
+                textAlign: 'center',
+                border: '1px solid #e5e7eb',
+              }}
+            />
+            {COL_HEADERS.map((header) => (
+              <th
+                key={header}
+                style={{
+                  fontWeight: 'bold',
+                  background: '#f9fafb',
+                  padding: '6px',
+                  minWidth: 80,
+                  textAlign: 'center',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: ROW_COUNT }, (_, rowIndex) => (
+            <tr key={rowIndex}>
+              {/* Row header */}
+              <th
+                style={{
+                  fontWeight: 'bold',
+                  background: '#f9fafb',
+                  padding: '6px',
+                  minWidth: 40,
+                  textAlign: 'center',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                {rowIndex + 1}
+              </th>
+
+              {/* Data cells */}
+              {COL_HEADERS.map((_, colIndex) => {
+                const key = `${rowIndex},${colIndex}`;
+                const remoteCursorsOnCell = cellCursors.get(key) ?? [];
+
+                return (
+                  <td
+                    key={colIndex}
+                    onClick={() => onCellClick(rowIndex, colIndex)}
+                    style={{
+                      position: 'relative',
+                      padding: 8,
+                      minWidth: 80,
+                      height: 30,
+                      border: '1px solid #e5e7eb',
+                      cursor: 'pointer',
+                      background: 'white',
+                    }}
+                  >
+                    {/* Render a colored border overlay for each remote cursor on this cell */}
+                    {remoteCursorsOnCell.map((cursor, i) => {
+                      const color = clientIdToColor(cursor.clientId);
+                      const initials = clientIdToInitials(cursor.clientId);
+                      const borderWidth = 3 - Math.min(i, 1); // slight visual stacking
+                      return (
+                        <div key={cursor.clientId}>
+                          {/* Cell-border indicator */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              border: `${borderWidth}px solid ${color}`,
+                              borderRadius: 4,
+                              boxShadow: `0 0 0 1px ${color}`,
+                              pointerEvents: 'none',
+                              zIndex: 10 + i,
+                              opacity: 1 - i * 0.15,
+                            }}
+                          />
+                          {/* Initials badge */}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: -10,
+                              left: i * 22,
+                              fontSize: 10,
+                              background: color,
+                              color: 'white',
+                              padding: '1px 4px',
+                              borderRadius: 3,
+                              pointerEvents: 'none',
+                              zIndex: 20 + i,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {initials}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
