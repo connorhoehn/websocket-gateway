@@ -108,11 +108,11 @@ Plans:
   1. Typing in the shared editor on one tab immediately appears in the same document on all other connected tabs
   2. When two tabs type concurrently at different positions, both edits appear correctly merged in all tabs with no data loss
   3. After disconnecting and reconnecting, the document content matches the last-known state from the DynamoDB snapshot
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: useCRDT hook — Y.js integration, CRDT op broadcast, snapshot restore on connect
-- [ ] 09-02: Shared text editor component wired to useCRDT
+- [ ] 09-01-PLAN.md — useCRDT hook — Y.js integration, CRDT op broadcast, snapshot restore on connect (CRDT-01, CRDT-02, CRDT-03)
+- [ ] 09-02-PLAN.md — Shared text editor component wired to useCRDT (CRDT-01, CRDT-02, CRDT-03)
 
 ### Phase 10: Reactions & Dev Tools
 **Goal**: Users can send ephemeral emoji reactions that animate for all channel members, and developers can observe every WebSocket event, error, and connection state in dedicated panels
