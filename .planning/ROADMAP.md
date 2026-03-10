@@ -42,7 +42,7 @@ See: `.planning/milestones/v1.1-ROADMAP.md` for full details
 - [x] **Phase 6: Foundation** - React+Vite scaffold, useWebSocket hook, auth config, connection status UI (completed 2026-03-04)
 - [x] **Phase 7: Presence & Cursors** - usePresence + PresencePanel, useCursors with all 4 modes (freeform, table, text, canvas) + multi-mode selector UI (completed 2026-03-10)
 - [x] **Phase 8: Chat** - useChat hook + ChatPanel with scrollback history (completed 2026-03-10)
-- [ ] **Phase 9: CRDT Editor** - useCRDT + shared text editor with Y.js + snapshot restore
+- [x] **Phase 9: CRDT Editor** - useCRDT + shared text editor with Y.js + snapshot restore (completed 2026-03-10)
 - [ ] **Phase 10: Reactions & Dev Tools** - useReactions + overlay, EventLog, ErrorPanel, disconnect/reconnect control
 
 ## Phase Details
@@ -205,7 +205,7 @@ Plans:
 | 6. Foundation | v1.2 | 3/3 | Complete | 2026-03-04 |
 | 7. Presence & Cursors | v1.2 | 4/4 | Complete | 2026-03-10 |
 | 8. Chat | 1/1 | Complete   | 2026-03-10 | - |
-| 9. CRDT Editor | v1.2 | 0/2 | Not started | - |
+| 9. CRDT Editor | 2/2 | Complete   | 2026-03-10 | - |
 | 10. Reactions & Dev Tools | v1.2 | 0/3 | Not started | - |
 | 11. Auth Foundation | v1.3 | 0/3 | Not started | - |
 | 12. Identity Integration | v1.3 | 0/2 | Not started | - |

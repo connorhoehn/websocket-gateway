@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 09-01-PLAN.md — useCRDT hook with TDD (subscribe, snapshot restore, update merge, applyLocalEdit)
-last_updated: "2026-03-10T18:56:49.256Z"
+stopped_at: Completed 09-02-PLAN.md — SharedTextEditor component + App.tsx useCRDT integration
+last_updated: "2026-03-10T19:00:03.803Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 86
 ---
 
@@ -57,6 +57,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 07-presence-cursors P07-04 | 204 | 2 tasks | 4 files |
 | Phase 08-chat P01 | 83 | 2 tasks | 2 files |
 | Phase 09-crdt-editor P01 | 132 | 2 tasks | 4 files |
+| Phase 09-crdt-editor P02 | 70 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,8 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 09-01]: useCRDT separates onMessage handler effect from subscribe effect so handler survives channel changes without teardown
 - [Phase 09-01]: Y.Doc destroyed and recreated on each subscribe — prevents stale state from previous channel or session leaking
 - [Phase 09-01]: encodeStateAsUpdate (full state) sent on applyLocalEdit — gateway stores cumulative snapshot matching Phase 04-01 buffer strategy
+- [Phase 09-02]: SharedTextEditor receives all data as props only — pure controlled component, no internal hook calls
+- [Phase 09-02]: disabled prop maps to readOnly + status label — textarea inert while disconnected, prevents writes to closed socket
 
 ### Pending Todos
 
@@ -108,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T18:56:49.254Z
-Stopped at: Completed 09-01-PLAN.md — useCRDT hook with TDD (subscribe, snapshot restore, update merge, applyLocalEdit)
+Last session: 2026-03-10T19:00:03.801Z
+Stopped at: Completed 09-02-PLAN.md — SharedTextEditor component + App.tsx useCRDT integration
 Resume file: None
