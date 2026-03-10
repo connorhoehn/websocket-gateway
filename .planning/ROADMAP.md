@@ -124,12 +124,12 @@ Plans:
   3. The event log panel shows every WebSocket message sent and received, in order, with timestamps
   4. The error panel displays each error's code, human-readable message, and timestamp
   5. Clicking disconnect drops the connection and clicking reconnect restores it, allowing the full recovery flow to be observed end-to-end
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 10-01: useReactions hook + ephemeral reactions overlay with animations
-- [ ] 10-02: EventLog panel (all WS messages) and ErrorPanel (code + message + timestamp)
-- [ ] 10-03: Disconnect/reconnect control wired to useWebSocket
+- [ ] 10-01-PLAN.md — useReactions hook (TDD) + ReactionsOverlay + ReactionButtons (REAC-01, REAC-02)
+- [ ] 10-02-PLAN.md — EventLog panel (all WS messages) and ErrorPanel (code + message + timestamp) (DEV-01, DEV-02)
+- [ ] 10-03-PLAN.md — Disconnect/reconnect control wired to useWebSocket + human-verify checkpoint (DEV-03)
 
 ### 🚧 v1.3 User Auth & Identity (Planned)
 
