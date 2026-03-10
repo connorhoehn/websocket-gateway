@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 07-04-PLAN.md — CanvasCursorBoard, CursorModeSelector, useCursors finalized with canvas mode and switchMode
-last_updated: "2026-03-10T14:32:19.353Z"
+stopped_at: Completed 08-01-PLAN.md — useChat hook with TDD (subscribe, history, real-time receive, send)
+last_updated: "2026-03-10T16:31:56.791Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
-  total_phases: 5
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_phases: 8
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
   percent: 86
 ---
 
@@ -55,6 +55,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 07-presence-cursors P07-02 | 246 | 2 tasks | 4 files |
 | Phase 07-presence-cursors P07-03 | 175 | 2 tasks | 4 files |
 | Phase 07-presence-cursors P07-04 | 204 | 2 tasks | 4 files |
+| Phase 08-chat P01 | 83 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 07-presence-cursors]: Trail particles appended via DOM imperatively (not React state) to avoid per-pixel re-renders during fast mouse movement
 - [Phase 07-presence-cursors]: switchMode: unsubscribe first, clear cursors, setActiveMode — subscribe useEffect handles new subscription on activeMode dep change
 - [Phase 07-presence-cursors]: No throttle on sendCanvasUpdate in hook — CanvasCursorBoard owns 50ms throttle, consistent with table/text pattern
+- [Phase 08-chat]: useChat separates onMessage handler effect from subscribe effect so handler survives channel changes without teardown
+- [Phase 08-chat]: Channel filter in handler uses currentChannelRef.current to always read freshest channel — not closure-captured value
+- [Phase 08-chat]: send() stable useCallback with empty deps, all values via refs — consistent with setTyping pattern in usePresence
 
 ### Pending Todos
 
@@ -100,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:25:30.854Z
-Stopped at: Completed 07-04-PLAN.md — CanvasCursorBoard, CursorModeSelector, useCursors finalized with canvas mode and switchMode
+Last session: 2026-03-10T16:31:56.789Z
+Stopped at: Completed 08-01-PLAN.md — useChat hook with TDD (subscribe, history, real-time receive, send)
 Resume file: None

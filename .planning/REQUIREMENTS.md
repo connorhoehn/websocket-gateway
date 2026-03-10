@@ -32,9 +32,9 @@
 
 ### Chat
 
-- [ ] **CHAT-01**: User can send text messages to the current channel
-- [ ] **CHAT-02**: Last 100 messages load from history on join
-- [ ] **CHAT-03**: New messages from other tabs appear in real-time
+- [x] **CHAT-01**: User can send text messages to the current channel
+- [x] **CHAT-02**: Last 100 messages load from history on join
+- [x] **CHAT-03**: New messages from other tabs appear in real-time
 
 ### CRDT
 
@@ -118,9 +118,9 @@
 | CURS-05 | Phase 7 | Complete |
 | CURS-06 | Phase 7 | Complete |
 | CURS-07 | Phase 7 | Complete |
-| CHAT-01 | Phase 8 | Pending |
-| CHAT-02 | Phase 8 | Pending |
-| CHAT-03 | Phase 8 | Pending |
+| CHAT-01 | Phase 8 | Complete |
+| CHAT-02 | Phase 8 | Complete |
+| CHAT-03 | Phase 8 | Complete |
 | CRDT-01 | Phase 9 | Pending |
 | CRDT-02 | Phase 9 | Pending |
 | CRDT-03 | Phase 9 | Pending |
