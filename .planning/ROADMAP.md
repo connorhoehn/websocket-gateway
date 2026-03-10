@@ -5,6 +5,7 @@
 - ✅ **v1.0 MVP - Production-Ready WebSocket Gateway** — Phases 1-4 (shipped 2026-03-03)
 - ✅ **v1.1 Enhanced Reliability** — Phase 5 (shipped 2026-03-03)
 - 🚧 **v1.2 Frontend Layer** — Phases 6-10 (in progress)
+- ⬜ **v1.3 User Auth & Identity** — Phases 11-13 (planned)
 
 ## Phases
 
@@ -130,16 +131,82 @@ Plans:
 - [ ] 10-02: EventLog panel (all WS messages) and ErrorPanel (code + message + timestamp)
 - [ ] 10-03: Disconnect/reconnect control wired to useWebSocket
 
+### 🚧 v1.3 User Auth & Identity (Planned)
+
+**Milestone Goal:** Real Cognito users can sign in to the demo app with email + password, and their identity (display name, email) flows through all gateway features — presence, cursors, chat — so multiple distinct users can collaborate with proper attribution.
+
+**Cognito Infrastructure:** User Pool `us-east-1_1cBzDswEa`, Client `4bcsu1t495schc9fi25ompnv9j` (USER_PASSWORD_AUTH, no secret) — already provisioned in v1.0.
+
+**Stack:** React + Vite + TypeScript. Auth via `amazon-cognito-identity-js` (direct Cognito API, no Amplify). Hooks in `frontend/src/hooks/`, components in `frontend/src/components/`.
+
+## Phase Checklist (v1.3)
+
+- [ ] **Phase 11: Auth Foundation** - Login/signup forms, Cognito USER_PASSWORD_AUTH flow, JWT token storage, gateway connects with real user JWT
+- [ ] **Phase 12: Identity Integration** - User claims (name/email) replace clientId throughout presence, cursors, chat, CRDT attribution
+- [ ] **Phase 13: Session Management** - Auto token refresh, logout flow, multi-tab session sync, test-user tooling
+
+## Phase Details (v1.3)
+
+### Phase 11: Auth Foundation
+**Goal**: A user can sign in with email + password via Cognito and the gateway connects using their real JWT — no .env token required
+**Depends on**: Phase 6 (useWebSocket)
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
+**Success Criteria** (what must be TRUE):
+  1. Visiting the app unauthenticated shows a login form (email + password)
+  2. Entering valid Cognito credentials signs the user in and connects to the gateway using their JWT
+  3. Signing in as two different Cognito users in separate browser windows shows both as distinct users in the presence panel
+  4. Refreshing the page restores the session without re-entering credentials (localStorage token persistence)
+  5. A sign-out button disconnects from the gateway, clears tokens, and returns to the login form
+**Plans**: TBD
+
+Plans:
+- [ ] 11-01: useAuth hook — Cognito USER_PASSWORD_AUTH, token storage, refresh, logout
+- [ ] 11-02: LoginForm + SignupForm components wired to useAuth
+- [ ] 11-03: Integrate useAuth into App.tsx — gate gateway connection on auth state, pass real JWT to useWebSocket
+
+### Phase 12: Identity Integration
+**Goal**: Every gateway feature displays the authenticated user's real name/email — presence shows names, cursor labels show initials from name, chat messages are attributed
+**Depends on**: Phase 11
+**Requirements**: AUTH-06, AUTH-07, AUTH-08
+**Success Criteria** (what must be TRUE):
+  1. The presence panel shows each connected user's display name (from Cognito given_name or email) instead of truncated clientId
+  2. Cursor badges show initials derived from the user's display name (e.g. "JD" for "Jane Doe") consistently across all four cursor modes
+  3. Chat messages (Phase 8) show the sender's display name as the author
+  4. The same user signing in on two different browsers shows the same name and color in all panels
+**Plans**: TBD
+
+Plans:
+- [ ] 12-01: Propagate user claims through useWebSocket connect payload; gateway echoes userId/displayName in cursor:subscribed + presence:update
+- [ ] 12-02: Update PresencePanel, CursorCanvas, TableCursorGrid, TextCursorEditor, CanvasCursorBoard to use displayName from metadata instead of clientId
+
+### Phase 13: Session Management & Multi-user Tooling
+**Goal**: Sessions auto-refresh, multiple test users can be managed from the CLI, and the app handles token expiry gracefully
+**Depends on**: Phase 11
+**Requirements**: AUTH-09, AUTH-10, AUTH-11
+**Success Criteria** (what must be TRUE):
+  1. A Cognito access token expiring mid-session triggers a silent refresh; the gateway reconnects with the new token without user intervention
+  2. A `scripts/create-test-user.sh` script creates a Cognito user with a given email + temp password in one command
+  3. A `scripts/list-test-users.sh` script lists all users in the pool with their status
+  4. If token refresh fails (refresh token also expired), the user is signed out and redirected to login with a clear message
+**Plans**: TBD
+
+Plans:
+- [ ] 13-01: Token refresh flow in useAuth (proactive refresh at 80% expiry, reactive on 401)
+- [ ] 13-02: scripts/create-test-user.sh + scripts/list-test-users.sh CLI tooling
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 6 → 7 → 8 → 9 → 10
+**Execution Order:** Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v1.0 | 13/13 | Complete | 2026-03-03 |
 | 5 | v1.1 | 4/4 | Complete | 2026-03-03 |
-| 6. Foundation | 3/3 | Complete   | 2026-03-04 | - |
-| 7. Presence & Cursors | 4/4 | Complete   | 2026-03-10 | - |
+| 6. Foundation | v1.2 | 3/3 | Complete | 2026-03-04 |
+| 7. Presence & Cursors | v1.2 | 4/4 | Complete | 2026-03-10 |
 | 8. Chat | v1.2 | 0/2 | Not started | - |
 | 9. CRDT Editor | v1.2 | 0/2 | Not started | - |
 | 10. Reactions & Dev Tools | v1.2 | 0/3 | Not started | - |
+| 11. Auth Foundation | v1.3 | 0/3 | Not started | - |
+| 12. Identity Integration | v1.3 | 0/2 | Not started | - |
+| 13. Session Management | v1.3 | 0/2 | Not started | - |

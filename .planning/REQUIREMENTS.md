@@ -1,7 +1,7 @@
 # Requirements: WebSocket Gateway Frontend Layer
 
 **Defined:** 2026-03-03
-**Milestone:** v1.2 Frontend Layer
+**Milestones:** v1.2 Frontend Layer, v1.3 User Auth & Identity
 **Core Value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models would be cost-prohibitive at scale.
 
 ## v1.2 Requirements
@@ -53,28 +53,53 @@
 - [ ] **DEV-02**: Error panel displays error code, message, and timestamp
 - [ ] **DEV-03**: User can manually trigger disconnect/reconnect to test recovery flow
 
+---
+
+## v1.3 Requirements
+
+### Auth Foundation
+
+- [ ] **AUTH-01**: User can sign in with email + password via Cognito USER_PASSWORD_AUTH — no .env token required
+- [ ] **AUTH-02**: Unauthenticated visit shows a login form; successful login connects to the gateway with the real Cognito JWT
+- [ ] **AUTH-03**: Session persists across page reloads via localStorage token storage — no re-login required
+- [ ] **AUTH-04**: A sign-out button disconnects from the gateway, clears all tokens, and returns to the login form
+- [ ] **AUTH-05**: Signing in as two different Cognito users in separate browser windows shows both as distinct users in the presence panel simultaneously
+
+### Identity Integration
+
+- [ ] **AUTH-06**: Presence panel displays each user's display name (Cognito `given_name` or email prefix) instead of raw clientId
+- [ ] **AUTH-07**: Cursor badges in all four modes show initials derived from the user's display name (e.g. "JD" for "Jane Doe"), consistent across reconnections
+- [ ] **AUTH-08**: Chat messages (Phase 8) show the sender's display name as the author attribute
+
+### Session Management & Multi-user Tooling
+
+- [ ] **AUTH-09**: Access token auto-refreshes silently before expiry; gateway reconnects with the new token without user intervention
+- [ ] **AUTH-10**: If token refresh fails, user is signed out and redirected to login with a clear session-expired message
+- [ ] **AUTH-11**: `scripts/create-test-user.sh` creates a Cognito user with a given email + temp password in one command; `scripts/list-test-users.sh` lists all pool users
+
+---
+
 ## Future Requirements
 
 ### Enhancements
 
 - Multi-room support (join multiple channels simultaneously)
-- User avatar/display name configuration
+- Avatar / profile picture from Cognito or gravatar
 - Chat message reactions (emoji on specific messages)
 - Cursor history trails
+- User role / permissions (admin vs regular — affects channel access)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| User signup/registration flow | Personal dev toolbox — single user with Cognito JWT via env |
 | Marketplace distribution | Internal template/skills library only |
 | Mobile responsive design | Desktop developer toolbox, multi-tab workflow |
 | Real-time video/audio | Out of gateway scope |
 | Message persistence beyond gateway | DynamoDB snapshots handle CRDT; chat history is in-memory LRU |
+| OAuth / social login (Google, GitHub) | Cognito USER_PASSWORD_AUTH is sufficient for dev toolbox |
 
 ## Traceability
-
-Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -104,12 +129,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEV-01 | Phase 10 | Pending |
 | DEV-02 | Phase 10 | Pending |
 | DEV-03 | Phase 10 | Pending |
+| AUTH-01 | Phase 11 | Pending |
+| AUTH-02 | Phase 11 | Pending |
+| AUTH-03 | Phase 11 | Pending |
+| AUTH-04 | Phase 11 | Pending |
+| AUTH-05 | Phase 11 | Pending |
+| AUTH-06 | Phase 12 | Pending |
+| AUTH-07 | Phase 12 | Pending |
+| AUTH-08 | Phase 12 | Pending |
+| AUTH-09 | Phase 13 | Pending |
+| AUTH-10 | Phase 13 | Pending |
+| AUTH-11 | Phase 13 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 26 total
-- Mapped to phases: 26
-- Unmapped: 0 ✓
+- v1.2 requirements: 26 total, 26 mapped ✓
+- v1.3 requirements: 11 total, 11 mapped ✓
+- Total: 37 requirements, 0 unmapped ✓
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-10 — added CURS-04 through CURS-07 from test-client-multimode.html reverse engineering*
+*Last updated: 2026-03-10 — added v1.3 User Auth & Identity requirements (AUTH-01 through AUTH-11)*
