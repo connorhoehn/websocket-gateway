@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 08-01-PLAN.md — useChat hook with TDD (subscribe, history, real-time receive, send)
-last_updated: "2026-03-10T16:35:35.336Z"
+stopped_at: Completed 09-01-PLAN.md — useCRDT hook with TDD (subscribe, snapshot restore, update merge, applyLocalEdit)
+last_updated: "2026-03-10T18:56:49.256Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
   percent: 86
 ---
 
@@ -56,6 +56,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 07-presence-cursors P07-03 | 175 | 2 tasks | 4 files |
 | Phase 07-presence-cursors P07-04 | 204 | 2 tasks | 4 files |
 | Phase 08-chat P01 | 83 | 2 tasks | 2 files |
+| Phase 09-crdt-editor P01 | 132 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 08-chat]: useChat separates onMessage handler effect from subscribe effect so handler survives channel changes without teardown
 - [Phase 08-chat]: Channel filter in handler uses currentChannelRef.current to always read freshest channel — not closure-captured value
 - [Phase 08-chat]: send() stable useCallback with empty deps, all values via refs — consistent with setTyping pattern in usePresence
+- [Phase 09-01]: useCRDT separates onMessage handler effect from subscribe effect so handler survives channel changes without teardown
+- [Phase 09-01]: Y.Doc destroyed and recreated on each subscribe — prevents stale state from previous channel or session leaking
+- [Phase 09-01]: encodeStateAsUpdate (full state) sent on applyLocalEdit — gateway stores cumulative snapshot matching Phase 04-01 buffer strategy
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T16:31:56.789Z
-Stopped at: Completed 08-01-PLAN.md — useChat hook with TDD (subscribe, history, real-time receive, send)
+Last session: 2026-03-10T18:56:49.254Z
+Stopped at: Completed 09-01-PLAN.md — useCRDT hook with TDD (subscribe, snapshot restore, update merge, applyLocalEdit)
 Resume file: None

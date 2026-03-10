@@ -38,9 +38,9 @@
 
 ### CRDT
 
-- [ ] **CRDT-01**: User can edit a shared text document that syncs across tabs in real-time
-- [ ] **CRDT-02**: Concurrent edits from multiple tabs merge correctly using Y.js
-- [ ] **CRDT-03**: Document state restores from DynamoDB snapshot on reconnect
+- [x] **CRDT-01**: User can edit a shared text document that syncs across tabs in real-time
+- [x] **CRDT-02**: Concurrent edits from multiple tabs merge correctly using Y.js
+- [x] **CRDT-03**: Document state restores from DynamoDB snapshot on reconnect
 
 ### Reactions
 
@@ -121,9 +121,9 @@
 | CHAT-01 | Phase 8 | Complete |
 | CHAT-02 | Phase 8 | Complete |
 | CHAT-03 | Phase 8 | Complete |
-| CRDT-01 | Phase 9 | Pending |
-| CRDT-02 | Phase 9 | Pending |
-| CRDT-03 | Phase 9 | Pending |
+| CRDT-01 | Phase 9 | Complete |
+| CRDT-02 | Phase 9 | Complete |
+| CRDT-03 | Phase 9 | Complete |
 | REAC-01 | Phase 10 | Pending |
 | REAC-02 | Phase 10 | Pending |
 | DEV-01 | Phase 10 | Pending |
