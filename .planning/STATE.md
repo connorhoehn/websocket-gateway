@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 10-01-PLAN.md — useReactions hook + ReactionsOverlay + ReactionButtons (TDD)
-last_updated: "2026-03-10T19:23:04.881Z"
+stopped_at: Completed 10-02-PLAN.md — EventLog + ErrorPanel + App.tsx wiring
+last_updated: "2026-03-10T19:27:25.155Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 86
 ---
 
@@ -59,6 +59,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 09-crdt-editor P01 | 132 | 2 tasks | 4 files |
 | Phase 09-crdt-editor P02 | 70 | 2 tasks | 2 files |
 | Phase 10-reactions-dev-tools P10-01 | 173 | 3 tasks | 4 files |
+| Phase 10-reactions-dev-tools P10-02 | 110 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 10-reactions-dev-tools]: useReactions follows useChat.ts pattern: sendMessageRef/currentChannelRef for stable closures, separate handler vs subscribe effects
 - [Phase 10-reactions-dev-tools]: Ephemeral reaction removal: add item to array with unique id, setTimeout 2500ms filters by id using functional updater
 - [Phase 10-reactions-dev-tools]: ReactionsOverlay embeds @keyframes via JSX style tag — no external CSS, consistent with app inline-style convention
+- [Phase 10-reactions-dev-tools]: loggedSendMessage wraps sendMessage and appends LogEntry{direction:sent} — outbound traffic visible in EventLog without changing hook APIs
+- [Phase 10-reactions-dev-tools]: ErrorPanel imports ERROR_CODE_DESCRIPTIONS from ErrorDisplay — no duplication per Phase 06-03 decision
+- [Phase 10-reactions-dev-tools]: errors state accumulates all errors from both onMessage error frames and lastError useEffect — full error history visible in ErrorPanel
 
 ### Pending Todos
 
@@ -115,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T19:23:04.879Z
-Stopped at: Completed 10-01-PLAN.md — useReactions hook + ReactionsOverlay + ReactionButtons (TDD)
+Last session: 2026-03-10T19:27:25.153Z
+Stopped at: Completed 10-02-PLAN.md — EventLog + ErrorPanel + App.tsx wiring
 Resume file: None

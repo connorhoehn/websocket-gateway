@@ -49,8 +49,8 @@
 
 ### Dev Tools
 
-- [ ] **DEV-01**: Real-time event log shows all WebSocket messages sent and received
-- [ ] **DEV-02**: Error panel displays error code, message, and timestamp
+- [x] **DEV-01**: Real-time event log shows all WebSocket messages sent and received
+- [x] **DEV-02**: Error panel displays error code, message, and timestamp
 - [ ] **DEV-03**: User can manually trigger disconnect/reconnect to test recovery flow
 
 ---
@@ -126,8 +126,8 @@
 | CRDT-03 | Phase 9 | Complete |
 | REAC-01 | Phase 10 | Complete |
 | REAC-02 | Phase 10 | Complete |
-| DEV-01 | Phase 10 | Pending |
-| DEV-02 | Phase 10 | Pending |
+| DEV-01 | Phase 10 | Complete |
+| DEV-02 | Phase 10 | Complete |
 | DEV-03 | Phase 10 | Pending |
 | AUTH-01 | Phase 11 | Pending |
 | AUTH-02 | Phase 11 | Pending |
