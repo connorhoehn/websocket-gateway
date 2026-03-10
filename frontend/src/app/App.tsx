@@ -11,6 +11,8 @@ import { PresencePanel } from '../components/PresencePanel';
 import { CursorCanvas } from '../components/CursorCanvas';
 import { TableCursorGrid } from '../components/TableCursorGrid';
 import { TextCursorEditor } from '../components/TextCursorEditor';
+import { CanvasCursorBoard } from '../components/CanvasCursorBoard';
+import { CursorModeSelector } from '../components/CursorModeSelector';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage } from '../types/gateway';
 
@@ -76,7 +78,15 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     connectionState,
   });
 
-  const { cursors, sendFreeformUpdate, sendTableUpdate, sendTextUpdate } = useCursors({
+  const {
+    cursors,
+    activeMode,
+    sendFreeformUpdate,
+    sendTableUpdate,
+    sendTextUpdate,
+    sendCanvasUpdate,
+    switchMode,
+  } = useCursors({
     sendMessage,
     onMessage,
     currentChannel,
@@ -112,28 +122,32 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
         <PresencePanel users={presenceUsers} currentClientId={clientId} />
       </div>
 
-      {/* Freeform Cursors */}
-      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Freeform Cursors</h3>
-      <CursorCanvas cursors={cursors} onMouseMove={sendFreeformUpdate} />
+      {/* Cursor section — mode selector + active panel */}
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
+        <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem' }}>Cursors</h3>
+        <CursorModeSelector activeMode={activeMode} onModeChange={switchMode} />
 
-      {/* Table Cursors */}
-      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Table Cursors</h3>
-      <TableCursorGrid
-        cursors={cursors}
-        onCellClick={sendTableUpdate}
-      />
-
-      {/* Text Cursors */}
-      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Text Cursors</h3>
-      <TextCursorEditor
-        cursors={cursors}
-        onPositionChange={(position: number, selectionData: TextSelectionData | null, hasSelection: boolean) =>
-          sendTextUpdate(position, selectionData, hasSelection)
-        }
-      />
+        {activeMode === 'freeform' && (
+          <CursorCanvas cursors={cursors} onMouseMove={sendFreeformUpdate} />
+        )}
+        {activeMode === 'table' && (
+          <TableCursorGrid cursors={cursors} onCellClick={sendTableUpdate} />
+        )}
+        {activeMode === 'text' && (
+          <TextCursorEditor
+            cursors={cursors}
+            onPositionChange={(position: number, selectionData: TextSelectionData | null, hasSelection: boolean) =>
+              sendTextUpdate(position, selectionData, hasSelection)
+            }
+          />
+        )}
+        {activeMode === 'canvas' && (
+          <CanvasCursorBoard cursors={cursors} onMouseMove={sendCanvasUpdate} />
+        )}
+      </div>
 
       {/* Live message log */}
-      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
         <h3 style={{ margin: '0 0 0.5rem' }}>Recent Messages</h3>
         {messages.length === 0 ? (
           <p style={{ color: '#9ca3af' }}>No messages yet.</p>
