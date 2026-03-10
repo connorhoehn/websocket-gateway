@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 07-02-PLAN.md — useCursors hook (freeform), CursorCanvas component, App.tsx cursor wiring
-last_updated: "2026-03-10T14:13:33.877Z"
+stopped_at: Completed 07-03-PLAN.md — TableCursorGrid, TextCursorEditor, useCursors extended with sendTableUpdate/sendTextUpdate
+last_updated: "2026-03-10T14:18:50.637Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 86
 ---
 
@@ -53,6 +53,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 06 P03 | 97 | 3 tasks | 4 files |
 | Phase 07-presence-cursors P01 | 212 | 2 tasks | 4 files |
 | Phase 07-presence-cursors P07-02 | 246 | 2 tasks | 4 files |
+| Phase 07-presence-cursors P07-03 | 175 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 07-presence-cursors]: useCursors leading-edge 50ms throttle: first call fires immediately, drops within window — responsive UX without server flood
 - [Phase 07-presence-cursors]: cursorsRef as authoritative store with setState only for render triggering — avoids per-pixel re-renders with many remote cursors
 - [Phase 07-presence-cursors]: channelRef and clientIdRef in useCursors: handler closures read refs for fresh values without teardown on change
+- [Phase 07-presence-cursors]: No throttle on sendTableUpdate/sendTextUpdate — table clicks and key events are already low frequency
+- [Phase 07-presence-cursors]: Mode-filtered rendering: components filter shared cursors Map by metadata.mode at render time — single Map, multiple views
+- [Phase 07-presence-cursors]: getTextCoordinates falls back to {top:0,left:0,height:18} on DOM exceptions — prevents crash in contenteditable edge cases
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:13:33.875Z
-Stopped at: Completed 07-02-PLAN.md — useCursors hook (freeform), CursorCanvas component, App.tsx cursor wiring
+Last session: 2026-03-10T14:18:50.635Z
+Stopped at: Completed 07-03-PLAN.md — TableCursorGrid, TextCursorEditor, useCursors extended with sendTableUpdate/sendTextUpdate
 Resume file: None

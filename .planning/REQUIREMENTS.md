@@ -25,8 +25,8 @@
 - [x] **CURS-01**: Freeform cursor broadcasts x/y position to all tabs on the same channel in real-time
 - [x] **CURS-02**: Remote cursors render with a deterministic per-user color (derived from clientId) and user-initials label
 - [x] **CURS-03**: When a tab disconnects, its cursor is removed from all remaining tabs immediately
-- [ ] **CURS-04**: Table cursor mode — clicking a grid cell broadcasts row/col position; remote users see a colored cell-border indicator with initials badge
-- [ ] **CURS-05**: Text cursor mode — cursor tracks character offset in a shared document; remote users see a colored line cursor + selection highlight when text is selected
+- [x] **CURS-04**: Table cursor mode — clicking a grid cell broadcasts row/col position; remote users see a colored cell-border indicator with initials badge
+- [x] **CURS-05**: Text cursor mode — cursor tracks character offset in a shared document; remote users see a colored line cursor + selection highlight when text is selected
 - [ ] **CURS-06**: Canvas cursor mode — cursor metadata includes active drawing tool (brush/pen/eraser/select), color, and size; remote cursors show tool label + ephemeral trail particles that auto-remove after 1 second
 - [ ] **CURS-07**: Multi-mode cursor demo — a mode selector switches between freeform, table, text, and canvas cursor panels; switching clears all active cursors and resets subscription state
 
@@ -89,8 +89,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CURS-01 | Phase 7 | Complete |
 | CURS-02 | Phase 7 | Complete |
 | CURS-03 | Phase 7 | Complete |
-| CURS-04 | Phase 7 | Pending |
-| CURS-05 | Phase 7 | Pending |
+| CURS-04 | Phase 7 | Complete |
+| CURS-05 | Phase 7 | Complete |
 | CURS-06 | Phase 7 | Pending |
 | CURS-07 | Phase 7 | Pending |
 | CHAT-01 | Phase 8 | Pending |
