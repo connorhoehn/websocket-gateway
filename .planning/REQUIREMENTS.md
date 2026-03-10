@@ -16,15 +16,15 @@
 
 ### Presence
 
-- [ ] **PRES-01**: User can see a live list of connected users in the current channel
-- [ ] **PRES-02**: User list updates in real-time as tabs join and leave
-- [ ] **PRES-03**: Typing indicators show when other users are active in the channel
+- [x] **PRES-01**: User can see a live list of connected users in the current channel
+- [x] **PRES-02**: User list updates in real-time as tabs join and leave
+- [x] **PRES-03**: Typing indicators show when other users are active in the channel
 
 ### Cursors
 
-- [ ] **CURS-01**: Freeform cursor broadcasts x/y position to all tabs on the same channel in real-time
-- [ ] **CURS-02**: Remote cursors render with a deterministic per-user color (derived from clientId) and user-initials label
-- [ ] **CURS-03**: When a tab disconnects, its cursor is removed from all remaining tabs immediately
+- [x] **CURS-01**: Freeform cursor broadcasts x/y position to all tabs on the same channel in real-time
+- [x] **CURS-02**: Remote cursors render with a deterministic per-user color (derived from clientId) and user-initials label
+- [x] **CURS-03**: When a tab disconnects, its cursor is removed from all remaining tabs immediately
 - [ ] **CURS-04**: Table cursor mode — clicking a grid cell broadcasts row/col position; remote users see a colored cell-border indicator with initials badge
 - [ ] **CURS-05**: Text cursor mode — cursor tracks character offset in a shared document; remote users see a colored line cursor + selection highlight when text is selected
 - [ ] **CURS-06**: Canvas cursor mode — cursor metadata includes active drawing tool (brush/pen/eraser/select), color, and size; remote cursors show tool label + ephemeral trail particles that auto-remove after 1 second
@@ -83,12 +83,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONN-03 | Phase 6 | Complete |
 | CONN-04 | Phase 6 | Complete |
 | CONN-05 | Phase 6 | Complete |
-| PRES-01 | Phase 7 | Pending |
-| PRES-02 | Phase 7 | Pending |
-| PRES-03 | Phase 7 | Pending |
-| CURS-01 | Phase 7 | Pending |
-| CURS-02 | Phase 7 | Pending |
-| CURS-03 | Phase 7 | Pending |
+| PRES-01 | Phase 7 | Complete |
+| PRES-02 | Phase 7 | Complete |
+| PRES-03 | Phase 7 | Complete |
+| CURS-01 | Phase 7 | Complete |
+| CURS-02 | Phase 7 | Complete |
+| CURS-03 | Phase 7 | Complete |
 | CURS-04 | Phase 7 | Pending |
 | CURS-05 | Phase 7 | Pending |
 | CURS-06 | Phase 7 | Pending |
