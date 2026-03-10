@@ -1,11 +1,13 @@
 // frontend/src/app/App.tsx
+import { useRef, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { usePresence } from '../hooks/usePresence';
 import { getGatewayConfig } from '../config/gateway';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { ChannelSelector } from '../components/ChannelSelector';
+import { PresencePanel } from '../components/PresencePanel';
 import type { GatewayMessage } from '../types/gateway';
-import { useState } from 'react';
 
 export function App() {
   // getGatewayConfig() throws a descriptive error if .env is not set up.
@@ -31,6 +33,12 @@ export function App() {
 function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }) {
   const [messages, setMessages] = useState<GatewayMessage[]>([]);
 
+  // Feature hook message handler registry.
+  // Each feature hook registers/unregisters its own handler via the onMessage
+  // prop passed below. All registered handlers are called for every incoming
+  // message, then the raw message is appended to the dev log.
+  const featureHandlers = useRef<Array<(msg: GatewayMessage) => void>>([]);
+
   const {
     connectionState,
     lastError,
@@ -38,9 +46,29 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     clientId,
     sessionToken,
     switchChannel,
+    sendMessage,
   } = useWebSocket({
     config,
-    onMessage: (msg) => setMessages((prev) => [msg, ...prev].slice(0, 50)),
+    onMessage: (msg) => {
+      featureHandlers.current.forEach((h) => h(msg));
+      setMessages((prev) => [msg, ...prev].slice(0, 50));
+    },
+  });
+
+  // Stable onMessage registrar passed to feature hooks.
+  // Push handler on register; filter it out on unregister.
+  const onMessage = (handler: (msg: GatewayMessage) => void) => {
+    featureHandlers.current.push(handler);
+    return () => {
+      featureHandlers.current = featureHandlers.current.filter((h) => h !== handler);
+    };
+  };
+
+  const { users: presenceUsers } = usePresence({
+    sendMessage,
+    onMessage,
+    currentChannel,
+    connectionState,
   });
 
   return (
@@ -64,6 +92,11 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
       <div style={{ color: '#6b7280', fontSize: '0.75rem', marginBottom: '1rem' }}>
         <div>clientId: {clientId ?? '—'}</div>
         <div>sessionToken: {sessionToken ? sessionToken.slice(0, 8) + '…' : '—'}</div>
+      </div>
+
+      {/* Presence panel */}
+      <div style={{ margin: '1rem 0' }}>
+        <PresencePanel users={presenceUsers} currentClientId={clientId} />
       </div>
 
       {/* Live message log */}
