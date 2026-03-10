@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePresence } from '../hooks/usePresence';
 import { useCursors } from '../hooks/useCursors';
+import { useCRDT } from '../hooks/useCRDT';
 import { getGatewayConfig } from '../config/gateway';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorDisplay } from '../components/ErrorDisplay';
@@ -13,6 +14,7 @@ import { TableCursorGrid } from '../components/TableCursorGrid';
 import { TextCursorEditor } from '../components/TextCursorEditor';
 import { CanvasCursorBoard } from '../components/CanvasCursorBoard';
 import { CursorModeSelector } from '../components/CursorModeSelector';
+import { SharedTextEditor } from '../components/SharedTextEditor';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage } from '../types/gateway';
 
@@ -94,6 +96,13 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     clientId,
   });
 
+  const { content, applyLocalEdit } = useCRDT({
+    sendMessage,
+    onMessage,
+    currentChannel,
+    connectionState,
+  });
+
   return (
     <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>
       <h1 style={{ marginBottom: '1rem' }}>WebSocket Gateway Dev Client</h1>
@@ -144,6 +153,15 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
         {activeMode === 'canvas' && (
           <CanvasCursorBoard cursors={cursors} onMouseMove={sendCanvasUpdate} />
         )}
+      </div>
+
+      {/* CRDT shared document */}
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
+        <SharedTextEditor
+          content={content}
+          applyLocalEdit={applyLocalEdit}
+          disabled={connectionState !== 'connected'}
+        />
       </div>
 
       {/* Live message log */}
