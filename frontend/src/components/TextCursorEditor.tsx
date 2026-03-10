@@ -22,7 +22,7 @@ const COLOR_PALETTE = [
 function clientIdToColor(clientId: string): string {
   let hash = 0;
   for (let i = 0; i < clientId.length; i++) {
-    hash = (hash * 31 + clientId.charCodeAt(i)) | 0;
+    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
   }
   return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
 }
