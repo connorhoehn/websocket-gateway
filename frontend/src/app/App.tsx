@@ -2,11 +2,13 @@
 import { useRef, useState } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePresence } from '../hooks/usePresence';
+import { useCursors } from '../hooks/useCursors';
 import { getGatewayConfig } from '../config/gateway';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { ChannelSelector } from '../components/ChannelSelector';
 import { PresencePanel } from '../components/PresencePanel';
+import { CursorCanvas } from '../components/CursorCanvas';
 import type { GatewayMessage } from '../types/gateway';
 
 export function App() {
@@ -71,6 +73,14 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     connectionState,
   });
 
+  const { cursors, sendFreeformUpdate } = useCursors({
+    sendMessage,
+    onMessage,
+    currentChannel,
+    connectionState,
+    clientId,
+  });
+
   return (
     <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>
       <h1 style={{ marginBottom: '1rem' }}>WebSocket Gateway Dev Client</h1>
@@ -98,6 +108,10 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
       <div style={{ margin: '1rem 0' }}>
         <PresencePanel users={presenceUsers} currentClientId={clientId} />
       </div>
+
+      {/* Freeform Cursors */}
+      <h3 style={{ margin: '1rem 0 0.5rem', fontSize: '0.875rem' }}>Freeform Cursors</h3>
+      <CursorCanvas cursors={cursors} onMouseMove={sendFreeformUpdate} />
 
       {/* Live message log */}
       <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
