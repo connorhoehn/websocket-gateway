@@ -20,9 +20,17 @@ export interface RemoteCursor {
   metadata: Record<string, unknown>;
 }
 
+export interface TextSelectionData {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface UseCursorsReturn {
   cursors: Map<string, RemoteCursor>;
   sendFreeformUpdate: (x: number, y: number) => void;
+  sendTableUpdate: (row: number, col: number) => void;
+  sendTextUpdate: (position: number, selectionData: TextSelectionData | null, hasSelection: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,5 +181,43 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
     [sendMessage]
   );
 
-  return { cursors, sendFreeformUpdate };
+  // ---- sendTableUpdate ---------------------------------------------------
+
+  const sendTableUpdate = useCallback(
+    (row: number, col: number) => {
+      if (connectionStateRef.current !== 'connected') return;
+
+      sendMessage({
+        service: 'cursor',
+        action: 'update',
+        channel: channelRef.current,
+        position: { row, col },
+        metadata: { mode: 'table' },
+      });
+    },
+    [sendMessage]
+  );
+
+  // ---- sendTextUpdate ----------------------------------------------------
+
+  const sendTextUpdate = useCallback(
+    (
+      position: number,
+      selectionData: TextSelectionData | null,
+      hasSelection: boolean
+    ) => {
+      if (connectionStateRef.current !== 'connected') return;
+
+      sendMessage({
+        service: 'cursor',
+        action: 'update',
+        channel: channelRef.current,
+        position: { position },
+        metadata: { mode: 'text', selection: selectionData, hasSelection },
+      });
+    },
+    [sendMessage]
+  );
+
+  return { cursors, sendFreeformUpdate, sendTableUpdate, sendTextUpdate };
 }
