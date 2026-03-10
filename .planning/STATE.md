@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 06-03-PLAN.md — ConnectionStatus, ErrorDisplay, ChannelSelector components + App.tsx wiring
-last_updated: "2026-03-04T02:06:01.418Z"
+stopped_at: Completed 07-01-PLAN.md — usePresence hook with TDD + PresencePanel + App.tsx feature hook registry
+last_updated: "2026-03-10T14:12:32.661Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 7
+  completed_plans: 4
   percent: 86
 ---
 
@@ -51,6 +51,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | 06-01 | 1 | 166s | 166s |
 | 06-02 | 1 | 167s | 167s |
 | Phase 06 P03 | 97 | 3 tasks | 4 files |
+| Phase 07-presence-cursors P01 | 212 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 06-03]: ERROR_CODE_DESCRIPTIONS exported from ErrorDisplay.tsx for Phase 10 EventLog reuse without duplication
 - [Phase 06-03]: App.tsx try/catch on getGatewayConfig() shows actionable setup instructions instead of white screen on missing .env
 - [Phase 06-03]: ChannelSelector delegates switching to onSwitch prop — no subscribe messages at component level, consistent with 06-02 concern boundary
+- [Phase 07-01]: featureHandlers useRef registry in App.tsx routes inbound messages to feature hooks — enables multiple hooks to observe messages without prop-drilling
+- [Phase 07-01]: usePresence uses sendMessageRef/currentChannelRef pattern so setTyping and heartbeat callbacks remain stable (no re-renders on every channel/connection state change)
+- [Phase 07-01]: PresencePanel duplicates color helpers — utility file sharing deferred to Phase 7 completion per plan
 
 ### Pending Todos
 
@@ -84,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T02:06:01.416Z
-Stopped at: Completed 06-03-PLAN.md — ConnectionStatus, ErrorDisplay, ChannelSelector components + App.tsx wiring
+Last session: 2026-03-10T14:12:32.659Z
+Stopped at: Completed 07-01-PLAN.md — usePresence hook with TDD + PresencePanel + App.tsx feature hook registry
 Resume file: None

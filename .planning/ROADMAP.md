@@ -139,7 +139,7 @@ Plans:
 | 1-4 | v1.0 | 13/13 | Complete | 2026-03-03 |
 | 5 | v1.1 | 4/4 | Complete | 2026-03-03 |
 | 6. Foundation | 3/3 | Complete   | 2026-03-04 | - |
-| 7. Presence & Cursors | v1.2 | 0/4 | Not started | - |
+| 7. Presence & Cursors | 1/4 | In Progress|  | - |
 | 8. Chat | v1.2 | 0/2 | Not started | - |
 | 9. CRDT Editor | v1.2 | 0/2 | Not started | - |
 | 10. Reactions & Dev Tools | v1.2 | 0/3 | Not started | - |
