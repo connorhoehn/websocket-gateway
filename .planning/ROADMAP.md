@@ -157,12 +157,12 @@ Plans:
   3. Signing in as two different Cognito users in separate browser windows shows both as distinct users in the presence panel
   4. Refreshing the page restores the session without re-entering credentials (localStorage token persistence)
   5. A sign-out button disconnects from the gateway, clears tokens, and returns to the login form
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 11-01: useAuth hook — Cognito USER_PASSWORD_AUTH, token storage, refresh, logout
-- [ ] 11-02: LoginForm + SignupForm components wired to useAuth
-- [ ] 11-03: Integrate useAuth into App.tsx — gate gateway connection on auth state, pass real JWT to useWebSocket
+- [ ] 11-01-PLAN.md — useAuth hook (TDD) — Cognito USER_PASSWORD_AUTH, token storage, session restore, logout (AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05)
+- [ ] 11-02-PLAN.md — LoginForm + SignupForm components wired to useAuth (AUTH-01, AUTH-02)
+- [ ] 11-03-PLAN.md — Integrate useAuth into App.tsx — gate gateway connection on auth state, pass real JWT to useWebSocket (AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05)
 
 ### Phase 12: Identity Integration
 **Goal**: Every gateway feature displays the authenticated user's real name/email — presence shows names, cursor labels show initials from name, chat messages are attributed
