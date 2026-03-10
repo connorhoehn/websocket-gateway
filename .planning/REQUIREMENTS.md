@@ -44,8 +44,8 @@
 
 ### Reactions
 
-- [ ] **REAC-01**: User can send an emoji reaction that broadcasts to the channel
-- [ ] **REAC-02**: Incoming reactions appear ephemerally with an animation
+- [x] **REAC-01**: User can send an emoji reaction that broadcasts to the channel
+- [x] **REAC-02**: Incoming reactions appear ephemerally with an animation
 
 ### Dev Tools
 
@@ -124,8 +124,8 @@
 | CRDT-01 | Phase 9 | Complete |
 | CRDT-02 | Phase 9 | Complete |
 | CRDT-03 | Phase 9 | Complete |
-| REAC-01 | Phase 10 | Pending |
-| REAC-02 | Phase 10 | Pending |
+| REAC-01 | Phase 10 | Complete |
+| REAC-02 | Phase 10 | Complete |
 | DEV-01 | Phase 10 | Pending |
 | DEV-02 | Phase 10 | Pending |
 | DEV-03 | Phase 10 | Pending |
