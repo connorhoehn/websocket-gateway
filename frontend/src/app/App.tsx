@@ -21,6 +21,7 @@ import { ReactionsOverlay } from '../components/ReactionsOverlay';
 import { ReactionButtons } from '../components/ReactionButtons';
 import { EventLog } from '../components/EventLog';
 import { ErrorPanel } from '../components/ErrorPanel';
+import { DisconnectReconnect } from '../components/DisconnectReconnect';
 import type { LogEntry } from '../components/EventLog';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
@@ -64,6 +65,8 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
     sessionToken,
     switchChannel,
     sendMessage,
+    disconnect,
+    reconnect,
   } = useWebSocket({
     config,
     onMessage: (msg) => {
@@ -172,6 +175,15 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
       {/* Connection status row */}
       <div style={{ marginBottom: '0.75rem' }}>
         <ConnectionStatus state={connectionState} />
+      </div>
+
+      {/* Disconnect / Reconnect control */}
+      <div style={{ margin: '0.5rem 0' }}>
+        <DisconnectReconnect
+          connectionState={connectionState}
+          onDisconnect={disconnect}
+          onReconnect={reconnect}
+        />
       </div>
 
       {/* Error display (single last error — legacy quick-view) */}
