@@ -1,0 +1,184 @@
+// frontend/src/hooks/usePresence.ts
+//
+// Presence hook — subscribes to the gateway presence service, maintains a
+// live user list for the current channel, and provides a setTyping helper.
+//
+// Composes on top of useWebSocket: accepts sendMessage / onMessage from that
+// hook and handles the presence protocol independently.
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { ConnectionState, GatewayMessage } from '../types/gateway';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface PresenceUser {
+  clientId: string;
+  status: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface UsePresenceReturn {
+  users: PresenceUser[];
+  setTyping: (isTyping: boolean) => void;
+}
+
+export interface UsePresenceOptions {
+  sendMessage: (msg: Record<string, unknown>) => void;
+  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
+  currentChannel: string;
+  connectionState: ConnectionState;
+}
+
+// Heartbeat interval in milliseconds
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
+  const { sendMessage, onMessage, currentChannel, connectionState } = options;
+
+  // ---- State ---------------------------------------------------------------
+  const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
+
+  // ---- Refs ----------------------------------------------------------------
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep stable references for use inside effects without stale closures
+  const sendMessageRef = useRef(sendMessage);
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
+  const currentChannelRef = useRef(currentChannel);
+  useEffect(() => {
+    currentChannelRef.current = currentChannel;
+  }, [currentChannel]);
+
+  // ---- Message handler -----------------------------------------------------
+  useEffect(() => {
+    const unregister = onMessage((msg: GatewayMessage) => {
+      if (msg.type !== 'presence') return;
+
+      if (msg.action === 'subscribed') {
+        // Initialize user list from the subscribed message
+        const incoming = (msg.users as PresenceUser[] | undefined) ?? [];
+        const map = new Map<string, PresenceUser>();
+        for (const user of incoming) {
+          map.set(user.clientId, user);
+        }
+        setUsers(map);
+        return;
+      }
+
+      if (msg.action === 'update') {
+        const clientId = msg.clientId as string;
+        const presence = msg.presence as { status: string; metadata: Record<string, unknown> };
+        setUsers((prev) => {
+          const next = new Map(prev);
+          next.set(clientId, { clientId, status: presence.status, metadata: presence.metadata });
+          return next;
+        });
+        return;
+      }
+
+      if (msg.action === 'offline') {
+        const clientId = msg.clientId as string;
+        setUsers((prev) => {
+          const next = new Map(prev);
+          next.delete(clientId);
+          return next;
+        });
+      }
+    });
+
+    return unregister;
+  }, [onMessage]);
+
+  // ---- Subscribe / heartbeat on connect / channel change ------------------
+  useEffect(() => {
+    // Guard: only subscribe when connected and channel is set
+    if (connectionState !== 'connected' || !currentChannel) {
+      return;
+    }
+
+    // Subscribe to the channel
+    sendMessage({ service: 'presence', action: 'subscribe', channel: currentChannel });
+
+    // Clear user list for the new channel (subscribing implies fresh state)
+    setUsers(new Map());
+
+    // Start heartbeat interval
+    heartbeatRef.current = setInterval(() => {
+      sendMessageRef.current({
+        service: 'presence',
+        action: 'heartbeat',
+        channels: [currentChannelRef.current],
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+
+    // Cleanup: unsubscribe and clear interval when channel changes or unmounts
+    return () => {
+      if (heartbeatRef.current !== null) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+      // Only unsubscribe if we were actually connected when this effect ran
+      sendMessageRef.current({
+        service: 'presence',
+        action: 'unsubscribe',
+        channel: currentChannel,
+      });
+      // Clear user list on channel exit
+      setUsers(new Map());
+    };
+  }, [currentChannel, connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  // sendMessage intentionally excluded — we use sendMessageRef for stable access.
+
+  // ---- setTyping -----------------------------------------------------------
+  const setTyping = useCallback(
+    (isTyping: boolean) => {
+      sendMessageRef.current({
+        service: 'presence',
+        action: 'set',
+        status: isTyping ? 'typing' : 'online',
+        metadata: { isTyping },
+        channels: [currentChannelRef.current],
+      });
+
+      if (isTyping) {
+        // Auto-clear: reset the timer so repeated calls extend the window
+        if (typingTimerRef.current !== null) {
+          clearTimeout(typingTimerRef.current);
+        }
+        typingTimerRef.current = setTimeout(() => {
+          sendMessageRef.current({
+            service: 'presence',
+            action: 'set',
+            status: 'online',
+            metadata: { isTyping: false },
+            channels: [currentChannelRef.current],
+          });
+          typingTimerRef.current = null;
+        }, 2_000);
+      } else {
+        // Explicit stop: cancel any pending auto-clear
+        if (typingTimerRef.current !== null) {
+          clearTimeout(typingTimerRef.current);
+          typingTimerRef.current = null;
+        }
+      }
+    },
+    [] // eslint-disable-line react-hooks/exhaustive-deps
+    // All deps are accessed via refs — stable callback that never causes re-renders
+  );
+
+  // ---- Derive array from map for consumers ---------------------------------
+  const usersArray = Array.from(users.values());
+
+  return { users: usersArray, setTyping };
+}

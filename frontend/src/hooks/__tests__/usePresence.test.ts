@@ -18,7 +18,7 @@ function makePresenceOptions(overrides: {
   currentChannel?: string;
   sendMessageMock?: ReturnType<typeof vi.fn>;
 } = {}) {
-  const sendMessage = overrides.sendMessageMock ?? vi.fn();
+  const sendMessage = (overrides.sendMessageMock ?? vi.fn()) as unknown as ((msg: Record<string, unknown>) => void) & ReturnType<typeof vi.fn>;
   const handlers: MessageHandler[] = [];
 
   const onMessage = (handler: MessageHandler) => {
@@ -41,26 +41,13 @@ function makePresenceOptions(overrides: {
 }
 
 // ---------------------------------------------------------------------------
-// Import hook (will fail until implementation exists — RED phase)
+// Import hook
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let usePresence: any;
-try {
-  // Dynamic import won't work in vitest synchronously; we import at module level
-  // but catch the failure gracefully.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  ({ usePresence } = require('../usePresence'));
-} catch {
-  usePresence = null;
-}
+import { usePresence } from '../usePresence';
 
 beforeEach(() => {
   vi.useFakeTimers();
-  if (!usePresence) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    ({ usePresence } = require('../usePresence'));
-  }
 });
 
 afterEach(() => {
