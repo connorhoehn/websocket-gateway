@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 07-01-PLAN.md — usePresence hook with TDD + PresencePanel + App.tsx feature hook registry
-last_updated: "2026-03-10T14:12:32.661Z"
+stopped_at: Completed 07-02-PLAN.md — useCursors hook (freeform), CursorCanvas component, App.tsx cursor wiring
+last_updated: "2026-03-10T14:13:33.877Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 86
 ---
 
@@ -52,6 +52,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | 06-02 | 1 | 167s | 167s |
 | Phase 06 P03 | 97 | 3 tasks | 4 files |
 | Phase 07-presence-cursors P01 | 212 | 2 tasks | 4 files |
+| Phase 07-presence-cursors P07-02 | 246 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 07-01]: featureHandlers useRef registry in App.tsx routes inbound messages to feature hooks — enables multiple hooks to observe messages without prop-drilling
 - [Phase 07-01]: usePresence uses sendMessageRef/currentChannelRef pattern so setTyping and heartbeat callbacks remain stable (no re-renders on every channel/connection state change)
 - [Phase 07-01]: PresencePanel duplicates color helpers — utility file sharing deferred to Phase 7 completion per plan
+- [Phase 07-presence-cursors]: useCursors leading-edge 50ms throttle: first call fires immediately, drops within window — responsive UX without server flood
+- [Phase 07-presence-cursors]: cursorsRef as authoritative store with setState only for render triggering — avoids per-pixel re-renders with many remote cursors
+- [Phase 07-presence-cursors]: channelRef and clientIdRef in useCursors: handler closures read refs for fresh values without teardown on change
 
 ### Pending Todos
 
@@ -88,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:12:32.659Z
-Stopped at: Completed 07-01-PLAN.md — usePresence hook with TDD + PresencePanel + App.tsx feature hook registry
+Last session: 2026-03-10T14:13:33.875Z
+Stopped at: Completed 07-02-PLAN.md — useCursors hook (freeform), CursorCanvas component, App.tsx cursor wiring
 Resume file: None
