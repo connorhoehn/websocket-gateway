@@ -1,11 +1,10 @@
 // frontend/src/hooks/useCursors.ts
 //
-// useCursors hook — freeform cursor mode.
-// Subscribes to the gateway cursor service, broadcasts local mouse position,
-// and maintains a live map of remote cursors from other connected clients.
+// useCursors hook — multi-mode cursor (freeform, table, text, canvas).
+// Subscribes to the gateway cursor service, broadcasts local cursor position
+// and metadata, and maintains a live map of remote cursors from other clients.
 //
-// Plans 07-03 and 07-04 extend this hook by adding sendTableUpdate,
-// sendTextUpdate, and sendCanvasUpdate — designed to be additive.
+// Plans 07-02, 07-03, 07-04 extended this hook additively with each mode.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ConnectionState, GatewayMessage } from '../types/gateway';
@@ -13,6 +12,9 @@ import type { ConnectionState, GatewayMessage } from '../types/gateway';
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
+
+export type CursorMode = 'freeform' | 'table' | 'text' | 'canvas';
+export type CanvasTool = 'brush' | 'pen' | 'eraser' | 'select';
 
 export interface RemoteCursor {
   clientId: string;
@@ -28,9 +30,12 @@ export interface TextSelectionData {
 
 export interface UseCursorsReturn {
   cursors: Map<string, RemoteCursor>;
+  activeMode: CursorMode;
   sendFreeformUpdate: (x: number, y: number) => void;
   sendTableUpdate: (row: number, col: number) => void;
   sendTextUpdate: (position: number, selectionData: TextSelectionData | null, hasSelection: boolean) => void;
+  sendCanvasUpdate: (x: number, y: number, tool: CanvasTool, color: string, size: number) => void;
+  switchMode: (mode: CursorMode) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +63,11 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
   const cursorsRef = useRef<Map<string, RemoteCursor>>(new Map());
   const [cursors, setCursors] = useState<Map<string, RemoteCursor>>(new Map());
 
-  // Throttle timer for 50ms mousemove rate-limiting.
+  // Active cursor mode — controls which subscription mode is used.
+  const [activeMode, setActiveMode] = useState<CursorMode>('freeform');
+  const activeModeRef = useRef<CursorMode>('freeform');
+
+  // Throttle timer for 50ms mousemove rate-limiting (freeform).
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep a ref to the current channel so the message handler closure always
@@ -68,7 +77,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
     channelRef.current = currentChannel;
   }, [currentChannel]);
 
-  // Keep a ref to the current connection state for sendFreeformUpdate guard.
+  // Keep a ref to the current connection state for send guards.
   const connectionStateRef = useRef<ConnectionState>(connectionState);
   useEffect(() => {
     connectionStateRef.current = connectionState;
@@ -125,6 +134,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
   }, [onMessage]);
 
   // ---- Subscribe / Unsubscribe -------------------------------------------
+  // Re-runs when channel, connectionState, or activeMode changes.
 
   useEffect(() => {
     if (connectionState !== 'connected' || !currentChannel) return;
@@ -133,11 +143,11 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
       service: 'cursor',
       action: 'subscribe',
       channel: currentChannel,
-      mode: 'freeform',
+      mode: activeMode,
     });
 
     return () => {
-      // Unsubscribe and clear cursor state on channel change or unmount.
+      // Unsubscribe and clear cursor state on channel/mode change or unmount.
       sendMessage({
         service: 'cursor',
         action: 'unsubscribe',
@@ -153,7 +163,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
         throttleTimerRef.current = null;
       }
     };
-  }, [currentChannel, connectionState, sendMessage]);
+  }, [currentChannel, connectionState, activeMode, sendMessage]);
 
   // ---- sendFreeformUpdate ------------------------------------------------
 
@@ -219,5 +229,65 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
     [sendMessage]
   );
 
-  return { cursors, sendFreeformUpdate, sendTableUpdate, sendTextUpdate };
+  // ---- sendCanvasUpdate --------------------------------------------------
+  // No internal throttle — CanvasCursorBoard applies its own 50ms RAF-based
+  // throttle before calling this, keeping component and hook concerns separate.
+
+  const sendCanvasUpdate = useCallback(
+    (
+      x: number,
+      y: number,
+      tool: CanvasTool,
+      color: string,
+      size: number
+    ) => {
+      if (connectionStateRef.current !== 'connected' || !channelRef.current) return;
+
+      sendMessage({
+        service: 'cursor',
+        action: 'update',
+        channel: channelRef.current,
+        position: { x, y },
+        metadata: { mode: 'canvas', tool, color, size },
+      });
+    },
+    [sendMessage]
+  );
+
+  // ---- switchMode --------------------------------------------------------
+  // Unsubscribes from the current channel, clears cursor state, sets the new
+  // mode, then resubscribes. The subscribe useEffect will fire when activeMode
+  // changes and send the updated subscription automatically.
+
+  const switchMode = useCallback(
+    (newMode: CursorMode) => {
+      if (connectionStateRef.current !== 'connected' || !channelRef.current) return;
+
+      // Unsubscribe from current channel (clears server-side subscription).
+      sendMessage({
+        service: 'cursor',
+        action: 'unsubscribe',
+        channel: channelRef.current,
+      });
+
+      // Clear remote cursors immediately for instant UI feedback.
+      cursorsRef.current = new Map();
+      setCursors(new Map());
+
+      // Update active mode — the subscribe useEffect will resubscribe.
+      activeModeRef.current = newMode;
+      setActiveMode(newMode);
+    },
+    [sendMessage]
+  );
+
+  return {
+    cursors,
+    activeMode,
+    sendFreeformUpdate,
+    sendTableUpdate,
+    sendTextUpdate,
+    sendCanvasUpdate,
+    switchMode,
+  };
 }
