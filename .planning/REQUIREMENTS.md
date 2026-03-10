@@ -22,9 +22,13 @@
 
 ### Cursors
 
-- [ ] **CURS-01**: User's cursor broadcasts to other tabs in real-time on a shared canvas
-- [ ] **CURS-02**: Other users' cursors render with per-user color and label
-- [ ] **CURS-03**: Cursors fade out when a tab disconnects
+- [ ] **CURS-01**: Freeform cursor broadcasts x/y position to all tabs on the same channel in real-time
+- [ ] **CURS-02**: Remote cursors render with a deterministic per-user color (derived from clientId) and user-initials label
+- [ ] **CURS-03**: When a tab disconnects, its cursor is removed from all remaining tabs immediately
+- [ ] **CURS-04**: Table cursor mode — clicking a grid cell broadcasts row/col position; remote users see a colored cell-border indicator with initials badge
+- [ ] **CURS-05**: Text cursor mode — cursor tracks character offset in a shared document; remote users see a colored line cursor + selection highlight when text is selected
+- [ ] **CURS-06**: Canvas cursor mode — cursor metadata includes active drawing tool (brush/pen/eraser/select), color, and size; remote cursors show tool label + ephemeral trail particles that auto-remove after 1 second
+- [ ] **CURS-07**: Multi-mode cursor demo — a mode selector switches between freeform, table, text, and canvas cursor panels; switching clears all active cursors and resets subscription state
 
 ### Chat
 
@@ -85,6 +89,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CURS-01 | Phase 7 | Pending |
 | CURS-02 | Phase 7 | Pending |
 | CURS-03 | Phase 7 | Pending |
+| CURS-04 | Phase 7 | Pending |
+| CURS-05 | Phase 7 | Pending |
+| CURS-06 | Phase 7 | Pending |
+| CURS-07 | Phase 7 | Pending |
 | CHAT-01 | Phase 8 | Pending |
 | CHAT-02 | Phase 8 | Pending |
 | CHAT-03 | Phase 8 | Pending |
@@ -98,10 +106,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEV-03 | Phase 10 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 23 total
-- Mapped to phases: 23
+- v1.2 requirements: 26 total
+- Mapped to phases: 26
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-03 — traceability confirmed after roadmap creation*
+*Last updated: 2026-03-10 — added CURS-04 through CURS-07 from test-client-multimode.html reverse engineering*
