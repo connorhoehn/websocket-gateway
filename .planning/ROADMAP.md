@@ -208,5 +208,5 @@ Plans:
 | 9. CRDT Editor | 2/2 | Complete   | 2026-03-10 | - |
 | 10. Reactions & Dev Tools | 3/3 | Complete    | 2026-03-10 | - |
 | 11. Auth Foundation | 3/3 | Complete    | 2026-03-11 | - |
-| 12. Identity Integration | 2/2 | Complete   | 2026-03-11 | - |
+| 12. Identity Integration | 2/2 | Complete    | 2026-03-11 | - |
 | 13. Session Management | v1.3 | 0/2 | Not started | - |
