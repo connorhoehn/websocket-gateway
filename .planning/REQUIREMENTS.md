@@ -73,8 +73,8 @@
 
 ### Session Management & Multi-user Tooling
 
-- [ ] **AUTH-09**: Access token auto-refreshes silently before expiry; gateway reconnects with the new token without user intervention
-- [ ] **AUTH-10**: If token refresh fails, user is signed out and redirected to login with a clear session-expired message
+- [x] **AUTH-09**: Access token auto-refreshes silently before expiry; gateway reconnects with the new token without user intervention
+- [x] **AUTH-10**: If token refresh fails, user is signed out and redirected to login with a clear session-expired message
 - [ ] **AUTH-11**: `scripts/create-test-user.sh` creates a Cognito user with a given email + temp password in one command; `scripts/list-test-users.sh` lists all pool users
 
 ---
@@ -137,8 +137,8 @@
 | AUTH-06 | Phase 12 | Complete |
 | AUTH-07 | Phase 12 | Complete |
 | AUTH-08 | Phase 12 | Complete |
-| AUTH-09 | Phase 13 | Pending |
-| AUTH-10 | Phase 13 | Pending |
+| AUTH-09 | Phase 13 | Complete |
+| AUTH-10 | Phase 13 | Complete |
 | AUTH-11 | Phase 13 | Pending |
 
 **Coverage:**

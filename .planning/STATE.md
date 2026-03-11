@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: planning
-stopped_at: Phase 13 context gathered
-last_updated: "2026-03-11T13:49:31.834Z"
+stopped_at: Completed 13-session-management-multi-user-tooling-01-PLAN.md
+last_updated: "2026-03-11T19:00:14.639Z"
 last_activity: "2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)"
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 18
-  completed_plans: 18
+  completed_phases: 8
+  total_plans: 20
+  completed_plans: 20
   percent: 100
 ---
 
@@ -66,6 +66,8 @@ Progress: [████████████████████] 20/20 p
 | Phase 11-auth-foundation P03 | 105 | 2 tasks | 3 files |
 | Phase 12-identity-integration P01 | 194 | 2 tasks | 5 files |
 | Phase 12-identity-integration P02 | 195 | 2 tasks | 6 files |
+| Phase 13-session-management-multi-user-tooling P02 | 91 | 2 tasks | 2 files |
+| Phase 13-session-management-multi-user-tooling P01 | 21 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -131,6 +133,11 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 12]: PresencePanel uses displayLabel (metadata.displayName fallback to truncated clientId) — no UUID in user list when displayName available
 - [Phase 12]: Cursor components use displayName as identity token for color/initials with clientId fallback — consistent with Plan 01 patterns
 - [Phase 12]: ChatPanel input disables with placeholder change when connectionState !== connected — user feedback without separate UI state
+- [Phase 13-02]: admin-create-user SUPPRESS + admin-set-user-password --permanent bypasses force-change-password — users sign in immediately after creation
+- [Phase 13-02]: node -e with heredoc stdin for JSON-to-table formatting in bash — reuses project node dependency, no awk/column portability issues
+- [Phase 13-01]: scheduleTokenRefresh is module-level pure function (not inside hook) — testable independently, no hook re-render cost
+- [Phase 13-01]: timerRef and broadcastChannel use useRef not useState — mutations do not trigger re-renders
+- [Phase 13-01]: signOut clears timer before broadcasting SIGNED_OUT — ensures this tab and others reach consistent unauthenticated state
 
 ### Pending Todos
 
@@ -142,6 +149,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:49:31.831Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-session-management-multi-user-tooling/13-CONTEXT.md
+Last session: 2026-03-11T19:00:14.636Z
+Stopped at: Completed 13-session-management-multi-user-tooling-01-PLAN.md
+Resume file: None
