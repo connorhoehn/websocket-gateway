@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: planning
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-11T13:14:39.414Z"
+stopped_at: Completed 12-01-PLAN.md (identity.ts + displayName propagation)
+last_updated: "2026-03-11T13:27:30.882Z"
 last_activity: "2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)"
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 18
+  completed_plans: 17
   percent: 100
 ---
 
@@ -64,6 +64,7 @@ Progress: [████████████████████] 20/20 p
 | Phase 11-auth-foundation P01 | 217 | 2 tasks | 2 files |
 | Phase 11-auth-foundation P02 | 69 | 2 tasks | 2 files |
 | Phase 11-auth-foundation P03 | 105 | 2 tasks | 3 files |
+| Phase 12-identity-integration P01 | 194 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,10 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 11-auth-foundation]: VITE_COGNITO_TOKEN guard removed — token injected at runtime by useAuth, not read from env at startup
 - [Phase 11-auth-foundation]: GatewayDemo receives auth prop so signOut and email are accessible in the header without prop-drilling
 - [Phase 11-auth-foundation]: cognitoToken flows: Cognito → useAuth.idToken → authenticatedConfig spread → useWebSocket.config.cognitoToken → buildUrl() query param
+- [Phase 12]: identity.ts keeps COLOR_PALETTE private — consumers import identityToColor, not the palette
+- [Phase 12]: decodeDisplayName is a module-level pure function in App.tsx — no reactivity overhead, easily testable
+- [Phase 12]: displayNameRef pattern mirrors existing sendMessageRef/currentChannelRef — consistent with established hook patterns
+- [Phase 12]: ChatMessage.displayName is optional — backwards compatible with messages sent before Phase 12
 
 ### Pending Todos
 
@@ -133,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:14:39.412Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-identity-integration/12-CONTEXT.md
+Last session: 2026-03-11T13:27:30.879Z
+Stopped at: Completed 12-01-PLAN.md (identity.ts + displayName propagation)
+Resume file: None

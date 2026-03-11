@@ -67,9 +67,9 @@
 
 ### Identity Integration
 
-- [ ] **AUTH-06**: Presence panel displays each user's display name (Cognito `given_name` or email prefix) instead of raw clientId
-- [ ] **AUTH-07**: Cursor badges in all four modes show initials derived from the user's display name (e.g. "JD" for "Jane Doe"), consistent across reconnections
-- [ ] **AUTH-08**: Chat messages (Phase 8) show the sender's display name as the author attribute
+- [x] **AUTH-06**: Presence panel displays each user's display name (Cognito `given_name` or email prefix) instead of raw clientId
+- [x] **AUTH-07**: Cursor badges in all four modes show initials derived from the user's display name (e.g. "JD" for "Jane Doe"), consistent across reconnections
+- [x] **AUTH-08**: Chat messages (Phase 8) show the sender's display name as the author attribute
 
 ### Session Management & Multi-user Tooling
 
@@ -134,9 +134,9 @@
 | AUTH-03 | Phase 11 | Complete |
 | AUTH-04 | Phase 11 | Complete |
 | AUTH-05 | Phase 11 | Complete |
-| AUTH-06 | Phase 12 | Pending |
-| AUTH-07 | Phase 12 | Pending |
-| AUTH-08 | Phase 12 | Pending |
+| AUTH-06 | Phase 12 | Complete |
+| AUTH-07 | Phase 12 | Complete |
+| AUTH-08 | Phase 12 | Complete |
 | AUTH-09 | Phase 13 | Pending |
 | AUTH-10 | Phase 13 | Pending |
 | AUTH-11 | Phase 13 | Pending |
