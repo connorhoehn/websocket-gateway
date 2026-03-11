@@ -187,7 +187,19 @@ function GatewayDemo({
     };
   };
 
-  const { users: presenceUsers } = usePresence({
+  // AUTH-09: When cognitoToken changes (silent refresh), reconnect so the
+  // gateway receives the updated JWT. prevTokenRef skips the initial mount.
+  const prevTokenRef = useRef(config.cognitoToken);
+  useEffect(() => {
+    if (prevTokenRef.current !== config.cognitoToken && connectionState === 'connected') {
+      prevTokenRef.current = config.cognitoToken;
+      reconnect();
+    } else {
+      prevTokenRef.current = config.cognitoToken;
+    }
+  }, [config.cognitoToken, connectionState, reconnect]);
+
+  const { users: presenceUsers, setTyping } = usePresence({
     sendMessage: loggedSendMessage,
     onMessage,
     currentChannel,
@@ -331,6 +343,7 @@ function GatewayDemo({
           messages={chatMessages}
           onSend={sendChat}
           disabled={connectionState !== 'connected'}
+          onTyping={setTyping}
         />
       </div>
 

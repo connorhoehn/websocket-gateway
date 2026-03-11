@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Frontend Layer
-status: planning
-stopped_at: Completed 13-session-management-multi-user-tooling-01-PLAN.md
-last_updated: "2026-03-11T19:04:14.654Z"
-last_activity: "2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)"
+milestone: v1.3
+milestone_name: User Auth & Identity
+status: complete
+stopped_at: Completed 14-auth-presence-gap-closure-01-PLAN.md
+last_updated: "2026-03-11T00:00:00.000Z"
+last_activity: "2026-03-11 — Completed Phase 14: Gap closure (AUTH-09 token reconnect, PRES-03 typing wiring)"
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 20
-  completed_plans: 20
+  total_phases: 9
+  completed_phases: 9
+  total_plans: 21
+  completed_plans: 21
   percent: 100
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
-**Current focus:** Phase 12 — Identity Integration (user claims replace clientId throughout presence, cursors, chat)
+**Current focus:** v1.3 complete — all gaps closed. Ready for /gsd:complete-milestone v1.3
 
 ## Current Position
 
-Phase: 12 of 13 (Identity Integration)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)
+Phase: 14 of 14 (Gap Closure — COMPLETE)
+Plan: 14-01 (complete)
+Status: All phases done — milestone ready to archive
+Last activity: 2026-03-11 — Completed Phase 14: gap closure (AUTH-09 token reconnect + PRES-03 typing wiring)
 
-Progress: [████████████████████] 20/20 plans (100% plans complete across v1.0–v1.3 so far)
+Progress: [█████████████████████] 21/21 plans (100% — v1.3 all requirements satisfied)
 
 ## Performance Metrics
 

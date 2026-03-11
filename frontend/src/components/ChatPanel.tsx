@@ -15,6 +15,7 @@ interface ChatPanelProps {
   messages: ChatMessage[];
   onSend: (content: string) => void;
   disabled?: boolean;
+  onTyping?: (isTyping: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,9 +38,10 @@ function formatTime(isoString: string): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ChatPanel({ messages, onSend, disabled = false }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, disabled = false, onTyping }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-scroll to bottom on new messages.
   useEffect(() => {
@@ -48,14 +50,31 @@ export function ChatPanel({ messages, onSend, disabled = false }: ChatPanelProps
     }
   }, [messages.length]);
 
+  // Clear typing timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, []);
+
   function handleSend() {
     const content = inputValue.trim();
     if (!content || disabled) return;
+    // Clear typing on send.
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = null;
+    onTyping?.(false);
     onSend(content);
     setInputValue('');
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!disabled) {
+      // Broadcast typing; reset 2s idle timer.
+      onTyping?.(true);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = setTimeout(() => onTyping?.(false), 2000);
+    }
     if (e.key === 'Enter' && !disabled && inputValue.trim()) {
       handleSend();
     }

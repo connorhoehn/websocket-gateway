@@ -194,9 +194,23 @@ Plans:
 - [ ] 13-01-PLAN.md — Token refresh (proactive setTimeout at 2 min before exp) + BroadcastChannel multi-tab sync in useAuth (AUTH-09, AUTH-10)
 - [ ] 13-02-PLAN.md — scripts/create-test-user.sh + scripts/list-test-users.sh CLI tooling (AUTH-11)
 
+### Phase 14: Auth & Presence Gap Closure
+**Goal**: Close AUTH-09 (token refresh reconnect) and PRES-03 (typing indicator broadcast) gaps identified by v1.3 milestone audit
+**Depends on**: Phase 13
+**Requirements**: AUTH-09, PRES-03
+**Gap Closure:** Closes gaps from v1.3 audit
+**Success Criteria** (what must be TRUE):
+  1. When useAuth refreshes the Cognito token mid-session, the gateway WebSocket reconnects with the updated JWT automatically
+  2. Typing a message in ChatPanel broadcasts `isTyping: true` to the channel; all other tabs show the typing indicator in PresencePanel
+  3. Stopping typing (2s timeout) or sending a message broadcasts `isTyping: false`
+**Plans**: 1 plan
+
+Plans:
+- [x] 14-01-PLAN.md — Token reconnect (GatewayDemo useEffect on cognitoToken) + setTyping wiring (App.tsx → ChatPanel onTyping prop) (AUTH-09, PRES-03)
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13
+**Execution Order:** Phases execute in numeric order: 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -210,3 +224,4 @@ Plans:
 | 11. Auth Foundation | 3/3 | Complete    | 2026-03-11 | - |
 | 12. Identity Integration | 2/2 | Complete    | 2026-03-11 | - |
 | 13. Session Management | 2/2 | Complete    | 2026-03-11 | - |
+| 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
