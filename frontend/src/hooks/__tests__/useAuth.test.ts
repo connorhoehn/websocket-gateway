@@ -22,6 +22,7 @@ const mockCognitoUser = {
   getSession: vi.fn(),
   signOut: vi.fn(),
   getUsername: vi.fn().mockReturnValue('user@example.com'),
+  refreshSession: vi.fn(),
 };
 
 const mockUserPool = {
@@ -34,7 +35,18 @@ vi.mock('amazon-cognito-identity-js', () => ({
   CognitoUser: vi.fn(function () { return mockCognitoUser; }),
   AuthenticationDetails: vi.fn(function () { return {}; }),
   CognitoUserAttribute: vi.fn(function () { return {}; }),
+  CognitoRefreshToken: vi.fn(function () { return {}; }),
 }));
+
+// ---------------------------------------------------------------------------
+// BroadcastChannel mock
+// ---------------------------------------------------------------------------
+
+const mockBroadcastChannel = {
+  postMessage: vi.fn(),
+  close: vi.fn(),
+  onmessage: null as ((event: MessageEvent) => void) | null,
+};
 
 // ---------------------------------------------------------------------------
 // Import hook — after vi.mock declarations
@@ -47,7 +59,14 @@ import { useAuth } from '../useAuth';
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.clearAllMocks();
+
+  // Reset BroadcastChannel mock
+  mockBroadcastChannel.postMessage.mockReset();
+  mockBroadcastChannel.close.mockReset();
+  mockBroadcastChannel.onmessage = null;
+  global.BroadcastChannel = vi.fn(function () { return mockBroadcastChannel; }) as unknown as typeof BroadcastChannel;
 
   // Default: reset mocks to sensible base state
   mockSession.isValid.mockReturnValue(true);
@@ -63,6 +82,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   localStorage.clear();
 });
@@ -333,6 +353,244 @@ describe('useAuth', () => {
       expect(typeof result.current.signUp).toBe('function');
       expect(typeof result.current.signOut).toBe('function');
       expect(['loading', 'unauthenticated', 'authenticated']).toContain(result.current.status);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Token refresh and multi-tab sync tests (Phase 13-01)
+  // -------------------------------------------------------------------------
+
+  describe('token refresh', () => {
+    /**
+     * Helper: build a valid-looking JWT with a specific exp claim.
+     * The actual signature is not verified in these tests.
+     */
+    function makeJwt(exp: number): string {
+      const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+      const payload = btoa(JSON.stringify({ sub: 'user-id', exp }))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+      return `${header}.${payload}.fake-signature`;
+    }
+
+    it('schedules a token refresh timer when authenticated on mount', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + 3600;
+      const idToken = makeJwt(exp);
+
+      mockSession.getIdToken.mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(idToken) });
+      mockUserPool.getCurrentUser.mockReturnValue(mockCognitoUser);
+      mockCognitoUser.getSession.mockImplementation(
+        (cb: (err: null, session: typeof mockSession) => void) => {
+          cb(null, mockSession);
+        }
+      );
+
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+      renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      const expectedDelay = (3600 - 120) * 1000;
+      const calls = setTimeoutSpy.mock.calls;
+      const refreshCall = calls.find(
+        ([, delay]) => typeof delay === 'number' && Math.abs(delay - expectedDelay) < 5000
+      );
+      expect(refreshCall).toBeDefined();
+    });
+
+    it('on refresh success, updates idToken state and broadcasts TOKEN_REFRESHED', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + 3600;
+      const idToken = makeJwt(exp);
+      const newIdToken = makeJwt(nowSec + 7200);
+
+      mockSession.getIdToken.mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(idToken) });
+      mockSession.getRefreshToken.mockReturnValue({ getToken: vi.fn().mockReturnValue('stored-refresh') });
+      localStorage.setItem('auth_refresh_token', 'stored-refresh');
+
+      mockUserPool.getCurrentUser.mockReturnValue(mockCognitoUser);
+      mockCognitoUser.getSession.mockImplementation(
+        (cb: (err: null, session: typeof mockSession) => void) => {
+          cb(null, mockSession);
+        }
+      );
+
+      const newSession = {
+        getIdToken: vi.fn().mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(newIdToken) }),
+        getRefreshToken: vi.fn().mockReturnValue({ getToken: vi.fn().mockReturnValue('new-refresh') }),
+      };
+
+      mockCognitoUser.refreshSession.mockImplementation(
+        (_token: unknown, cb: (err: null, session: typeof newSession) => void) => {
+          cb(null, newSession);
+        }
+      );
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      expect(result.current.status).toBe('authenticated');
+
+      // Advance timer to trigger refresh
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      expect(result.current.idToken).toBe(newIdToken);
+      expect(mockBroadcastChannel.postMessage).toHaveBeenCalledWith({
+        type: 'TOKEN_REFRESHED',
+        idToken: newIdToken,
+      });
+    });
+
+    it('on refresh failure, signs out and sets session-expired error', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + 3600;
+      const idToken = makeJwt(exp);
+
+      mockSession.getIdToken.mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(idToken) });
+      localStorage.setItem('auth_refresh_token', 'stored-refresh');
+
+      mockUserPool.getCurrentUser.mockReturnValue(mockCognitoUser);
+      mockCognitoUser.getSession.mockImplementation(
+        (cb: (err: null, session: typeof mockSession) => void) => {
+          cb(null, mockSession);
+        }
+      );
+
+      mockCognitoUser.refreshSession.mockImplementation(
+        (_token: unknown, cb: (err: Error, session: null) => void) => {
+          cb(new Error('Token expired'), null);
+        }
+      );
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      expect(result.current.status).toBe('authenticated');
+
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      expect(result.current.status).toBe('unauthenticated');
+      expect(result.current.error).toBe('Your session has expired. Please sign in again.');
+    });
+
+    it('clears refresh timer on signOut', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + 3600;
+      const idToken = makeJwt(exp);
+
+      mockSession.getIdToken.mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(idToken) });
+      mockUserPool.getCurrentUser.mockReturnValue(mockCognitoUser);
+      mockCognitoUser.getSession.mockImplementation(
+        (cb: (err: null, session: typeof mockSession) => void) => {
+          cb(null, mockSession);
+        }
+      );
+
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      act(() => {
+        result.current.signOut();
+      });
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+    });
+
+    it('clears refresh timer on unmount', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const exp = nowSec + 3600;
+      const idToken = makeJwt(exp);
+
+      mockSession.getIdToken.mockReturnValue({ getJwtToken: vi.fn().mockReturnValue(idToken) });
+      mockUserPool.getCurrentUser.mockReturnValue(mockCognitoUser);
+      mockCognitoUser.getSession.mockImplementation(
+        (cb: (err: null, session: typeof mockSession) => void) => {
+          cb(null, mockSession);
+        }
+      );
+
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+      const { unmount } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      unmount();
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+    });
+
+    it('does not schedule refresh when session restore finds no stored user', async () => {
+      mockUserPool.getCurrentUser.mockReturnValue(null);
+
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+      renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      // setTimeout should NOT be called for refresh scheduling
+      const expectedDelay = (3600 - 120) * 1000;
+      const refreshCall = setTimeoutSpy.mock.calls.find(
+        ([, delay]) => typeof delay === 'number' && delay > 60000
+      );
+      expect(refreshCall).toBeUndefined();
+      void expectedDelay; // suppress lint warning
+    });
+  });
+
+  describe('multi-tab sync via BroadcastChannel', () => {
+    it('TOKEN_REFRESHED broadcast from another tab updates idToken without re-authenticating', async () => {
+      mockUserPool.getCurrentUser.mockReturnValue(null);
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      expect(result.current.status).toBe('unauthenticated');
+
+      await act(async () => {
+        mockBroadcastChannel.onmessage?.({
+          data: { type: 'TOKEN_REFRESHED', idToken: 'cross-tab-token' },
+        } as MessageEvent);
+      });
+
+      expect(result.current.idToken).toBe('cross-tab-token');
+    });
+
+    it('SIGNED_OUT broadcast from another tab transitions to unauthenticated and clears localStorage', async () => {
+      localStorage.setItem('auth_id_token', 'some-token');
+      localStorage.setItem('auth_refresh_token', 'some-refresh');
+      localStorage.setItem('auth_email', 'user@example.com');
+
+      mockUserPool.getCurrentUser.mockReturnValue(null);
+
+      const { result } = renderHook(() => useAuth());
+
+      await act(async () => {});
+
+      await act(async () => {
+        mockBroadcastChannel.onmessage?.({
+          data: { type: 'SIGNED_OUT' },
+        } as MessageEvent);
+      });
+
+      expect(result.current.status).toBe('unauthenticated');
+      expect(localStorage.getItem('auth_id_token')).toBeNull();
+      expect(localStorage.getItem('auth_refresh_token')).toBeNull();
+      expect(localStorage.getItem('auth_email')).toBeNull();
     });
   });
 });
