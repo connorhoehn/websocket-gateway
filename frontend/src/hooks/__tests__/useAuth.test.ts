@@ -30,10 +30,10 @@ const mockUserPool = {
 };
 
 vi.mock('amazon-cognito-identity-js', () => ({
-  CognitoUserPool: vi.fn().mockImplementation(() => mockUserPool),
-  CognitoUser: vi.fn().mockImplementation(() => mockCognitoUser),
-  AuthenticationDetails: vi.fn(),
-  CognitoUserAttribute: vi.fn(),
+  CognitoUserPool: vi.fn(function () { return mockUserPool; }),
+  CognitoUser: vi.fn(function () { return mockCognitoUser; }),
+  AuthenticationDetails: vi.fn(function () { return {}; }),
+  CognitoUserAttribute: vi.fn(function () { return {}; }),
 }));
 
 // ---------------------------------------------------------------------------
