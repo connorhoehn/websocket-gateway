@@ -18,6 +18,7 @@ export interface ChatMessage {
   clientId: string;
   content: string;
   timestamp: string;  // ISO string from server
+  displayName?: string;
 }
 
 export interface UseChatOptions {
@@ -25,6 +26,7 @@ export interface UseChatOptions {
   onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
   currentChannel: string;
   connectionState: ConnectionState;
+  displayName: string;
 }
 
 export interface UseChatReturn {
@@ -37,7 +39,7 @@ export interface UseChatReturn {
 // ---------------------------------------------------------------------------
 
 export function useChat(options: UseChatOptions): UseChatReturn {
-  const { sendMessage, onMessage, currentChannel, connectionState } = options;
+  const { sendMessage, onMessage, currentChannel, connectionState, displayName } = options;
 
   // ---- State ---------------------------------------------------------------
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -54,6 +56,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     currentChannelRef.current = currentChannel;
   }, [currentChannel]);
 
+  const displayNameRef = useRef(displayName);
+  useEffect(() => {
+    displayNameRef.current = displayName;
+  }, [displayName]);
+
   // ---- Message handler -----------------------------------------------------
   // Separate effect from subscribe so the handler survives channel changes
   // without being torn down. Channel filtering is done inside the handler
@@ -63,11 +70,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (msg.type === 'chat:history') {
         // Only process history for the current channel
         if (msg.channel !== currentChannelRef.current) return;
-        const incoming = (msg.messages as Array<{ clientId: string; content: string; timestamp: string }> | undefined) ?? [];
+        const incoming = (msg.messages as Array<{ clientId: string; content: string; timestamp: string; data?: { displayName?: string } }> | undefined) ?? [];
         setMessages(incoming.map((m) => ({
           clientId: m.clientId,
           content: m.content,
           timestamp: m.timestamp,
+          displayName: (m.data as { displayName?: string } | undefined)?.displayName,
         })));
         return;
       }
@@ -75,10 +83,12 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       if (msg.type === 'chat:message') {
         // Only process messages for the current channel
         if (msg.channel !== currentChannelRef.current) return;
+        const msgData = msg.data as { displayName?: string } | undefined;
         const incoming: ChatMessage = {
           clientId: msg.clientId as string,
           content: msg.content as string,
           timestamp: msg.timestamp as string,
+          displayName: msgData?.displayName,
         };
         setMessages((prev) => [...prev, incoming]);
         return;
@@ -122,6 +132,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       action: 'message',
       channel: currentChannelRef.current,
       content,
+      data: { displayName: displayNameRef.current },
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // All deps accessed via refs — stable callback that never causes re-renders

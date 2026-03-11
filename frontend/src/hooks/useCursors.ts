@@ -48,6 +48,7 @@ export interface UseCursorsOptions {
   currentChannel: string;
   connectionState: ConnectionState;
   clientId: string | null;
+  displayName: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ export interface UseCursorsOptions {
 // ---------------------------------------------------------------------------
 
 export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
-  const { sendMessage, onMessage, currentChannel, connectionState, clientId } =
+  const { sendMessage, onMessage, currentChannel, connectionState, clientId, displayName } =
     options;
 
   // cursorsRef is the authoritative store. We only call setCursors to
@@ -89,6 +90,12 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
   useEffect(() => {
     clientIdRef.current = clientId;
   }, [clientId]);
+
+  // Keep a ref to displayName so send callbacks always read the freshest value.
+  const displayNameRef = useRef<string>(displayName);
+  useEffect(() => {
+    displayNameRef.current = displayName;
+  }, [displayName]);
 
   // ---- Inbound message handler -------------------------------------------
 
@@ -180,7 +187,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
         action: 'update',
         channel: channelRef.current,
         position: { x, y },
-        metadata: { mode: 'freeform' },
+        metadata: { mode: 'freeform', displayName: displayNameRef.current },
       });
 
       // Set throttle timer — after 50ms, clear so the next call goes through.
@@ -202,7 +209,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
         action: 'update',
         channel: channelRef.current,
         position: { row, col },
-        metadata: { mode: 'table' },
+        metadata: { mode: 'table', displayName: displayNameRef.current },
       });
     },
     [sendMessage]
@@ -223,7 +230,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
         action: 'update',
         channel: channelRef.current,
         position: { position },
-        metadata: { mode: 'text', selection: selectionData, hasSelection },
+        metadata: { mode: 'text', selection: selectionData, hasSelection, displayName: displayNameRef.current },
       });
     },
     [sendMessage]
@@ -248,7 +255,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
         action: 'update',
         channel: channelRef.current,
         position: { x, y },
-        metadata: { mode: 'canvas', tool, color, size },
+        metadata: { mode: 'canvas', tool, color, size, displayName: displayNameRef.current },
       });
     },
     [sendMessage]

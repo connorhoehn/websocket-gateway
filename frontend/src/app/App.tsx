@@ -30,6 +30,27 @@ import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
 
+// ---------------------------------------------------------------------------
+// Identity helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Decodes the Cognito ID token to extract a human-readable display name.
+ * Falls back to the email prefix, then 'anonymous' if nothing is available.
+ */
+function decodeDisplayName(idToken: string | null, email: string | null): string {
+  if (idToken) {
+    try {
+      const payload = JSON.parse(atob(idToken.split('.')[1])) as Record<string, unknown>;
+      if (typeof payload.given_name === 'string' && payload.given_name) {
+        return payload.given_name;
+      }
+    } catch { /* ignore decode errors */ }
+  }
+  if (email) return email.split('@')[0];
+  return 'anonymous';
+}
+
 export function App() {
   const auth = useAuth();
   const [showSignup, setShowSignup] = useState(false);
@@ -94,6 +115,10 @@ function GatewayDemo({
 }) {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [errors, setErrors] = useState<GatewayError[]>([]);
+
+  // Derive a human-readable display name from the Cognito ID token.
+  // config.cognitoToken is auth.idToken (guaranteed non-null for authenticated users).
+  const displayName = decodeDisplayName(config.cognitoToken ?? null, auth.email);
 
   // Feature hook message handler registry.
   // Each feature hook registers/unregisters its own handler via the onMessage
@@ -166,6 +191,7 @@ function GatewayDemo({
     onMessage,
     currentChannel,
     connectionState,
+    displayName,
   });
 
   const {
@@ -182,6 +208,7 @@ function GatewayDemo({
     currentChannel,
     connectionState,
     clientId,
+    displayName,
   });
 
   const { content, applyLocalEdit } = useCRDT({
@@ -196,6 +223,7 @@ function GatewayDemo({
     onMessage,
     currentChannel,
     connectionState,
+    displayName,
   });
 
   const { activeReactions, react } = useReactions({
@@ -204,10 +232,6 @@ function GatewayDemo({
     currentChannel,
     connectionState,
   });
-
-  // Suppress unused variable warnings for chatMessages/sendChat
-  void chatMessages;
-  void sendChat;
 
   return (
     <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>

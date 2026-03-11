@@ -29,6 +29,7 @@ export interface UsePresenceOptions {
   onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
   currentChannel: string;
   connectionState: ConnectionState;
+  displayName: string;
 }
 
 // Heartbeat interval in milliseconds
@@ -39,7 +40,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 // ---------------------------------------------------------------------------
 
 export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
-  const { sendMessage, onMessage, currentChannel, connectionState } = options;
+  const { sendMessage, onMessage, currentChannel, connectionState, displayName } = options;
 
   // ---- State ---------------------------------------------------------------
   const [users, setUsers] = useState<Map<string, PresenceUser>>(new Map());
@@ -58,6 +59,11 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
   useEffect(() => {
     currentChannelRef.current = currentChannel;
   }, [currentChannel]);
+
+  const displayNameRef = useRef(displayName);
+  useEffect(() => {
+    displayNameRef.current = displayName;
+  }, [displayName]);
 
   // ---- Message handler -----------------------------------------------------
   useEffect(() => {
@@ -117,6 +123,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
       sendMessageRef.current({
         service: 'presence',
         action: 'heartbeat',
+        metadata: { displayName: displayNameRef.current, isTyping: false },
         channels: [currentChannelRef.current],
       });
     }, HEARTBEAT_INTERVAL_MS);
@@ -146,7 +153,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
         service: 'presence',
         action: 'set',
         status: isTyping ? 'typing' : 'online',
-        metadata: { isTyping },
+        metadata: { displayName: displayNameRef.current, isTyping },
         channels: [currentChannelRef.current],
       });
 
@@ -160,7 +167,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
             service: 'presence',
             action: 'set',
             status: 'online',
-            metadata: { isTyping: false },
+            metadata: { displayName: displayNameRef.current, isTyping: false },
             channels: [currentChannelRef.current],
           });
           typingTimerRef.current = null;
