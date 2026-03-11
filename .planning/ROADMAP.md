@@ -188,11 +188,11 @@ Plans:
   2. A `scripts/create-test-user.sh` script creates a Cognito user with a given email + temp password in one command
   3. A `scripts/list-test-users.sh` script lists all users in the pool with their status
   4. If token refresh fails (refresh token also expired), the user is signed out and redirected to login with a clear message
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: Token refresh flow in useAuth (proactive refresh at 80% expiry, reactive on 401)
-- [ ] 13-02: scripts/create-test-user.sh + scripts/list-test-users.sh CLI tooling
+- [ ] 13-01-PLAN.md — Token refresh (proactive setTimeout at 2 min before exp) + BroadcastChannel multi-tab sync in useAuth (AUTH-09, AUTH-10)
+- [ ] 13-02-PLAN.md — scripts/create-test-user.sh + scripts/list-test-users.sh CLI tooling (AUTH-11)
 
 ## Progress
 
