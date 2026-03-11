@@ -51,7 +51,7 @@
 
 - [x] **DEV-01**: Real-time event log shows all WebSocket messages sent and received
 - [x] **DEV-02**: Error panel displays error code, message, and timestamp
-- [ ] **DEV-03**: User can manually trigger disconnect/reconnect to test recovery flow
+- [x] **DEV-03**: User can manually trigger disconnect/reconnect to test recovery flow
 
 ---
 
@@ -59,11 +59,11 @@
 
 ### Auth Foundation
 
-- [ ] **AUTH-01**: User can sign in with email + password via Cognito USER_PASSWORD_AUTH — no .env token required
-- [ ] **AUTH-02**: Unauthenticated visit shows a login form; successful login connects to the gateway with the real Cognito JWT
-- [ ] **AUTH-03**: Session persists across page reloads via localStorage token storage — no re-login required
-- [ ] **AUTH-04**: A sign-out button disconnects from the gateway, clears all tokens, and returns to the login form
-- [ ] **AUTH-05**: Signing in as two different Cognito users in separate browser windows shows both as distinct users in the presence panel simultaneously
+- [x] **AUTH-01**: User can sign in with email + password via Cognito USER_PASSWORD_AUTH — no .env token required
+- [x] **AUTH-02**: Unauthenticated visit shows a login form; successful login connects to the gateway with the real Cognito JWT
+- [x] **AUTH-03**: Session persists across page reloads via localStorage token storage — no re-login required
+- [x] **AUTH-04**: A sign-out button disconnects from the gateway, clears all tokens, and returns to the login form
+- [x] **AUTH-05**: Signing in as two different Cognito users in separate browser windows shows both as distinct users in the presence panel simultaneously
 
 ### Identity Integration
 
@@ -128,12 +128,12 @@
 | REAC-02 | Phase 10 | Complete |
 | DEV-01 | Phase 10 | Complete |
 | DEV-02 | Phase 10 | Complete |
-| DEV-03 | Phase 10 | Pending |
-| AUTH-01 | Phase 11 | Pending |
-| AUTH-02 | Phase 11 | Pending |
-| AUTH-03 | Phase 11 | Pending |
-| AUTH-04 | Phase 11 | Pending |
-| AUTH-05 | Phase 11 | Pending |
+| DEV-03 | Phase 10 | Complete |
+| AUTH-01 | Phase 11 | Complete |
+| AUTH-02 | Phase 11 | Complete |
+| AUTH-03 | Phase 11 | Complete |
+| AUTH-04 | Phase 11 | Complete |
+| AUTH-05 | Phase 11 | Complete |
 | AUTH-06 | Phase 12 | Pending |
 | AUTH-07 | Phase 12 | Pending |
 | AUTH-08 | Phase 12 | Pending |

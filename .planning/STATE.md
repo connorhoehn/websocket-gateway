@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 10-03-PLAN.md — DisconnectReconnect component and App.tsx wiring
-last_updated: "2026-03-10T19:35:19.651Z"
+stopped_at: Completed 11-01-PLAN.md — useAuth TDD hook with Cognito session restore, signIn, signUp, signOut
+last_updated: "2026-03-11T03:13:19.933Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 16
+  completed_plans: 14
   percent: 86
 ---
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 10-reactions-dev-tools P10-01 | 173 | 3 tasks | 4 files |
 | Phase 10-reactions-dev-tools P10-02 | 110 | 3 tasks | 3 files |
 | Phase 10-reactions-dev-tools P03 | 51 | 2 tasks | 2 files |
+| Phase 11-auth-foundation P01 | 217 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 10-reactions-dev-tools]: errors state accumulates all errors from both onMessage error frames and lastError useEffect — full error history visible in ErrorPanel
 - [Phase 10-reactions-dev-tools]: DisconnectReconnect uses derived boolean flags (isDisconnected, isActiveOrConnecting) for readability instead of repeating connectionState comparisons inline
 - [Phase 10-reactions-dev-tools]: Both Disconnect and Reconnect are enabled when connectionState === 'idle' — edge case intentional, allows reconnect attempt before first connection
+- [Phase 11-auth-foundation]: useMemo for CognitoUserPool (not useState or module-level singleton) — stable per hook instance, testable via vi.mock
+- [Phase 11-auth-foundation]: signIn returns Promise<void> wrapping callback-style Cognito API — enables async/await at call sites and proper act() wrapping in tests
+- [Phase 11-auth-foundation]: vi.fn(function() { return mock; }) required for Cognito class constructor mocks — arrow functions cannot be used as constructors with new in Vitest
 
 ### Pending Todos
 
@@ -122,6 +126,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T19:30:13.892Z
-Stopped at: Completed 10-03-PLAN.md — DisconnectReconnect component and App.tsx wiring
+Last session: 2026-03-11T03:13:19.931Z
+Stopped at: Completed 11-01-PLAN.md — useAuth TDD hook with Cognito session restore, signIn, signUp, signOut
 Resume file: None
