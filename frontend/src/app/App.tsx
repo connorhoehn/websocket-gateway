@@ -25,6 +25,7 @@ import { ReactionButtons } from '../components/ReactionButtons';
 import { EventLog } from '../components/EventLog';
 import { ErrorPanel } from '../components/ErrorPanel';
 import { DisconnectReconnect } from '../components/DisconnectReconnect';
+import { ChatPanel } from '../components/ChatPanel';
 import type { LogEntry } from '../components/EventLog';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
@@ -322,6 +323,15 @@ function GatewayDemo({
       <div style={{ margin: '1rem 0' }}>
         <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>Reactions</h3>
         <ReactionButtons onReact={react} disabled={connectionState !== 'connected'} />
+      </div>
+
+      {/* Chat */}
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
+        <ChatPanel
+          messages={chatMessages}
+          onSend={sendChat}
+          disabled={connectionState !== 'connected'}
+        />
       </div>
 
       {/* Dev Tools */}
