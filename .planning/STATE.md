@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: executing
-stopped_at: Completed 11-02-PLAN.md — LoginForm and SignupForm pure presentational components
-last_updated: "2026-03-11T03:16:45.165Z"
+stopped_at: Completed 11-03-PLAN.md — Auth-gated App.tsx with useAuth integration
+last_updated: "2026-03-11T03:20:33.956Z"
 last_activity: "2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection"
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 86
 ---
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
 | Phase 10-reactions-dev-tools P03 | 51 | 2 tasks | 2 files |
 | Phase 11-auth-foundation P01 | 217 | 2 tasks | 2 files |
 | Phase 11-auth-foundation P02 | 69 | 2 tasks | 2 files |
+| Phase 11-auth-foundation P03 | 105 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 11-auth-foundation]: vi.fn(function() { return mock; }) required for Cognito class constructor mocks — arrow functions cannot be used as constructors with new in Vitest
 - [Phase 11-auth-foundation]: Pure presentational LoginForm/SignupForm: auth state received via props only, no internal useAuth calls
 - [Phase 11-auth-foundation]: localError > error prop display priority in SignupForm: client-side validation errors take precedence over server errors
+- [Phase 11-auth-foundation]: VITE_COGNITO_TOKEN guard removed — token injected at runtime by useAuth, not read from env at startup
+- [Phase 11-auth-foundation]: GatewayDemo receives auth prop so signOut and email are accessible in the header without prop-drilling
+- [Phase 11-auth-foundation]: cognitoToken flows: Cognito → useAuth.idToken → authenticatedConfig spread → useWebSocket.config.cognitoToken → buildUrl() query param
 
 ### Pending Todos
 
@@ -129,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T03:16:45.162Z
-Stopped at: Completed 11-02-PLAN.md — LoginForm and SignupForm pure presentational components
+Last session: 2026-03-11T03:20:33.954Z
+Stopped at: Completed 11-03-PLAN.md — Auth-gated App.tsx with useAuth integration
 Resume file: None
