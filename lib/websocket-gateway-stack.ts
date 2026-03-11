@@ -4,11 +4,11 @@ import { createVpc } from './vpc';
 import { createCluster } from './cluster';
 import { createTaskDefinition } from './task-definition';
 import { createFargateService } from './fargate-service';
-import { createRedis } from './redis';
 import { createCrdtSnapshotsTable } from './dynamodb-table';
 import { createDashboard } from './dashboard';
 import { createAlarmTopic } from './sns';
 import { createAlarms } from './alarms';
+import { createCognito } from './cognito';
 
 export class WebsocketGatewayStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -16,39 +16,31 @@ export class WebsocketGatewayStack extends Stack {
 
     const vpc = createVpc(this);
     const cluster = createCluster(this, vpc);
-
-    // Check if Redis should be enabled via environment variable
-    const enableRedis = process.env.ENABLE_REDIS === 'true';
-    let redis: any = null;
-
-    if (enableRedis) {
-      redis = createRedis(this, vpc);
-    }
+    const cognito = createCognito(this);
 
     // Create DynamoDB table for CRDT snapshots
     const crdtTable = createCrdtSnapshotsTable(this, vpc);
 
-    // Create task definition with DynamoDB table name
+    // Task definition includes a Redis sidecar — app connects to localhost:6379
     const taskDef = createTaskDefinition(this, {
       dynamodbTableName: crdtTable.tableName,
+      cognitoUserPoolId: cognito.userPool.userPoolId,
+      cognitoRegion: this.region,
     });
 
     // Grant task role permissions to access DynamoDB table
     crdtTable.table.grantReadWriteData(taskDef.taskRole);
 
-    // Create Fargate service with optional Redis security group
     const fargateResources = createFargateService(this, {
       vpc,
       cluster,
       taskDef,
-      redisSecurityGroup: redis?.securityGroup,
     });
 
     // Create CloudWatch Dashboard
     createDashboard(this, {
       ecsService: fargateResources.service,
       ecsCluster: cluster,
-      redisCluster: redis?.replicationGroup,
       alb: fargateResources.alb,
     });
 
@@ -105,12 +97,14 @@ export class WebsocketGatewayStack extends Stack {
       description: 'ECS Security Group ID',
     });
 
-    // Only output Redis endpoint if Redis is enabled
-    if (redis) {
-      new CfnOutput(this, 'RedisEndpoint', {
-        value: redis.endpoint,
-        description: 'Redis cluster endpoint',
-      });
-    }
+    new CfnOutput(this, 'CognitoUserPoolId', {
+      value: cognito.userPool.userPoolId,
+      description: 'Cognito User Pool ID',
+    });
+
+    new CfnOutput(this, 'CognitoClientId', {
+      value: cognito.userPoolClient.userPoolClientId,
+      description: 'Cognito App Client ID',
+    });
   }
 }

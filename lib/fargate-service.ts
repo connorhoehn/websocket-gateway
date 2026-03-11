@@ -85,12 +85,15 @@ export function createFargateService(
   const service = new FargateService(scope, 'FargateWebSocketService', {
     cluster: props.cluster,
     taskDefinition: props.taskDef,
-    desiredCount: 2, // Always maintain redundancy
-    assignPublicIp: false, // Tasks run in isolated private subnets
+    desiredCount: 2,
+    assignPublicIp: false,
     vpcSubnets: {
-      subnetType: SubnetType.PRIVATE_ISOLATED, // Use isolated subnets
+      subnetType: SubnetType.PRIVATE_ISOLATED,
     },
     securityGroups: [ecsSecurityGroup],
+    circuitBreaker: { rollback: true }, // Fail fast instead of looping on crashed tasks
+    minHealthyPercent: 100,
+    maxHealthyPercent: 200,
   });
 
   const alb = new ApplicationLoadBalancer(scope, 'WebSocketALB', {
@@ -103,43 +106,65 @@ export function createFargateService(
     },
   });
 
-  // Certificate ARN from environment variable
-  const certificateArn = process.env.ACM_CERTIFICATE_ARN || '<PLACEHOLDER>';
-  const certificate = Certificate.fromCertificateArn(scope, 'Certificate', certificateArn);
+  const certificateArn = process.env.ACM_CERTIFICATE_ARN;
 
-  // HTTPS listener with certificate
-  const httpsListener = alb.addListener('HttpsListener', {
-    port: 443,
-    protocol: ApplicationProtocol.HTTPS,
-    certificates: [certificate],
-  });
-
-  // Add targets to HTTPS listener with sticky sessions and health checks
-  httpsListener.addTargets('ECS', {
-    port: 8080,
-    protocol: ApplicationProtocol.HTTP, // wss:// -> ws:// internally
-    targets: [service],
-    healthCheck: {
-      path: '/health',
-      interval: Duration.seconds(30),
-      timeout: Duration.seconds(5),
-      healthyThresholdCount: 2,
-      unhealthyThresholdCount: 3,
-    },
-    deregistrationDelay: Duration.seconds(30), // Graceful shutdown window
-    stickinessCookieDuration: Duration.hours(1), // Enable sticky sessions
-  });
-
-  // HTTP listener with redirect to HTTPS
-  alb.addListener('HttpListener', {
-    port: 80,
-    protocol: ApplicationProtocol.HTTP,
-    defaultAction: ListenerAction.redirect({
+  if (certificateArn) {
+    // HTTPS listener with certificate
+    const certificate = Certificate.fromCertificateArn(scope, 'Certificate', certificateArn);
+    const httpsListener = alb.addListener('HttpsListener', {
+      port: 443,
       protocol: ApplicationProtocol.HTTPS,
-      port: '443',
-      permanent: true,
-    }),
-  });
+      certificates: [certificate],
+    });
+
+    httpsListener.addTargets('ECS', {
+      port: 8080,
+      protocol: ApplicationProtocol.HTTP,
+      targets: [service.loadBalancerTarget({ containerName: 'WebSocketContainer', containerPort: 8080 })],
+      healthCheck: {
+        path: '/health',
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+      },
+      deregistrationDelay: Duration.seconds(30),
+      stickinessCookieDuration: Duration.hours(1),
+    });
+
+    // HTTP redirects to HTTPS when cert is present
+    alb.addListener('HttpListener', {
+      port: 80,
+      protocol: ApplicationProtocol.HTTP,
+      defaultAction: ListenerAction.redirect({
+        protocol: ApplicationProtocol.HTTPS,
+        port: '443',
+        permanent: true,
+      }),
+    });
+  } else {
+    // No cert — HTTP only (dev/testing without a domain)
+    console.log('No ACM_CERTIFICATE_ARN set — deploying HTTP-only listener on port 80');
+    const httpListener = alb.addListener('HttpListener', {
+      port: 80,
+      protocol: ApplicationProtocol.HTTP,
+    });
+
+    httpListener.addTargets('ECS', {
+      port: 8080,
+      protocol: ApplicationProtocol.HTTP,
+      targets: [service.loadBalancerTarget({ containerName: 'WebSocketContainer', containerPort: 8080 })],
+      healthCheck: {
+        path: '/health',
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+      },
+      deregistrationDelay: Duration.seconds(30),
+      stickinessCookieDuration: Duration.hours(1),
+    });
+  }
 
   // Configure auto-scaling for ECS service
   const scaling = service.autoScaleTaskCount({

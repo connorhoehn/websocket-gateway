@@ -1,45 +1,24 @@
-import { RemovalPolicy } from 'aws-cdk-lib';
-import { AttributeType, BillingMode, Table, TableEncryption } from 'aws-cdk-lib/aws-dynamodb';
+import { ITable, Table } from 'aws-cdk-lib/aws-dynamodb';
 import { Vpc } from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
 
 interface DynamoDBTableResult {
-  table: Table;
+  table: ITable;
   tableName: string;
 }
 
+const TABLE_NAME = 'crdt-snapshots';
+
 /**
- * Create DynamoDB table for CRDT snapshots with TTL and on-demand billing
- *
- * Table schema:
- * - Partition key: documentId (string) - unique document identifier
- * - Sort key: timestamp (number) - epoch milliseconds for versioning
- * - Attributes: snapshot (binary), ttl (number)
- * - TTL enabled on 'ttl' attribute for automatic snapshot expiration
- * - On-demand billing for cost optimization with unpredictable workload
- * - Point-in-time recovery for data safety
- * - AWS managed encryption at rest
+ * Reference the existing DynamoDB table for CRDT snapshots.
+ * The table was created outside this stack and is retained independently.
+ * Use `cdk import` to bring it under full CDK management if needed.
  */
 export function createCrdtSnapshotsTable(scope: Construct, vpc: Vpc): DynamoDBTableResult {
-  const table = new Table(scope, 'CrdtSnapshotsTable', {
-    tableName: 'crdt-snapshots',
-    partitionKey: {
-      name: 'documentId',
-      type: AttributeType.STRING,
-    },
-    sortKey: {
-      name: 'timestamp',
-      type: AttributeType.NUMBER,
-    },
-    billingMode: BillingMode.PAY_PER_REQUEST,
-    encryption: TableEncryption.AWS_MANAGED,
-    pointInTimeRecovery: true,
-    removalPolicy: RemovalPolicy.RETAIN,
-    timeToLiveAttribute: 'ttl',
-  });
+  const table = Table.fromTableName(scope, 'CrdtSnapshotsTable', TABLE_NAME);
 
   return {
     table,
-    tableName: table.tableName,
+    tableName: TABLE_NAME,
   };
 }

@@ -20,6 +20,15 @@ help: ## Show this help message
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-25s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
+# Real infrastructure dev
+.PHONY: gen-env
+gen-env: ## Generate .env.real from deployed AWS resources
+	./scripts/generate-env.sh
+
+.PHONY: dev-real
+dev-real: ## Start server against real AWS Cognito (auto-fetches JWT)
+	./scripts/start-real.sh --token
+
 # Local development
 .PHONY: dev-local
 dev-local: ## Start self-contained local environment (Redis included, no AWS or env vars needed)
@@ -77,6 +86,32 @@ build-and-push: ecr-login ecr-create build ## Build and push Docker image to ECR
 	docker push $(ECR_REPOSITORY):$(IMAGE_TAG)
 	@echo "Image pushed to: $(ECR_REPOSITORY):$(IMAGE_TAG)"
 
+.PHONY: deploy-image
+deploy-image: ## Build (arm64), push to ECR, force new ECS deployment — no CDK needed
+	./scripts/deploy-image.sh
+
+.PHONY: deploy-image-tail
+deploy-image-tail: ## Like deploy-image but tails ECS logs after deploying
+	./scripts/deploy-image.sh --tail
+
+.PHONY: ecs-status
+ecs-status: ## Show ECS service running/desired task counts and latest events
+	@CLUSTER=$$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) --region $(AWS_REGION) \
+	  --query 'Stacks[0].Outputs[?OutputKey==`ClusterArn`].OutputValue' --output text 2>/dev/null); \
+	SERVICE=$$(aws cloudformation describe-stacks --stack-name $(STACK_NAME) --region $(AWS_REGION) \
+	  --query 'Stacks[0].Outputs[?OutputKey==`ServiceArn`].OutputValue' --output text 2>/dev/null); \
+	aws ecs describe-services --cluster "$$CLUSTER" --services "$$SERVICE" --region $(AWS_REGION) \
+	  --query 'services[0].{Status:status,Running:runningCount,Desired:desiredCount,Pending:pendingCount,Events:events[0:5]}' \
+	  --output json
+
+.PHONY: ecs-logs
+ecs-logs: ## Tail the latest ECS task logs from CloudWatch
+	@LOG_GROUP=$$(aws logs describe-log-groups --region $(AWS_REGION) \
+	  --log-group-name-prefix "$(STACK_NAME)-TaskDef" \
+	  --query 'sort_by(logGroups, &creationTime)[-1].logGroupName' --output text 2>/dev/null); \
+	echo "Log group: $$LOG_GROUP"; \
+	aws logs tail "$$LOG_GROUP" --follow --region $(AWS_REGION)
+
 # Deployment
 .PHONY: deploy
 deploy: ## Deploy to AWS using deploy.sh script
@@ -97,7 +132,11 @@ cdk-diff: build-cdk ## Show differences between current and deployed stack
 
 .PHONY: cdk-deploy
 cdk-deploy: build-cdk ## Deploy CDK stack
-	npm run cdk deploy --require-approval never
+	npm run cdk -- deploy --require-approval never
+
+.PHONY: cdk-watch
+cdk-watch: ## Deploy CDK stack and monitor ECS tasks for failures in real time
+	./scripts/watch-deploy.sh
 
 .PHONY: cdk-destroy
 cdk-destroy: ## Destroy CDK stack

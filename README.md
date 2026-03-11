@@ -60,22 +60,74 @@ flowchart TD
 
 The gateway includes logical services: Chat, Presence, Cursor, and Reaction services that communicate via Redis pub/sub channels.
 
-## Quick Start
+## Development
 
-### Local Testing
+### Local Dev (no AWS required)
+
+Runs the gateway + Redis in Docker with fake Cognito credentials. Auth rejects all tokens — useful for observing logs and server behaviour without connecting clients.
+
 ```bash
-make dev-detached    # Start development environment
+make dev-local        # start gateway + Redis
+make dev-local-stop   # stop
 ```
+
+**URLs:**
+| Endpoint | URL |
+|----------|-----|
+| Health | http://localhost:8080/health |
+| Cluster info | http://localhost:8080/cluster |
+| Stats | http://localhost:8080/stats |
+
+---
+
+### AWS Testing (real Cognito auth)
+
+Runs the gateway locally against your real AWS Cognito user pool. Generates a test user automatically — no credentials to manage.
+
+**First time setup:**
+```bash
+make gen-env    # discovers Cognito pool, creates test user, writes .env.real
+```
+
+**Every run:**
+```bash
+make dev-real   # starts Redis (Docker), starts gateway, fetches JWT, prints wscat command
+```
+
+Output includes a ready-to-use connect command:
+```
+wscat -c "ws://localhost:8080?token=<JWT>"
+```
+
+**Send a message once connected:**
+```bash
+{"service":"chat","action":"send","channel":"public:test","data":{"text":"hello"}}
+```
+
+**URLs:**
+| Endpoint | URL |
+|----------|-----|
+| Health | http://localhost:8080/health |
+| Cluster info | http://localhost:8080/cluster |
+| Stats | http://localhost:8080/stats |
+| WebSocket | ws://localhost:8080?token=\<JWT\> |
+
+**Re-run `make gen-env` any time to:**
+- Rotate test credentials
+- Pick up new infrastructure after `cdk deploy`
+
+---
 
 ### Deployment
 ```bash
-cdk deploy --all     # Deploy infrastructure first (required)
-./deploy.sh          # Deploy application
+cdk deploy --all     # Deploy infrastructure
 ```
 
 ## Configuration
 
 ### Required Environment Variables
+- `COGNITO_REGION`: AWS region for Cognito
+- `COGNITO_USER_POOL_ID`: Cognito user pool ID
 - `REDIS_ENDPOINT`: Redis hostname (default: localhost)
 - `PORT`: WebSocket server port (default: 8080)
 

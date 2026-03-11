@@ -1,18 +1,17 @@
-import { ContainerImage, FargateTaskDefinition, LogDriver } from 'aws-cdk-lib/aws-ecs';
+import { ContainerImage, CpuArchitecture, FargateTaskDefinition, LogDriver, OperatingSystemFamily, ContainerDependencyCondition } from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
 import { Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Stack } from 'aws-cdk-lib';
 
 interface TaskDefinitionProps {
-  redisEndpoint?: string;
-  redisPort?: string;
   dynamodbTableName?: string;
   imageUri?: string;
+  cognitoUserPoolId?: string;
+  cognitoRegion?: string;
 }
 
 export function createTaskDefinition(scope: Construct, props?: TaskDefinitionProps): FargateTaskDefinition {
-  // Create execution role with ECR permissions
   const executionRole = new Role(scope, 'TaskExecutionRole', {
     assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
     managedPolicies: [
@@ -20,54 +19,65 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     ],
   });
 
-  // Create task role with DynamoDB permissions
   const taskRole = new Role(scope, 'TaskRole', {
     assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
   });
 
-  // Get stack for region and account
   const stack = Stack.of(scope);
 
-  // Add DynamoDB permissions to task role
   taskRole.addToPolicy(new PolicyStatement({
     effect: Effect.ALLOW,
-    actions: [
-      'dynamodb:PutItem',
-      'dynamodb:GetItem',
-      'dynamodb:Query'
-    ],
-    resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/crdt-snapshots`]
+    actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:Query'],
+    resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/crdt-snapshots`],
   }));
 
+  // 512 cpu / 1024 MB — split between Redis sidecar + app container
   const taskDef = new FargateTaskDefinition(scope, 'TaskDef', {
-    executionRole: executionRole,
-    taskRole: taskRole,
-    cpu: 256,
-    memoryLimitMiB: 512,
+    executionRole,
+    taskRole,
+    cpu: 512,
+    memoryLimitMiB: 1024,
+    runtimePlatform: {
+      cpuArchitecture: CpuArchitecture.ARM64,
+      operatingSystemFamily: OperatingSystemFamily.LINUX,
+    },
   });
-  
-  const environment: { [key: string]: string } = {};
 
-  if (props?.redisEndpoint) {
-    environment.REDIS_ENDPOINT = props.redisEndpoint;
-  }
+  // Redis sidecar — app connects to localhost:6379, same as local docker-compose
+  const redisContainer = taskDef.addContainer('RedisContainer', {
+    image: ContainerImage.fromRegistry('264161986065.dkr.ecr.us-east-1.amazonaws.com/redis:7-alpine'),
+    memoryLimitMiB: 128,
+    cpu: 128,
+    essential: true,
+    logging: LogDriver.awsLogs({
+      streamPrefix: 'redis',
+      logRetention: RetentionDays.ONE_WEEK,
+    }),
+  });
 
-  if (props?.redisPort) {
-    environment.REDIS_PORT = props.redisPort;
-  } else {
-    environment.REDIS_PORT = '6379'; // Default Redis port
-  }
+  const environment: { [key: string]: string } = {
+    REDIS_ENDPOINT: 'localhost',
+    REDIS_PORT: '6379',
+  };
 
   if (props?.dynamodbTableName) {
     environment.DYNAMODB_CRDT_TABLE = props.dynamodbTableName;
   }
 
+  if (props?.cognitoUserPoolId) {
+    environment.COGNITO_USER_POOL_ID = props.cognitoUserPoolId;
+  }
+
+  if (props?.cognitoRegion) {
+    environment.COGNITO_REGION = props.cognitoRegion;
+  }
+
   const imageUri = props?.imageUri || process.env.IMAGE_URI || '264161986065.dkr.ecr.us-east-1.amazonaws.com/websocket-gateway:latest';
 
-  taskDef.addContainer('WebSocketContainer', {
+  const appContainer = taskDef.addContainer('WebSocketContainer', {
     image: ContainerImage.fromRegistry(imageUri),
-    memoryLimitMiB: 512,
-    cpu: 256,
+    memoryLimitMiB: 896,
+    cpu: 384,
     portMappings: [{ containerPort: 8080 }],
     environment,
     logging: LogDriver.awsLogs({
@@ -75,6 +85,12 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
       logRetention: RetentionDays.ONE_WEEK,
     }),
   });
-  
+
+  // Wait for Redis to start before launching the app
+  appContainer.addContainerDependencies({
+    container: redisContainer,
+    condition: ContainerDependencyCondition.START,
+  });
+
   return taskDef;
 }

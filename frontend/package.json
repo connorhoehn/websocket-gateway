@@ -13,6 +13,7 @@
     "token": "bash ../scripts/refresh-dev-token.sh"
   },
   "dependencies": {
+    "amazon-cognito-identity-js": "^6.3.16",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "yjs": "^13.6.29"
