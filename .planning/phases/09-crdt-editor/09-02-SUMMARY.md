@@ -95,6 +95,13 @@ None.
 - Human verification of real-time sync, concurrent merge, and snapshot restore can proceed by opening two browser tabs at http://localhost:5173
 - Phase 10 (reconnect polish) can build on the established connectionState-driven disabled pattern
 
+## Self-Check: PASSED
+- `frontend/src/components/SharedTextEditor.tsx` — FOUND
+- `frontend/src/app/App.tsx` — FOUND (useCRDT + SharedTextEditor wired)
+- `.planning/phases/09-crdt-editor/09-02-SUMMARY.md` — FOUND
+- commit `b802277` (Task 1 - SharedTextEditor) — FOUND
+- commit `9e9b1e5` (Task 2 - App.tsx wiring) — FOUND
+
 ---
 *Phase: 09-crdt-editor*
 *Completed: 2026-03-10*

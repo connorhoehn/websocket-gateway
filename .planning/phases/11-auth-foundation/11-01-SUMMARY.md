@@ -172,3 +172,12 @@ No additional manual configuration required for the unit test suite.
 ---
 *Phase: 11-auth-foundation*
 *Completed: 2026-03-11*
+
+## Self-Check: PASSED
+
+- FOUND: `frontend/src/hooks/useAuth.ts`
+- FOUND: `frontend/src/hooks/__tests__/useAuth.test.ts`
+- FOUND: `.planning/phases/11-auth-foundation/11-01-SUMMARY.md`
+- FOUND commit: `f880d83` (test: RED phase)
+- FOUND commit: `3b2f635` (feat: GREEN phase)
+- FOUND commit: `3a652e0` (docs: metadata)
