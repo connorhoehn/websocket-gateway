@@ -2,13 +2,15 @@
 //
 // Cognito USER_PASSWORD_AUTH hook.
 // Manages the full auth lifecycle: session restore, sign-in, sign-up, sign-out.
+// Phase 13-01: adds proactive token refresh and multi-tab session sync.
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   CognitoUserPool,
   CognitoUser,
   AuthenticationDetails,
   CognitoUserAttribute,
+  CognitoRefreshToken,
   type CognitoUserSession,
 } from 'amazon-cognito-identity-js';
 
@@ -37,6 +39,37 @@ export interface UseAuthReturn extends AuthState {
   signOut: () => void;
 }
 
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
+
+type AuthBroadcastEvent =
+  | { type: 'TOKEN_REFRESHED'; idToken: string }
+  | { type: 'SIGNED_OUT' };
+
+// ---------------------------------------------------------------------------
+// Helper: schedule a silent token refresh 2 minutes before expiry
+// ---------------------------------------------------------------------------
+
+function scheduleTokenRefresh(
+  idToken: string,
+  onRefresh: () => void
+): ReturnType<typeof setTimeout> | null {
+  try {
+    const payload = JSON.parse(
+      atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+    );
+    const expiresInMs = payload.exp * 1000 - Date.now();
+    const refreshInMs = expiresInMs - 2 * 60 * 1000; // 2 min early
+    if (refreshInMs <= 0) {
+      onRefresh();
+      return null;
+    }
+    return setTimeout(onRefresh, refreshInMs);
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -59,6 +92,103 @@ export function useAuth(): UseAuthReturn {
       }),
     []
   );
+
+  // Refs for timer and BroadcastChannel
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const broadcastChannel = useRef<BroadcastChannel | null>(null);
+
+  // ── SIGN OUT ───────────────────────────────────────────────────────────
+  // Defined early so it can be referenced by doRefresh
+
+  const signOut = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    userPool.getCurrentUser()?.signOut();
+    localStorage.removeItem(STORAGE_ID_TOKEN);
+    localStorage.removeItem(STORAGE_REFRESH_TOKEN);
+    localStorage.removeItem(STORAGE_EMAIL);
+    broadcastChannel.current?.postMessage({ type: 'SIGNED_OUT' });
+    setState({
+      status: 'unauthenticated',
+      idToken: null,
+      email: null,
+      error: null,
+    });
+  }, [userPool]);
+
+  // ── TOKEN REFRESH ──────────────────────────────────────────────────────
+
+  const doRefresh = useCallback(() => {
+    const storedToken = localStorage.getItem(STORAGE_REFRESH_TOKEN);
+    if (!storedToken) {
+      signOut();
+      setState((prev) => ({
+        ...prev,
+        status: 'unauthenticated',
+        error: 'Your session has expired. Please sign in again.',
+      }));
+      return;
+    }
+
+    const cognitoUser = userPool.getCurrentUser();
+    if (!cognitoUser) {
+      signOut();
+      setState((prev) => ({
+        ...prev,
+        status: 'unauthenticated',
+        error: 'Your session has expired. Please sign in again.',
+      }));
+      return;
+    }
+
+    const refreshToken = new CognitoRefreshToken({ RefreshToken: storedToken });
+    cognitoUser.refreshSession(refreshToken, (err: Error | null, session: CognitoUserSession | null) => {
+      if (err || !session) {
+        signOut();
+        setState((prev) => ({
+          ...prev,
+          status: 'unauthenticated',
+          error: 'Your session has expired. Please sign in again.',
+        }));
+        return;
+      }
+      const newIdToken = session.getIdToken().getJwtToken();
+      const newRefreshToken = session.getRefreshToken().getToken();
+      localStorage.setItem(STORAGE_ID_TOKEN, newIdToken);
+      localStorage.setItem(STORAGE_REFRESH_TOKEN, newRefreshToken);
+      setState((prev) => ({ ...prev, idToken: newIdToken }));
+      broadcastChannel.current?.postMessage({ type: 'TOKEN_REFRESHED', idToken: newIdToken });
+      // Re-schedule next refresh
+      timerRef.current = scheduleTokenRefresh(newIdToken, doRefresh);
+    });
+  }, [userPool, signOut]);
+
+  // ── BROADCAST CHANNEL ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const channel = new BroadcastChannel('auth');
+    broadcastChannel.current = channel;
+
+    channel.onmessage = (event: MessageEvent) => {
+      const msg = event.data as AuthBroadcastEvent;
+      if (msg.type === 'TOKEN_REFRESHED') {
+        localStorage.setItem(STORAGE_ID_TOKEN, msg.idToken);
+        setState((prev) => ({ ...prev, idToken: msg.idToken }));
+      } else if (msg.type === 'SIGNED_OUT') {
+        localStorage.removeItem(STORAGE_ID_TOKEN);
+        localStorage.removeItem(STORAGE_REFRESH_TOKEN);
+        localStorage.removeItem(STORAGE_EMAIL);
+        setState({ status: 'unauthenticated', idToken: null, email: null, error: null });
+      }
+    };
+
+    return () => {
+      channel.close();
+      broadcastChannel.current = null;
+    };
+  }, []);
 
   // ── SESSION RESTORE (on mount) ──────────────────────────────────────────
 
@@ -92,8 +222,17 @@ export function useAuth(): UseAuthReturn {
           email,
           error: null,
         });
+        // Schedule proactive refresh
+        timerRef.current = scheduleTokenRefresh(idToken, doRefresh);
       }
     });
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── SIGN IN ────────────────────────────────────────────────────────────
@@ -117,6 +256,8 @@ export function useAuth(): UseAuthReturn {
               email,
               error: null,
             });
+            // Schedule proactive refresh
+            timerRef.current = scheduleTokenRefresh(idToken, doRefresh);
             resolve();
           },
           onFailure: (err: Error) => {
@@ -140,7 +281,7 @@ export function useAuth(): UseAuthReturn {
         });
       });
     },
-    [userPool]
+    [userPool, doRefresh]
   );
 
   // ── SIGN UP ────────────────────────────────────────────────────────────
@@ -167,21 +308,6 @@ export function useAuth(): UseAuthReturn {
     },
     [userPool, signIn]
   );
-
-  // ── SIGN OUT ───────────────────────────────────────────────────────────
-
-  const signOut = useCallback(() => {
-    userPool.getCurrentUser()?.signOut();
-    localStorage.removeItem(STORAGE_ID_TOKEN);
-    localStorage.removeItem(STORAGE_REFRESH_TOKEN);
-    localStorage.removeItem(STORAGE_EMAIL);
-    setState({
-      status: 'unauthenticated',
-      idToken: null,
-      email: null,
-      error: null,
-    });
-  }, [userPool]);
 
   // ── RETURN ─────────────────────────────────────────────────────────────
 
