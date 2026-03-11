@@ -60,18 +60,29 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ AWS IVS Chat integration with Lambda-based moderation (optional) — v1.1
 - ✓ IVS Chat deployment documentation and migration tooling — v1.1
 
+<!-- v1.2: Frontend Layer (Phases 6-10) -->
+
+- ✓ React + Vite frontend app with useWebSocket hook and connection status UI — v1.2
+- ✓ Reusable presence panel showing live user list and typing indicators — v1.2
+- ✓ Collaborative cursor canvas with real-time multi-tab cursor tracking — v1.2
+- ✓ Chat component with real-time messages and scrollback history — v1.2
+- ✓ Shared CRDT document editor syncing across tabs via Y.js — v1.2
+- ✓ Ephemeral reactions overlay with emoji animations — v1.2
+- ✓ Developer event log and error display panel — v1.2
+
+<!-- Phase 11: Auth Foundation (v1.3) -->
+
+- ✓ Cognito auth hook (useAuth) with session restore, sign-in/up/out lifecycle — v1.3
+- ✓ Login/signup UI components (LoginForm, SignupForm) — v1.3
+- ✓ App.tsx auth gating — gateway connection requires valid Cognito session — v1.3
+
 ### Active
 
-<!-- v1.2: Frontend Layer -->
+<!-- v1.3: User Auth & Identity -->
 
-- [ ] React + Vite frontend app with WebSocket connection hook and status UI
-- [ ] Reusable presence component showing live user list per channel
-- [ ] Collaborative cursor canvas with real-time multi-tab cursor tracking
-- [ ] Chat component with real-time messages and scrollback history
-- [ ] Shared CRDT document editor syncing across tabs via Y.js
-- [ ] Ephemeral reactions overlay with emoji animations
-- [ ] Developer event log and error display panel
-- [ ] Local dev auth helper for generating Cognito JWT tokens
+- [ ] Real user identity (name/email) replaces clientId in presence, cursors, chat attribution
+- [ ] Auto token refresh, multi-tab session sync, graceful token expiry handling
+- [ ] Local dev auth helper for generating Cognito JWT tokens (multi-user test tooling)
 
 ### Out of Scope
 
@@ -130,19 +141,18 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | LRU cache for chat history | Automatic eviction without manual TTL management | ✅ v1.0: 100 messages/channel with lru-cache library |
 | Cache-aside pattern for cursor service | Ensures availability during Redis intermittency | ✅ v1.0: Local-first writes, Redis sync with fallback |
 | AWS IVS for persistent chat | Managed chat service tied to video streaming, offloads chat persistence | — Deferred: Evaluate in v2 based on user needs |
+| useMemo for CognitoUserPool in useAuth | Stable per hook instance, avoids re-instantiation on each render, testable via vi.mock | ✅ v1.3 Phase 11: pattern adopted for all Cognito hooks |
+| Pure presentational auth components (LoginForm/SignupForm) | Auth state flows in via props — no internal hook calls, testable without mocks, reusable | ✅ v1.3 Phase 11: consistent with useWebSocket pattern |
+| cognitoToken flows at runtime from useAuth.idToken to useWebSocket config | Removes static VITE_COGNITO_TOKEN env dependency; gateway receives real JWT session token | ✅ v1.3 Phase 11: VITE_COGNITO_TOKEN guard removed from gateway.ts |
 
-## Current Milestone: v1.2 Frontend Layer
+## Current Milestone: v1.3 User Auth & Identity
 
-**Goal:** Build a React + Vite developer toolbox that exercises every gateway feature (presence, cursors, chat, CRDT, reactions) with reusable hooks/components and full in-UI error visibility.
+**Goal:** Real Cognito users can sign in with email + password, identity flows through all gateway features (presence, cursors, chat) with proper attribution, and sessions auto-refresh.
 
 **Target features:**
-- WebSocket connection hook with status, reconnect, and error display
-- Presence panel (live user list per channel)
-- Collaborative cursor canvas (multi-tab real-time tracking)
-- Chat panel with history
-- Shared CRDT document editor (Y.js)
-- Ephemeral reactions overlay
-- Developer event log panel
+- ✓ Auth foundation: useAuth hook, LoginForm/SignupForm, App.tsx auth gating (Phase 11)
+- Real user identity replacing clientId in presence, cursors, and chat (Phase 12)
+- Auto token refresh, multi-tab session sync, test-user CLI tooling (Phase 13)
 
 ---
-*Last updated: 2026-03-03 after v1.2 milestone started*
+*Last updated: 2026-03-11 after Phase 11 (Auth Foundation)*

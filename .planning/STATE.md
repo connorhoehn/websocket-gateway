@@ -18,19 +18,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-03)
+See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
-**Current focus:** Phase 6 — Foundation (React+Vite scaffold, useWebSocket hook, connection status UI)
+**Current focus:** Phase 12 — Identity Integration (user claims replace clientId throughout presence, cursors, chat)
 
 ## Current Position
 
-Phase: 6 of 10 (Foundation)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-03-04 — Completed 06-02: useWebSocket hook with JWT auth, session token storage, exponential backoff reconnection
+Phase: 12 of 13 (Identity Integration)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)
 
-Progress: [█████████░] 86% (v1.2: 2/3 plans in phase 6)
+Progress: [████████████████████] 20/20 plans (100% plans complete across v1.0–v1.3 so far)
 
 ## Performance Metrics
 
@@ -133,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T03:20:33.954Z
-Stopped at: Completed 11-03-PLAN.md — Auth-gated App.tsx with useAuth integration
+Last session: 2026-03-11
+Stopped at: Phase 11 complete, ready to plan Phase 12 (Identity Integration)
 Resume file: None
