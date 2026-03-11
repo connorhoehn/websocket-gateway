@@ -142,7 +142,7 @@ Plans:
 ## Phase Checklist (v1.3)
 
 - [x] **Phase 11: Auth Foundation** - Login/signup forms, Cognito USER_PASSWORD_AUTH flow, JWT token storage, gateway connects with real user JWT (completed 2026-03-11)
-- [ ] **Phase 12: Identity Integration** - User claims (name/email) replace clientId throughout presence, cursors, chat, CRDT attribution
+- [x] **Phase 12: Identity Integration** - User claims (name/email) replace clientId throughout presence, cursors, chat, CRDT attribution (completed 2026-03-11)
 - [ ] **Phase 13: Session Management** - Auto token refresh, logout flow, multi-tab session sync, test-user tooling
 
 ## Phase Details (v1.3)
@@ -208,5 +208,5 @@ Plans:
 | 9. CRDT Editor | 2/2 | Complete   | 2026-03-10 | - |
 | 10. Reactions & Dev Tools | 3/3 | Complete    | 2026-03-10 | - |
 | 11. Auth Foundation | 3/3 | Complete    | 2026-03-11 | - |
-| 12. Identity Integration | 1/2 | In Progress|  | - |
+| 12. Identity Integration | 2/2 | Complete   | 2026-03-11 | - |
 | 13. Session Management | v1.3 | 0/2 | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Frontend Layer
 status: planning
-stopped_at: Completed 12-01-PLAN.md (identity.ts + displayName propagation)
-last_updated: "2026-03-11T13:27:30.882Z"
+stopped_at: Completed 12-02-PLAN.md (component refactor + ChatPanel)
+last_updated: "2026-03-11T13:33:07.276Z"
 last_activity: "2026-03-11 — Completed Phase 11: Auth Foundation (useAuth hook, LoginForm/SignupForm, App.tsx auth gating)"
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 100
 ---
 
@@ -65,6 +65,7 @@ Progress: [████████████████████] 20/20 p
 | Phase 11-auth-foundation P02 | 69 | 2 tasks | 2 files |
 | Phase 11-auth-foundation P03 | 105 | 2 tasks | 3 files |
 | Phase 12-identity-integration P01 | 194 | 2 tasks | 5 files |
+| Phase 12-identity-integration P02 | 195 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,9 @@ Key decisions affecting v1.2 frontend work:
 - [Phase 12]: decodeDisplayName is a module-level pure function in App.tsx — no reactivity overhead, easily testable
 - [Phase 12]: displayNameRef pattern mirrors existing sendMessageRef/currentChannelRef — consistent with established hook patterns
 - [Phase 12]: ChatMessage.displayName is optional — backwards compatible with messages sent before Phase 12
+- [Phase 12]: PresencePanel uses displayLabel (metadata.displayName fallback to truncated clientId) — no UUID in user list when displayName available
+- [Phase 12]: Cursor components use displayName as identity token for color/initials with clientId fallback — consistent with Plan 01 patterns
+- [Phase 12]: ChatPanel input disables with placeholder change when connectionState !== connected — user feedback without separate UI state
 
 ### Pending Todos
 
@@ -138,6 +142,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T13:27:30.879Z
-Stopped at: Completed 12-01-PLAN.md (identity.ts + displayName propagation)
+Last session: 2026-03-11T13:33:07.273Z
+Stopped at: Completed 12-02-PLAN.md (component refactor + ChatPanel)
 Resume file: None
