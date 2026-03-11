@@ -1,5 +1,6 @@
 // frontend/src/app/App.tsx
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePresence } from '../hooks/usePresence';
 import { useCursors } from '../hooks/useCursors';
@@ -7,6 +8,8 @@ import { useCRDT } from '../hooks/useCRDT';
 import { useChat } from '../hooks/useChat';
 import { useReactions } from '../hooks/useReactions';
 import { getGatewayConfig } from '../config/gateway';
+import { LoginForm } from '../components/LoginForm';
+import { SignupForm } from '../components/SignupForm';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { ErrorDisplay } from '../components/ErrorDisplay';
 import { ChannelSelector } from '../components/ChannelSelector';
@@ -25,10 +28,41 @@ import { DisconnectReconnect } from '../components/DisconnectReconnect';
 import type { LogEntry } from '../components/EventLog';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
+import type { UseAuthReturn } from '../hooks/useAuth';
 
 export function App() {
-  // getGatewayConfig() throws a descriptive error if .env is not set up.
-  // Wrap in try/catch to show setup instructions instead of a white screen.
+  const auth = useAuth();
+  const [showSignup, setShowSignup] = useState(false);
+
+  // Loading: session restore in progress
+  if (auth.status === 'loading') {
+    return (
+      <div style={{ fontFamily: 'monospace', padding: '2rem', color: '#6b7280' }}>
+        Restoring session...
+      </div>
+    );
+  }
+
+  // Unauthenticated: show login or signup form
+  if (auth.status === 'unauthenticated') {
+    return showSignup ? (
+      <SignupForm
+        status={auth.status}
+        error={auth.error}
+        onSignUp={auth.signUp}
+        onSwitchToLogin={() => setShowSignup(false)}
+      />
+    ) : (
+      <LoginForm
+        status={auth.status}
+        error={auth.error}
+        onSignIn={auth.signIn}
+        onSwitchToSignup={() => setShowSignup(true)}
+      />
+    );
+  }
+
+  // Authenticated: load gateway config and render demo
   let config;
   try {
     config = getGatewayConfig();
@@ -44,10 +78,20 @@ export function App() {
     );
   }
 
-  return <GatewayDemo config={config} />;
+  // Override cognitoToken with the live idToken from Cognito auth.
+  // auth.idToken is guaranteed non-null here (status === 'authenticated').
+  const authenticatedConfig = { ...config, cognitoToken: auth.idToken! };
+
+  return <GatewayDemo config={authenticatedConfig} auth={auth} />;
 }
 
-function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }) {
+function GatewayDemo({
+  config,
+  auth,
+}: {
+  config: ReturnType<typeof getGatewayConfig>;
+  auth: UseAuthReturn;
+}) {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [errors, setErrors] = useState<GatewayError[]>([]);
 
@@ -167,7 +211,19 @@ function GatewayDemo({ config }: { config: ReturnType<typeof getGatewayConfig> }
 
   return (
     <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>
-      <h1 style={{ marginBottom: '1rem' }}>WebSocket Gateway Dev Client</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <h1 style={{ margin: 0 }}>WebSocket Gateway Dev Client</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
+          <span style={{ color: '#6b7280' }}>{auth.email}</span>
+          <button
+            onClick={auth.signOut}
+            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '4px',
+                     padding: '0.25rem 0.75rem', cursor: 'pointer', color: '#374151' }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
 
       {/* Reactions overlay — fixed position, sits above everything */}
       <ReactionsOverlay reactions={activeReactions} />
