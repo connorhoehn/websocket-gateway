@@ -4,28 +4,7 @@
 // with colored avatar circles, initials, and typing indicators.
 
 import type { PresenceUser } from '../hooks/usePresence';
-
-// ---------------------------------------------------------------------------
-// Color helpers (deterministic from clientId)
-// ---------------------------------------------------------------------------
-
-const COLOR_PALETTE = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
-  '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
-  '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838',
-];
-
-function clientIdToColor(clientId: string): string {
-  let hash = 0;
-  for (let i = 0; i < clientId.length; i++) {
-    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
-}
-
-function clientIdToInitials(clientId: string): string {
-  return clientId.substring(0, 2).toUpperCase();
-}
+import { identityToColor, identityToInitials } from '../utils/identity';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -66,14 +45,19 @@ export function PresencePanel({ users, currentClientId }: PresencePanelProps) {
       ) : (
         <div>
           {users.map((user) => {
-            const color = clientIdToColor(user.clientId);
-            const initials = clientIdToInitials(user.clientId);
+            const color = identityToColor(
+              (user.metadata.email as string | undefined) ?? user.clientId
+            );
+            const initials = identityToInitials(
+              (user.metadata.displayName as string | undefined) ?? user.clientId.slice(0, 2)
+            );
             const isTyping = user.metadata.isTyping === true;
             const isYou = user.clientId === currentClientId;
-            const displayId =
-              user.clientId.length > 12
+            const displayLabel =
+              (user.metadata.displayName as string | undefined) ??
+              (user.clientId.length > 12
                 ? user.clientId.slice(0, 12) + '...'
-                : user.clientId;
+                : user.clientId);
 
             return (
               <div
@@ -105,8 +89,8 @@ export function PresencePanel({ users, currentClientId }: PresencePanelProps) {
                   {initials}
                 </div>
 
-                {/* Client ID */}
-                <span style={{ color: '#374151' }}>{displayId}</span>
+                {/* Display name (or truncated clientId fallback) */}
+                <span style={{ color: '#374151' }}>{displayLabel}</span>
 
                 {/* "You" label */}
                 {isYou && (

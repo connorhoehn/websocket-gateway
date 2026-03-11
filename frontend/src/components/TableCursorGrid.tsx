@@ -6,28 +6,7 @@
 // that have metadata.mode === 'table'.
 
 import type { RemoteCursor } from '../hooks/useCursors';
-
-// ---------------------------------------------------------------------------
-// Color helpers (same 15-color palette as 07-01/07-02)
-// ---------------------------------------------------------------------------
-
-const COLOR_PALETTE = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
-  '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
-  '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838',
-];
-
-function clientIdToColor(clientId: string): string {
-  let hash = 0;
-  for (let i = 0; i < clientId.length; i++) {
-    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
-}
-
-function clientIdToInitials(clientId: string): string {
-  return clientId.slice(0, 2).toUpperCase();
-}
+import { identityToColor, identityToInitials } from '../utils/identity';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -144,8 +123,12 @@ export function TableCursorGrid({ cursors, onCellClick }: TableCursorGridProps) 
                   >
                     {/* Render a colored border overlay for each remote cursor on this cell */}
                     {remoteCursorsOnCell.map((cursor, i) => {
-                      const color = clientIdToColor(cursor.clientId);
-                      const initials = clientIdToInitials(cursor.clientId);
+                      const color = identityToColor(
+                        (cursor.metadata.displayName as string | undefined) ?? cursor.clientId
+                      );
+                      const initials = identityToInitials(
+                        (cursor.metadata.displayName as string | undefined) ?? cursor.clientId.slice(0, 2)
+                      );
                       const borderWidth = 3 - Math.min(i, 1); // slight visual stacking
                       return (
                         <div key={cursor.clientId}>

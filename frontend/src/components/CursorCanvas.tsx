@@ -8,28 +8,7 @@
 // as colored circles with their initials.
 
 import type { RemoteCursor } from '../hooks/useCursors';
-
-// ---------------------------------------------------------------------------
-// Color / initials helpers (deterministic from clientId)
-// ---------------------------------------------------------------------------
-
-const COLOR_PALETTE = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
-  '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
-  '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838',
-];
-
-export function clientIdToColor(clientId: string): string {
-  let hash = 0;
-  for (let i = 0; i < clientId.length; i++) {
-    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
-}
-
-export function clientIdToInitials(clientId: string): string {
-  return clientId.substring(0, 2).toUpperCase();
-}
+import { identityToColor, identityToInitials } from '../utils/identity';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -91,12 +70,12 @@ export function CursorCanvas({
       {Array.from(cursors.values()).map((cursor) => {
         const x = cursor.position.x as number;
         const y = cursor.position.y as number;
-        const color =
-          (cursor.metadata.userColor as string | undefined) ??
-          clientIdToColor(cursor.clientId);
-        const initials =
-          (cursor.metadata.userInitials as string | undefined) ??
-          clientIdToInitials(cursor.clientId);
+        const color = identityToColor(
+          (cursor.metadata.displayName as string | undefined) ?? cursor.clientId
+        );
+        const initials = identityToInitials(
+          (cursor.metadata.displayName as string | undefined) ?? cursor.clientId.slice(0, 2)
+        );
 
         return (
           <div

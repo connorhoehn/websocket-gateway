@@ -8,28 +8,7 @@
 
 import { useRef } from 'react';
 import type { RemoteCursor, TextSelectionData } from '../hooks/useCursors';
-
-// ---------------------------------------------------------------------------
-// Color helpers (same 15-color palette as 07-01/07-02)
-// ---------------------------------------------------------------------------
-
-const COLOR_PALETTE = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
-  '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
-  '#1DD1A1', '#F368E0', '#3742FA', '#2F3542', '#FF3838',
-];
-
-function clientIdToColor(clientId: string): string {
-  let hash = 0;
-  for (let i = 0; i < clientId.length; i++) {
-    hash = clientId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COLOR_PALETTE[Math.abs(hash) % COLOR_PALETTE.length];
-}
-
-function clientIdToInitials(clientId: string): string {
-  return clientId.slice(0, 2).toUpperCase();
-}
+import { identityToColor, identityToInitials } from '../utils/identity';
 
 // ---------------------------------------------------------------------------
 // Character offset helpers (TreeWalker-based)
@@ -157,8 +136,12 @@ export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditor
 
   cursors.forEach((cursor) => {
     if ((cursor.metadata as Record<string, unknown>).mode !== 'text') return;
-    const color = clientIdToColor(cursor.clientId);
-    const initials = clientIdToInitials(cursor.clientId);
+    const color = identityToColor(
+      (cursor.metadata.displayName as string | undefined) ?? cursor.clientId
+    );
+    const initials = identityToInitials(
+      (cursor.metadata.displayName as string | undefined) ?? cursor.clientId.slice(0, 2)
+    );
     const pos = cursor.position as { position?: number };
     if (pos.position != null) {
       textCursors.push({ cursor, position: pos.position, color, initials });
