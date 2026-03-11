@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: User Auth & Identity
-status: complete
-stopped_at: Completed 14-auth-presence-gap-closure-01-PLAN.md
-last_updated: "2026-03-11T00:00:00.000Z"
-last_activity: "2026-03-11 — Completed Phase 14: Gap closure (AUTH-09 token reconnect, PRES-03 typing wiring)"
+milestone: v1.2
+milestone_name: Frontend Layer
+status: completed
+stopped_at: Completed 13-session-management-multi-user-tooling-01-PLAN.md
+last_updated: "2026-03-11T19:45:17.962Z"
+last_activity: "2026-03-11 — Completed Phase 14: gap closure (AUTH-09 token reconnect + PRES-03 typing wiring)"
 progress:
   total_phases: 9
   completed_phases: 9

@@ -1,5 +1,14 @@
 # Milestones
 
+## v1.3 User Auth & Identity (Shipped: 2026-03-11)
+
+**Phases completed:** 9 phases, 21 plans, 6 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.1 Enhanced Reliability (Shipped: 2026-03-03)
 
 **Phases completed:** 1 phases, 4 plans, 2 tasks

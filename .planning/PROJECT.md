@@ -82,12 +82,23 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ Real display name (given_name → email prefix) propagated through presence, cursors, and chat metadata — v1.3
 - ✓ ChatPanel component with message attribution (displayName as author label) — v1.3
 
+<!-- Phase 11-14: Auth & Identity (v1.3) -->
+
+- ✓ Cognito auth hook (useAuth) with session restore, sign-in/up/out lifecycle — v1.3
+- ✓ Login/signup UI components (LoginForm, SignupForm) — v1.3
+- ✓ App.tsx auth gating — gateway connection requires valid Cognito session — v1.3
+- ✓ Shared identity utility (identityToColor/identityToInitials) consolidating 4 duplicate implementations — v1.3
+- ✓ Real display name (given_name → email prefix) propagated through presence, cursors, and chat metadata — v1.3
+- ✓ ChatPanel component with message attribution (displayName as author label) — v1.3
+- ✓ Auto token refresh (proactive, 2 min before expiry) + BroadcastChannel multi-tab session sync — v1.3
+- ✓ Graceful token expiry handling — sign-out with session-expired message — v1.3
+- ✓ CLI tooling: create-test-user.sh + list-test-users.sh for Cognito user management — v1.3
+- ✓ Silent token refresh triggers gateway reconnect with updated JWT — v1.3
+- ✓ Local user typing indicator broadcast wired end-to-end — v1.3
+
 ### Active
 
-<!-- v1.3: Session Management -->
-
-- [ ] Auto token refresh, multi-tab session sync, graceful token expiry handling
-- [ ] Local dev auth helper for generating Cognito JWT tokens (multi-user test tooling)
+(None — all v1.3 requirements shipped)
 
 ### Out of Scope
 
@@ -99,14 +110,14 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 
 ## Context
 
-**Current State (v1.0 - Shipped 2026-03-03):**
-- Production-ready WebSocket gateway deployed on AWS ECS Fargate
-- 21,838 lines of code (TypeScript, JavaScript)
-- Security hardened: JWT auth, channel authz, rate limiting, memory leak fixes
-- AWS infrastructure: ECS Fargate, ElastiCache Redis Multi-AZ, ALB with TLS
-- Full observability: CloudWatch metrics, structured logging, alarms, dashboard
-- CRDT support: 10ms batched operations, DynamoDB snapshots with 7-day TTL
-- Cost target achieved: ~$100-150/month vs $10k-20k/month with Lambda/AppSync
+**Current State (v1.3 - Shipped 2026-03-11):**
+- Production-ready WebSocket gateway + authenticated React frontend
+- ~6,733 lines frontend TypeScript/React; 21,838+ lines total (TypeScript, JavaScript)
+- Full Cognito auth: sign-in/up/out, session restore, auto token refresh, multi-tab sync
+- Real user identity: display names from Cognito claims flow through presence, cursors, chat
+- All collaborative features work end-to-end with real Cognito users (not mock tokens)
+- CLI multi-user test tooling: create-test-user.sh, list-test-users.sh
+- Cost target maintained: ~$100-150/month
 
 **Use Cases:**
 - Collaborative cursors (40 updates/sec per user, <50ms latency)
@@ -152,15 +163,10 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | displayName propagated via metadata (no server changes) | metadata field already flows through gateway unchanged; client embeds displayName avoiding server-side modifications | ✅ v1.3 Phase 12: all hooks send displayName in metadata |
 | Shared identity.ts utility replaces 4 duplicate helper sets | Single source of truth for color/initials prevents drift across components | ✅ v1.3 Phase 12: identityToColor/identityToInitials in utils/ |
 | JWT decoded client-side for given_name (no library) | Pure atob split avoids dependencies; given_name → email prefix → 'anonymous' priority | ✅ v1.3 Phase 12: decodeDisplayName() in App.tsx |
-
-## Current Milestone: v1.3 User Auth & Identity
-
-**Goal:** Real Cognito users can sign in with email + password, identity flows through all gateway features (presence, cursors, chat) with proper attribution, and sessions auto-refresh.
-
-**Target features:**
-- ✓ Auth foundation: useAuth hook, LoginForm/SignupForm, App.tsx auth gating (Phase 11)
-- ✓ Real user identity replacing clientId in presence, cursors, chat — ChatPanel built (Phase 12)
-- Auto token refresh, multi-tab session sync, test-user CLI tooling (Phase 13)
+| scheduleTokenRefresh as module-level pure function | Testable independently, no hook re-render cost | ✅ v1.3 Phase 13: timerRef + broadcastChannel via useRef |
+| admin-create-user SUPPRESS + admin-set-user-password --permanent | Bypasses force-change-password; users sign in immediately after creation | ✅ v1.3 Phase 13: create-test-user.sh adopted pattern |
+| Token reconnect in GatewayDemo (not useWebSocket) | Keeps useWebSocket lifecycle stable with [] deps; callers own token lifecycle | ✅ v1.3 Phase 14: prevTokenRef + reconnect() on cognitoToken change |
+| setTyping wired via onTyping prop to ChatPanel | Clean prop threading; 2s debounce + clear-on-send; ChatPanel manages its own timer | ✅ v1.3 Phase 14: typing indicator broadcast end-to-end |
 
 ---
-*Last updated: 2026-03-11 after Phase 12 (Identity Integration)*
+*Last updated: 2026-03-11 after v1.3 (User Auth & Identity)*
