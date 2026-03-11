@@ -173,11 +173,11 @@ Plans:
   2. Cursor badges show initials derived from the user's display name (e.g. "JD" for "Jane Doe") consistently across all four cursor modes
   3. Chat messages (Phase 8) show the sender's display name as the author
   4. The same user signing in on two different browsers shows the same name and color in all panels
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 12-01: Propagate user claims through useWebSocket connect payload; gateway echoes userId/displayName in cursor:subscribed + presence:update
-- [ ] 12-02: Update PresencePanel, CursorCanvas, TableCursorGrid, TextCursorEditor, CanvasCursorBoard to use displayName from metadata instead of clientId
+- [ ] 12-01-PLAN.md — identity.ts utility + hook updates (usePresence/useCursors/useChat displayName propagation) + App.tsx JWT decode (AUTH-06, AUTH-07, AUTH-08)
+- [ ] 12-02-PLAN.md — Display components (PresencePanel, all 4 cursor components) refactored to identity.ts + ChatPanel with attribution (AUTH-06, AUTH-07, AUTH-08)
 
 ### Phase 13: Session Management & Multi-user Tooling
 **Goal**: Sessions auto-refresh, multiple test users can be managed from the CLI, and the app handles token expiry gracefully
