@@ -76,11 +76,16 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ Login/signup UI components (LoginForm, SignupForm) — v1.3
 - ✓ App.tsx auth gating — gateway connection requires valid Cognito session — v1.3
 
+<!-- Phase 12: Identity Integration (v1.3) -->
+
+- ✓ Shared identity utility (identityToColor/identityToInitials) consolidating 4 duplicate implementations — v1.3
+- ✓ Real display name (given_name → email prefix) propagated through presence, cursors, and chat metadata — v1.3
+- ✓ ChatPanel component with message attribution (displayName as author label) — v1.3
+
 ### Active
 
-<!-- v1.3: User Auth & Identity -->
+<!-- v1.3: Session Management -->
 
-- [ ] Real user identity (name/email) replaces clientId in presence, cursors, chat attribution
 - [ ] Auto token refresh, multi-tab session sync, graceful token expiry handling
 - [ ] Local dev auth helper for generating Cognito JWT tokens (multi-user test tooling)
 
@@ -144,6 +149,9 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | useMemo for CognitoUserPool in useAuth | Stable per hook instance, avoids re-instantiation on each render, testable via vi.mock | ✅ v1.3 Phase 11: pattern adopted for all Cognito hooks |
 | Pure presentational auth components (LoginForm/SignupForm) | Auth state flows in via props — no internal hook calls, testable without mocks, reusable | ✅ v1.3 Phase 11: consistent with useWebSocket pattern |
 | cognitoToken flows at runtime from useAuth.idToken to useWebSocket config | Removes static VITE_COGNITO_TOKEN env dependency; gateway receives real JWT session token | ✅ v1.3 Phase 11: VITE_COGNITO_TOKEN guard removed from gateway.ts |
+| displayName propagated via metadata (no server changes) | metadata field already flows through gateway unchanged; client embeds displayName avoiding server-side modifications | ✅ v1.3 Phase 12: all hooks send displayName in metadata |
+| Shared identity.ts utility replaces 4 duplicate helper sets | Single source of truth for color/initials prevents drift across components | ✅ v1.3 Phase 12: identityToColor/identityToInitials in utils/ |
+| JWT decoded client-side for given_name (no library) | Pure atob split avoids dependencies; given_name → email prefix → 'anonymous' priority | ✅ v1.3 Phase 12: decodeDisplayName() in App.tsx |
 
 ## Current Milestone: v1.3 User Auth & Identity
 
@@ -151,8 +159,8 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 
 **Target features:**
 - ✓ Auth foundation: useAuth hook, LoginForm/SignupForm, App.tsx auth gating (Phase 11)
-- Real user identity replacing clientId in presence, cursors, and chat (Phase 12)
+- ✓ Real user identity replacing clientId in presence, cursors, chat — ChatPanel built (Phase 12)
 - Auto token refresh, multi-tab session sync, test-user CLI tooling (Phase 13)
 
 ---
-*Last updated: 2026-03-11 after Phase 11 (Auth Foundation)*
+*Last updated: 2026-03-11 after Phase 12 (Identity Integration)*
