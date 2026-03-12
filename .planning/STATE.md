@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: UI Polish & Feature Completeness
 status: planning
-stopped_at: Completed 17-ui-layout-and-polish-01-PLAN.md
-last_updated: "2026-03-12T19:04:49.731Z"
+stopped_at: Completed 17-ui-layout-and-polish-02-PLAN.md
+last_updated: "2026-03-12T19:08:45.723Z"
 last_activity: 2026-03-12 — v1.4 roadmap created
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 | Phase 15-cleanup P01 | 1 | 2 tasks | 5 files |
 | Phase 16 P01 | 67 | 2 tasks | 2 files |
 | Phase 17-ui-layout-and-polish P01 | 68 | 1 tasks | 1 files |
+| Phase 17-ui-layout-and-polish P02 | 109 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Key decisions affecting v1.4 work:
 - [Phase 16]: EMOJI_ANIMATIONS map at module level with DEFAULT_ANIMATION fallback for unknown emoji types
 - [Phase 17-01]: AppLayout uses EphemeralReaction/RemoteCursor (actual hook exports) not ActiveReaction/CursorData from plan description
 - [Phase 17-01]: Section headers use <p> tags with sectionHeaderStyle constant to avoid h-tag semantic conflicts with inner component headers
+- [Phase 17-02]: Auth screen outer wrapper uses flexDirection: column to stack brand header above card
+- [Phase 17-02]: background #f8fafc matches AppLayout body — consistent across auth and app screens
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T19:04:49.730Z
-Stopped at: Completed 17-ui-layout-and-polish-01-PLAN.md
+Last session: 2026-03-12T19:08:45.721Z
+Stopped at: Completed 17-ui-layout-and-polish-02-PLAN.md
 Resume file: None

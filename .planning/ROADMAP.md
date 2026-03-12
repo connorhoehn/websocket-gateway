@@ -55,7 +55,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 
 - [x] **Phase 15: Cleanup** - Delete HTML test clients, SDK files, and stale build artifacts from the repo (completed 2026-03-12)
 - [x] **Phase 16: Reaction Animations** - Port 12-emoji type system with distinct CSS animations into ReactionsOverlay and ReactionButtons (completed 2026-03-12)
-- [ ] **Phase 17: UI Layout & Polish** - Restructure app into a clean, production-quality layout with integrated navigation
+- [x] **Phase 17: UI Layout & Polish** - Restructure app into a clean, production-quality layout with integrated navigation (completed 2026-03-12)
 - [ ] **Phase 18: Typing Indicators & Presence Polish** - Surface typing state visibly in both chat panel and presence list
 - [ ] **Phase 19: Per-Service Dev Tools** - Split EventLog into tabbed per-service view; keep disconnect/reconnect accessible
 
@@ -141,6 +141,6 @@ Plans:
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
 | 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 17. UI Layout & Polish | 1/2 | In Progress|  | - |
+| 17. UI Layout & Polish | 2/2 | Complete   | 2026-03-12 | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
