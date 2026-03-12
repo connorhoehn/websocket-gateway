@@ -56,7 +56,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 - [x] **Phase 15: Cleanup** - Delete HTML test clients, SDK files, and stale build artifacts from the repo (completed 2026-03-12)
 - [x] **Phase 16: Reaction Animations** - Port 12-emoji type system with distinct CSS animations into ReactionsOverlay and ReactionButtons (completed 2026-03-12)
 - [x] **Phase 17: UI Layout & Polish** - Restructure app into a clean, production-quality layout with integrated navigation (completed 2026-03-12)
-- [ ] **Phase 18: Typing Indicators & Presence Polish** - Surface typing state visibly in both chat panel and presence list
+- [x] **Phase 18: Typing Indicators & Presence Polish** - Surface typing state visibly in both chat panel and presence list (completed 2026-03-12)
 - [ ] **Phase 19: Per-Service Dev Tools** - Split EventLog into tabbed per-service view; keep disconnect/reconnect accessible
 
 ## Phase Details
@@ -113,7 +113,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 18-01-PLAN.md — Add typingUsers prop to ChatPanel and derive/pass it from AppLayout using presenceUsers
+- [x] 18-01-PLAN.md — Add typingUsers prop to ChatPanel and derive/pass it from AppLayout using presenceUsers (completed 2026-03-12)
 
 ### Phase 19: Per-Service Dev Tools
 **Goal**: Developers can inspect real-time events per service using a tabbed EventLog, with disconnect/reconnect controls remaining accessible
@@ -144,6 +144,6 @@ Plans:
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
 | 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 17. UI Layout & Polish | 2/2 | Complete    | 2026-03-12 | - |
-| 18. Typing Indicators & Presence Polish | v1.4 | 0/1 | Not started | - |
+| 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
+| 18. Typing Indicators & Presence Polish | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
