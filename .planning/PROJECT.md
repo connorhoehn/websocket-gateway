@@ -1,5 +1,16 @@
 # WebSocket Gateway - AWS Migration & Hardening
 
+## Current Milestone: v1.4 UI Polish & Feature Completeness
+
+**Goal:** Replace HTML test clients with a polished, production-quality React app — all features real, clean reusable components, HTML artifacts deleted.
+
+**Target features:**
+- File cleanup: delete HTML test clients, SDK files, stale build artifacts
+- Reaction animations: port 12-type CSS animation system into ReactionsOverlay
+- Production UI layout: clean, structured layout (not stacked dev panels)
+- Per-service dev logs: split EventLog into chat / presence / cursors / reactions / system tabs
+- Typing indicator: visible in chat panel and presence list when others are typing
+
 ## What This Is
 
 A production-ready distributed real-time WebSocket gateway deployed on AWS ECS Fargate. Provides secure, monitored pub/sub for collaborative features (cursor tracking, presence, CRDT operations, and chat) with <50ms latency at low cost ($100-150/mo).
@@ -98,7 +109,13 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 
 ### Active
 
-(None — all v1.3 requirements shipped)
+<!-- v1.4: UI Polish & Feature Completeness -->
+
+- [ ] Remove all HTML test clients and standalone SDK files from repo — v1.4
+- [ ] React app renders all collaborative features in a clean, production-quality layout — v1.4
+- [ ] Reaction overlay supports 12 emoji types with distinct CSS animations — v1.4
+- [ ] EventLog split into per-service tabs (chat, presence, cursors, reactions, system) — v1.4
+- [ ] Typing indicator visibly displayed in chat and presence panels — v1.4
 
 ### Out of Scope
 

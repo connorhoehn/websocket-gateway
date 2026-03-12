@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: User Auth & Identity
-status: archived
-stopped_at: v1.3 milestone archived — ready for /gsd:new-milestone
-last_updated: "2026-03-11T20:00:00.000Z"
-last_activity: "2026-03-11 — v1.3 milestone archived (4 phases, 8 plans shipped)"
+milestone: v1.4
+milestone_name: UI Polish & Feature Completeness
+status: in_progress
+stopped_at: Defining requirements
+last_updated: "2026-03-12T00:00:00.000Z"
+last_activity: "2026-03-12 — Milestone v1.4 started"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
-**Current focus:** v1.3 archived — ready for /gsd:new-milestone to start v1.4
+**Current focus:** v1.4 — UI Polish & Feature Completeness
 
 ## Current Position
 
-Milestone: v1.3 (archived 2026-03-11)
-Status: Milestone archived — planning next milestone
-Last activity: 2026-03-11 — v1.3 milestone archived (4 phases, 8 plans)
+Milestone: v1.4 (started 2026-03-12)
+Status: Defining requirements
+Last activity: 2026-03-12 — Milestone v1.4 started
 
-Progress: [████████████████████] v1.3 complete and archived
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
