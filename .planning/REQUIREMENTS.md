@@ -53,31 +53,29 @@
 
 ## Traceability
 
-_Populated during roadmap creation._
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLEAN-01 | — | Pending |
-| CLEAN-02 | — | Pending |
-| CLEAN-03 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
-| REACT-01 | — | Pending |
-| REACT-02 | — | Pending |
-| REACT-03 | — | Pending |
-| PRES-01 | — | Pending |
-| PRES-02 | — | Pending |
-| DEV-01 | — | Pending |
-| DEV-02 | — | Pending |
-| DEV-03 | — | Pending |
+| CLEAN-01 | Phase 15 | Pending |
+| CLEAN-02 | Phase 15 | Pending |
+| CLEAN-03 | Phase 15 | Pending |
+| UI-01 | Phase 17 | Pending |
+| UI-02 | Phase 17 | Pending |
+| UI-03 | Phase 17 | Pending |
+| UI-04 | Phase 17 | Pending |
+| REACT-01 | Phase 16 | Pending |
+| REACT-02 | Phase 16 | Pending |
+| REACT-03 | Phase 16 | Pending |
+| PRES-01 | Phase 18 | Pending |
+| PRES-02 | Phase 18 | Pending |
+| DEV-01 | Phase 19 | Pending |
+| DEV-02 | Phase 19 | Pending |
+| DEV-03 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after initial definition*
+*Last updated: 2026-03-12 — traceability populated after roadmap creation*
