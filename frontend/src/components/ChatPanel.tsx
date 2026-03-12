@@ -16,6 +16,7 @@ interface ChatPanelProps {
   onSend: (content: string) => void;
   disabled?: boolean;
   onTyping?: (isTyping: boolean) => void;
+  typingUsers?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -34,11 +35,20 @@ function formatTime(isoString: string): string {
   }
 }
 
+/** Formats a list of typing user names for display. */
+function formatTypingBanner(users: string[]): string {
+  if (users.length === 0) return '';
+  if (users.length === 1) return `${users[0]} is typing...`;
+  if (users.length === 2) return `${users[0]} and ${users[1]} are typing...`;
+  const others = users.length - 2;
+  return `${users[0]}, ${users[1]} and ${others} other${others > 1 ? 's' : ''} are typing...`;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ChatPanel({ messages, onSend, disabled = false, onTyping }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, disabled = false, onTyping, typingUsers = [] }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,6 +111,20 @@ export function ChatPanel({ messages, onSend, disabled = false, onTyping }: Chat
       >
         Chat ({messages.length})
       </div>
+
+      {/* Typing banner */}
+      {typingUsers.length > 0 && (
+        <div
+          style={{
+            fontSize: '0.7rem',
+            color: '#9ca3af',
+            fontStyle: 'italic',
+            marginBottom: '0.25rem',
+          }}
+        >
+          {formatTypingBanner(typingUsers)}
+        </div>
+      )}
 
       {/* Message list */}
       <div
