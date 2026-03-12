@@ -13,10 +13,10 @@
 
 ### Layout & UI
 
-- [ ] **UI-01**: App renders a clean, structured layout with distinct sections for each feature (chat, presence, cursors, reactions, CRDT) — not a stacked dev-panel dump
+- [x] **UI-01**: App renders a clean, structured layout with distinct sections for each feature (chat, presence, cursors, reactions, CRDT) — not a stacked dev-panel dump
 - [ ] **UI-02**: Auth screens (login/signup) are clean and production-quality
-- [ ] **UI-03**: Connection status and channel selector are integrated cleanly into the layout (not floating UI elements)
-- [ ] **UI-04**: All collaborative feature components are reusable (no App.tsx-specific coupling preventing reuse elsewhere)
+- [x] **UI-03**: Connection status and channel selector are integrated cleanly into the layout (not floating UI elements)
+- [x] **UI-04**: All collaborative feature components are reusable (no App.tsx-specific coupling preventing reuse elsewhere)
 
 ### Reactions
 
@@ -58,10 +58,10 @@
 | CLEAN-01 | Phase 15 | Complete |
 | CLEAN-02 | Phase 15 | Complete |
 | CLEAN-03 | Phase 15 | Complete |
-| UI-01 | Phase 17 | Pending |
+| UI-01 | Phase 17 | Complete |
 | UI-02 | Phase 17 | Pending |
-| UI-03 | Phase 17 | Pending |
-| UI-04 | Phase 17 | Pending |
+| UI-03 | Phase 17 | Complete |
+| UI-04 | Phase 17 | Complete |
 | REACT-01 | Phase 16 | Complete |
 | REACT-02 | Phase 16 | Complete |
 | REACT-03 | Phase 16 | Complete |

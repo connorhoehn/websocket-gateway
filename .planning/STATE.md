@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: UI Polish & Feature Completeness
 status: planning
-stopped_at: Completed 16-reaction-animations-01-PLAN.md
-last_updated: "2026-03-12T18:41:46.722Z"
+stopped_at: Completed 17-ui-layout-and-polish-01-PLAN.md
+last_updated: "2026-03-12T19:04:49.731Z"
 last_activity: 2026-03-12 — v1.4 roadmap created
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 | 11-14 | 8 | — | ~21-217s |
 | Phase 15-cleanup P01 | 1 | 2 tasks | 5 files |
 | Phase 16 P01 | 67 | 2 tasks | 2 files |
+| Phase 17-ui-layout-and-polish P01 | 68 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,8 @@ Key decisions affecting v1.4 work:
 - [Phase 16]: 12-emoji grid uses repeat(4, 1fr) for 4x3 layout
 - [Phase 16]: All @keyframes remain in JSX style tag per Phase 10 convention
 - [Phase 16]: EMOJI_ANIMATIONS map at module level with DEFAULT_ANIMATION fallback for unknown emoji types
+- [Phase 17-01]: AppLayout uses EphemeralReaction/RemoteCursor (actual hook exports) not ActiveReaction/CursorData from plan description
+- [Phase 17-01]: Section headers use <p> tags with sectionHeaderStyle constant to avoid h-tag semantic conflicts with inner component headers
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T18:39:32.769Z
-Stopped at: Completed 16-reaction-animations-01-PLAN.md
+Last session: 2026-03-12T19:04:49.730Z
+Stopped at: Completed 17-ui-layout-and-polish-01-PLAN.md
 Resume file: None
