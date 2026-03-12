@@ -1,6 +1,6 @@
 // frontend/src/components/ReactionButtons.tsx
 //
-// Row of 6 emoji reaction buttons. Clicking a button calls onReact(emoji).
+// Grid of 12 emoji reaction buttons. Clicking a button calls onReact(emoji).
 // Buttons are disabled (with reduced opacity) when the disabled prop is true.
 // No external CSS — inline styles only, consistent with rest of app.
 
@@ -17,7 +17,7 @@ interface Props {
 // Constants
 // ---------------------------------------------------------------------------
 
-const EMOJIS = ['👍', '❤️', '😂', '🎉', '🔥', '👏'] as const;
+const EMOJIS = ['❤️', '😂', '👍', '👎', '😮', '😢', '😡', '🎉', '🔥', '⚡', '💯', '🚀'] as const;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -27,10 +27,9 @@ export function ReactionButtons({ onReact, disabled = false }: Props) {
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'row',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '0.25rem',
-        alignItems: 'center',
       }}
     >
       {EMOJIS.map((emoji) => (
@@ -39,7 +38,7 @@ export function ReactionButtons({ onReact, disabled = false }: Props) {
           onClick={() => onReact(emoji)}
           disabled={disabled}
           style={{
-            fontSize: '1.5rem',
+            fontSize: '1.25rem',
             background: 'none',
             border: 'none',
             cursor: disabled ? 'not-allowed' : 'pointer',
