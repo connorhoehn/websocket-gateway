@@ -32,20 +32,42 @@ export function LoginForm({ status, error, onSignIn, onSwitchToSignup }: LoginFo
   return (
     <div style={{
       display: 'flex',
+      flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'center',
       minHeight: '100vh',
-      background: '#f9fafb',
+      background: '#f8fafc',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
     }}>
+      {/* Brand header */}
+      <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+        <div style={{
+          fontSize: '1.25rem',
+          fontWeight: 700,
+          color: '#0f172a',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          letterSpacing: '-0.025em',
+        }}>
+          WebSocket Gateway
+        </div>
+      </div>
+
+      {/* Card */}
       <div style={{
         background: '#ffffff',
         border: '1px solid #e5e7eb',
-        borderRadius: '8px',
+        borderRadius: '12px',
         padding: '2rem',
         maxWidth: '400px',
         width: '100%',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)',
       }}>
-        <h2 style={{ fontFamily: 'monospace', marginTop: 0, marginBottom: '1.5rem' }}>Sign In</h2>
+        <h2 style={{
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontWeight: 600,
+          marginTop: 0,
+          marginBottom: '1.5rem',
+        }}>Sign In</h2>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <input
@@ -80,7 +102,7 @@ export function LoginForm({ status, error, onSignIn, onSwitchToSignup }: LoginFo
               borderRadius: '4px',
               border: 'none',
               width: '100%',
-              fontFamily: 'monospace',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
               fontSize: '0.875rem',
               cursor: isLoading ? 'not-allowed' : 'pointer',
               opacity: isLoading ? 0.7 : 1,
@@ -100,7 +122,7 @@ export function LoginForm({ status, error, onSignIn, onSwitchToSignup }: LoginFo
               color: '#2563eb',
               cursor: 'pointer',
               textDecoration: 'underline',
-              fontFamily: 'monospace',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
               fontSize: '0.875rem',
             }}
           >
