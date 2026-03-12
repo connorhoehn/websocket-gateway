@@ -10,22 +10,7 @@ import { useReactions } from '../hooks/useReactions';
 import { getGatewayConfig } from '../config/gateway';
 import { LoginForm } from '../components/LoginForm';
 import { SignupForm } from '../components/SignupForm';
-import { ConnectionStatus } from '../components/ConnectionStatus';
-import { ErrorDisplay } from '../components/ErrorDisplay';
-import { ChannelSelector } from '../components/ChannelSelector';
-import { PresencePanel } from '../components/PresencePanel';
-import { CursorCanvas } from '../components/CursorCanvas';
-import { TableCursorGrid } from '../components/TableCursorGrid';
-import { TextCursorEditor } from '../components/TextCursorEditor';
-import { CanvasCursorBoard } from '../components/CanvasCursorBoard';
-import { CursorModeSelector } from '../components/CursorModeSelector';
-import { SharedTextEditor } from '../components/SharedTextEditor';
-import { ReactionsOverlay } from '../components/ReactionsOverlay';
-import { ReactionButtons } from '../components/ReactionButtons';
-import { EventLog } from '../components/EventLog';
-import { ErrorPanel } from '../components/ErrorPanel';
-import { DisconnectReconnect } from '../components/DisconnectReconnect';
-import { ChatPanel } from '../components/ChatPanel';
+import { AppLayout } from '../components/AppLayout';
 import type { LogEntry } from '../components/EventLog';
 import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
@@ -247,109 +232,35 @@ function GatewayDemo({
   });
 
   return (
-    <div style={{ fontFamily: 'monospace', padding: '1.5rem', maxWidth: '800px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <h1 style={{ margin: 0 }}>WebSocket Gateway Dev Client</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
-          <span style={{ color: '#6b7280' }}>{auth.email}</span>
-          <button
-            onClick={auth.signOut}
-            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '4px',
-                     padding: '0.25rem 0.75rem', cursor: 'pointer', color: '#374151' }}
-          >
-            Sign Out
-          </button>
-        </div>
-      </div>
-
-      {/* Reactions overlay — fixed position, sits above everything */}
-      <ReactionsOverlay reactions={activeReactions} />
-
-      {/* Connection status row */}
-      <div style={{ marginBottom: '0.75rem' }}>
-        <ConnectionStatus state={connectionState} />
-      </div>
-
-      {/* Disconnect / Reconnect control */}
-      <div style={{ margin: '0.5rem 0' }}>
-        <DisconnectReconnect
-          connectionState={connectionState}
-          onDisconnect={disconnect}
-          onReconnect={reconnect}
-        />
-      </div>
-
-      {/* Error display (single last error — legacy quick-view) */}
-      <ErrorDisplay error={lastError} />
-
-      {/* Channel selector */}
-      <div style={{ margin: '1rem 0' }}>
-        <ChannelSelector currentChannel={currentChannel} onSwitch={switchChannel} />
-      </div>
-
-      {/* Debug info */}
-      <div style={{ color: '#6b7280', fontSize: '0.75rem', marginBottom: '1rem' }}>
-        <div>clientId: {clientId ?? '—'}</div>
-        <div>sessionToken: {sessionToken ? sessionToken.slice(0, 8) + '…' : '—'}</div>
-      </div>
-
-      {/* Presence panel */}
-      <div style={{ margin: '1rem 0' }}>
-        <PresencePanel users={presenceUsers} currentClientId={clientId} />
-      </div>
-
-      {/* Cursor section — mode selector + active panel */}
-      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
-        <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem' }}>Cursors</h3>
-        <CursorModeSelector activeMode={activeMode} onModeChange={switchMode} />
-
-        {activeMode === 'freeform' && (
-          <CursorCanvas cursors={cursors} onMouseMove={sendFreeformUpdate} />
-        )}
-        {activeMode === 'table' && (
-          <TableCursorGrid cursors={cursors} onCellClick={sendTableUpdate} />
-        )}
-        {activeMode === 'text' && (
-          <TextCursorEditor
-            cursors={cursors}
-            onPositionChange={(position: number, selectionData: TextSelectionData | null, hasSelection: boolean) =>
-              sendTextUpdate(position, selectionData, hasSelection)
-            }
-          />
-        )}
-        {activeMode === 'canvas' && (
-          <CanvasCursorBoard cursors={cursors} onMouseMove={sendCanvasUpdate} />
-        )}
-      </div>
-
-      {/* CRDT shared document */}
-      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
-        <SharedTextEditor
-          content={content}
-          applyLocalEdit={applyLocalEdit}
-          disabled={connectionState !== 'connected'}
-        />
-      </div>
-
-      {/* Reactions */}
-      <div style={{ margin: '1rem 0' }}>
-        <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem' }}>Reactions</h3>
-        <ReactionButtons onReact={react} disabled={connectionState !== 'connected'} />
-      </div>
-
-      {/* Chat */}
-      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', marginTop: '1rem' }}>
-        <ChatPanel
-          messages={chatMessages}
-          onSend={sendChat}
-          disabled={connectionState !== 'connected'}
-          onTyping={setTyping}
-        />
-      </div>
-
-      {/* Dev Tools */}
-      <ErrorPanel errors={errors} />
-      <EventLog entries={logEntries} />
-    </div>
+    <AppLayout
+      connectionState={connectionState}
+      currentChannel={currentChannel}
+      onSwitchChannel={switchChannel}
+      onDisconnect={disconnect}
+      onReconnect={reconnect}
+      userEmail={auth.email}
+      onSignOut={auth.signOut}
+      presenceUsers={presenceUsers}
+      currentClientId={clientId}
+      activeReactions={activeReactions}
+      onReact={react}
+      chatMessages={chatMessages}
+      onChatSend={sendChat}
+      onTyping={setTyping}
+      cursors={cursors}
+      activeMode={activeMode}
+      onModeChange={switchMode}
+      onFreeformMove={sendFreeformUpdate}
+      onTableClick={sendTableUpdate}
+      onTextChange={sendTextUpdate}
+      onCanvasMove={sendCanvasUpdate}
+      crdtContent={content}
+      applyLocalEdit={applyLocalEdit}
+      logEntries={logEntries}
+      errors={errors}
+      lastError={lastError}
+      clientId={clientId}
+      sessionToken={sessionToken}
+    />
   );
 }
