@@ -53,7 +53,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 
 **Milestone Goal:** Replace HTML test clients with a polished, production-quality React app — all features real, clean reusable components, HTML artifacts deleted.
 
-- [ ] **Phase 15: Cleanup** - Delete HTML test clients, SDK files, and stale build artifacts from the repo
+- [x] **Phase 15: Cleanup** - Delete HTML test clients, SDK files, and stale build artifacts from the repo (completed 2026-03-12)
 - [ ] **Phase 16: Reaction Animations** - Port 12-emoji type system with distinct CSS animations into ReactionsOverlay and ReactionButtons
 - [ ] **Phase 17: UI Layout & Polish** - Restructure app into a clean, production-quality layout with integrated navigation
 - [ ] **Phase 18: Typing Indicators & Presence Polish** - Surface typing state visibly in both chat panel and presence list
@@ -132,7 +132,7 @@ Plans:
 | 12. Identity Integration | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 13. Session Management | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
-| 15. Cleanup | v1.4 | 0/1 | Not started | - |
+| 15. Cleanup | 1/1 | Complete   | 2026-03-12 | - |
 | 16. Reaction Animations | v1.4 | 0/TBD | Not started | - |
 | 17. UI Layout & Polish | v1.4 | 0/TBD | Not started | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |

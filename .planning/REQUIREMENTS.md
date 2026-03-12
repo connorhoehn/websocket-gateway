@@ -7,9 +7,9 @@
 
 ### Cleanup
 
-- [ ] **CLEAN-01**: Repo is free of HTML test clients (`test/clients/*.html`) and standalone SDK files (`websocket-gateway-sdk.js`, `.css`)
-- [ ] **CLEAN-02**: `frontend/dist/` is gitignored and not committed to the repo
-- [ ] **CLEAN-03**: Empty placeholder file (`test-client-sdk.html`) is deleted
+- [x] **CLEAN-01**: Repo is free of HTML test clients (`test/clients/*.html`) and standalone SDK files (`websocket-gateway-sdk.js`, `.css`)
+- [x] **CLEAN-02**: `frontend/dist/` is gitignored and not committed to the repo
+- [x] **CLEAN-03**: Empty placeholder file (`test-client-sdk.html`) is deleted
 
 ### Layout & UI
 
@@ -55,9 +55,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLEAN-01 | Phase 15 | Pending |
-| CLEAN-02 | Phase 15 | Pending |
-| CLEAN-03 | Phase 15 | Pending |
+| CLEAN-01 | Phase 15 | Complete |
+| CLEAN-02 | Phase 15 | Complete |
+| CLEAN-03 | Phase 15 | Complete |
 | UI-01 | Phase 17 | Pending |
 | UI-02 | Phase 17 | Pending |
 | UI-03 | Phase 17 | Pending |
