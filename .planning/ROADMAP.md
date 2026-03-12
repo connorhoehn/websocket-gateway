@@ -110,7 +110,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. When another user is typing in the chat input, a visible indicator (e.g. "Alice is typing...") appears in the chat panel before the message list
   2. When a user is typing, their entry in the presence/user list panel also reflects their typing state (e.g. a visual indicator or label change)
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 18-01-PLAN.md — Add typingUsers prop to ChatPanel and derive/pass it from AppLayout using presenceUsers
 
 ### Phase 19: Per-Service Dev Tools
 **Goal**: Developers can inspect real-time events per service using a tabbed EventLog, with disconnect/reconnect controls remaining accessible
@@ -142,5 +145,5 @@ Plans:
 | 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 17. UI Layout & Polish | 2/2 | Complete    | 2026-03-12 | - |
-| 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
+| 18. Typing Indicators & Presence Polish | v1.4 | 0/1 | Not started | - |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
