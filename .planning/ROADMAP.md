@@ -83,7 +83,10 @@ Plans:
   2. Each emoji type plays a distinct CSS animation (no two types share the same animation style)
   3. Reactions from all connected users appear in ReactionsOverlay and disappear after their animation completes
   4. ReactionButtons renders all 12 emojis in a clean picker grid (not a list or single button)
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 16-01-PLAN.md — Upgrade ReactionButtons to 12-emoji grid + add 12 distinct per-emoji animations to ReactionsOverlay
 
 ### Phase 17: UI Layout & Polish
 **Goal**: The authenticated app renders a structured, production-quality layout where each collaborative feature occupies a distinct section and all components are reusable
@@ -132,8 +135,8 @@ Plans:
 | 12. Identity Integration | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 13. Session Management | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
-| 15. Cleanup | 1/1 | Complete    | 2026-03-12 | - |
-| 16. Reaction Animations | v1.4 | 0/TBD | Not started | - |
+| 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
+| 16. Reaction Animations | v1.4 | 0/1 | Not started | - |
 | 17. UI Layout & Polish | v1.4 | 0/TBD | Not started | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
