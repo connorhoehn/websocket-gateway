@@ -130,6 +130,17 @@ export function AppLayout({
   clientId,
   sessionToken,
 }: AppLayoutProps) {
+  // Derive typingUsers from presenceUsers, excluding self
+  const typingUsers = presenceUsers
+    .filter(
+      (u) => u.metadata.isTyping === true && u.clientId !== currentClientId
+    )
+    .map(
+      (u) =>
+        (u.metadata.displayName as string | undefined) ??
+        u.clientId.slice(0, 8)
+    );
+
   return (
     <div
       style={{
@@ -240,6 +251,7 @@ export function AppLayout({
               onSend={onChatSend}
               disabled={connectionState !== 'connected'}
               onTyping={onTyping}
+              typingUsers={typingUsers}
             />
           </div>
 
