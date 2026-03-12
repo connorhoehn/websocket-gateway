@@ -97,7 +97,11 @@ Plans:
   2. Auth screens (login and signup) look production-quality with consistent styling and no dev-panel aesthetic
   3. Connection status and channel selector are integrated into the layout (header, sidebar, or nav) — not floating or appended at the bottom
   4. All collaborative feature components can be imported and used outside App.tsx without code changes (no hardcoded App.tsx dependencies)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 17-01-PLAN.md — Create AppLayout.tsx: 2-column layout with header (connection/channel/user), sidebar (presence), and distinct main sections
+- [ ] 17-02-PLAN.md — Wire AppLayout into App.tsx GatewayDemo + polish LoginForm and SignupForm auth screens
 
 ### Phase 18: Typing Indicators & Presence Polish
 **Goal**: Users can see who is currently typing in both the chat panel and the presence list, using the typing state already broadcast by v1.3
@@ -136,7 +140,7 @@ Plans:
 | 13. Session Management | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
 | 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 16. Reaction Animations | 1/1 | Complete    | 2026-03-12 | - |
-| 17. UI Layout & Polish | v1.4 | 0/TBD | Not started | - |
+| 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
+| 17. UI Layout & Polish | v1.4 | 0/2 | Not started | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
