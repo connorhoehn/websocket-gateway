@@ -141,6 +141,6 @@ Plans:
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
 | 15. Cleanup | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 17. UI Layout & Polish | 2/2 | Complete   | 2026-03-12 | - |
+| 17. UI Layout & Polish | 2/2 | Complete    | 2026-03-12 | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
 | 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
