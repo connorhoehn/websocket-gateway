@@ -20,9 +20,9 @@
 
 ### Reactions
 
-- [ ] **REACT-01**: ReactionsOverlay supports all 12 emoji types: ❤️ 😂 👍 👎 😮 😢 😡 🎉 🔥 ⚡ 💯 🚀
-- [ ] **REACT-02**: Each emoji type has a distinct CSS animation (pulse, shake, bounce, confetti, flicker, fly-up, spin, etc.)
-- [ ] **REACT-03**: ReactionButtons displays all 12 emojis in a clean picker grid
+- [x] **REACT-01**: ReactionsOverlay supports all 12 emoji types: ❤️ 😂 👍 👎 😮 😢 😡 🎉 🔥 ⚡ 💯 🚀
+- [x] **REACT-02**: Each emoji type has a distinct CSS animation (pulse, shake, bounce, confetti, flicker, fly-up, spin, etc.)
+- [x] **REACT-03**: ReactionButtons displays all 12 emojis in a clean picker grid
 
 ### Presence & Typing
 
@@ -62,9 +62,9 @@
 | UI-02 | Phase 17 | Pending |
 | UI-03 | Phase 17 | Pending |
 | UI-04 | Phase 17 | Pending |
-| REACT-01 | Phase 16 | Pending |
-| REACT-02 | Phase 16 | Pending |
-| REACT-03 | Phase 16 | Pending |
+| REACT-01 | Phase 16 | Complete |
+| REACT-02 | Phase 16 | Complete |
+| REACT-03 | Phase 16 | Complete |
 | PRES-01 | Phase 18 | Pending |
 | PRES-02 | Phase 18 | Pending |
 | DEV-01 | Phase 19 | Pending |
