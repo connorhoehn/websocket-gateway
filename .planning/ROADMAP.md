@@ -69,7 +69,10 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
   1. `test/clients/*.html` files and `websocket-gateway-sdk.js`/`.css` files are deleted from the repo and git history shows them removed
   2. `frontend/dist/` does not appear in `git status` — it is gitignored and not tracked
   3. `test-client-sdk.html` placeholder file is gone from the repo root
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 15-01-PLAN.md — Remove tracked HTML test clients and SDK artifacts, confirm frontend/dist/ is gitignored
 
 ### Phase 16: Reaction Animations
 **Goal**: Users can trigger any of 12 emoji reactions that each fly across the overlay with a visually distinct animation
@@ -129,7 +132,7 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 | 12. Identity Integration | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 13. Session Management | v1.3 | 2/2 | Complete | 2026-03-11 |
 | 14. Gap Closure | v1.3 | 1/1 | Complete | 2026-03-11 |
-| 15. Cleanup | v1.4 | 0/TBD | Not started | - |
+| 15. Cleanup | v1.4 | 0/1 | Not started | - |
 | 16. Reaction Animations | v1.4 | 0/TBD | Not started | - |
 | 17. UI Layout & Polish | v1.4 | 0/TBD | Not started | - |
 | 18. Typing Indicators & Presence Polish | v1.4 | 0/TBD | Not started | - |
