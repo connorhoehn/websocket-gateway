@@ -123,7 +123,11 @@ Plans:
   1. The EventLog UI has five tabs: Chat, Presence, Cursors, Reactions, System — each selectable independently
   2. Each tab shows only events for its service, with correct timestamps, and no cross-service noise
   3. Disconnect and Reconnect controls are visible and functional within the dev tools section (not moved to an unrelated area)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — Create TabbedEventLog component with tab filtering logic for five service types
+- [ ] 19-02-PLAN.md — Wire TabbedEventLog into AppLayout Dev Tools section
 
 ## Progress
 
@@ -146,4 +150,4 @@ Plans:
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 18. Typing Indicators & Presence Polish | v1.4 | Complete    | 2026-03-13 | 2026-03-12 |
-| 19. Per-Service Dev Tools | v1.4 | 0/TBD | Not started | - |
+| 19. Per-Service Dev Tools | v1.4 | 0/2 | Not started | - |
