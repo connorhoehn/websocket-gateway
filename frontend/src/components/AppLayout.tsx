@@ -26,7 +26,7 @@ import { CanvasCursorBoard } from './CanvasCursorBoard';
 import { SharedTextEditor } from './SharedTextEditor';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ErrorPanel } from './ErrorPanel';
-import { EventLog } from './EventLog';
+import { TabbedEventLog } from './TabbedEventLog';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -297,7 +297,7 @@ export function AppLayout({
             <p style={sectionHeaderStyle}>Dev Tools</p>
             <ErrorDisplay error={lastError} />
             <ErrorPanel errors={errors} />
-            <EventLog entries={logEntries} />
+            <TabbedEventLog entries={logEntries} />
             <div
               style={{
                 fontSize: '0.75rem',
