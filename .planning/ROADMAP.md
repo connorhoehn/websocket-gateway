@@ -150,4 +150,4 @@ Plans:
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 18. Typing Indicators & Presence Polish | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 19. Per-Service Dev Tools | v1.4 | 2/2 | Complete | 2026-03-14 |
+| 19. Per-Service Dev Tools | v1.4 | Complete    | 2026-03-14 | 2026-03-14 |
