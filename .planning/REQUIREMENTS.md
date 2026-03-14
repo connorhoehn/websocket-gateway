@@ -31,9 +31,9 @@
 
 ### Dev Tools
 
-- [ ] **DEV-01**: EventLog is split into per-service tabs: Chat / Presence / Cursors / Reactions / System
-- [ ] **DEV-02**: Each service tab shows only its own messages with correct timestamps
-- [ ] **DEV-03**: Disconnect/reconnect controls remain accessible in the dev tools section
+- [x] **DEV-01**: EventLog is split into per-service tabs: Chat / Presence / Cursors / Reactions / System
+- [x] **DEV-02**: Each service tab shows only its own messages with correct timestamps
+- [x] **DEV-03**: Disconnect/reconnect controls remain accessible in the dev tools section
 
 ## Future Requirements
 
@@ -67,9 +67,9 @@
 | REACT-03 | Phase 16 | Complete |
 | PRES-01 | Phase 18 | Pending |
 | PRES-02 | Phase 18 | Pending |
-| DEV-01 | Phase 19 | Pending |
-| DEV-02 | Phase 19 | Pending |
-| DEV-03 | Phase 19 | Pending |
+| DEV-01 | Phase 19 | Complete |
+| DEV-02 | Phase 19 | Complete |
+| DEV-03 | Phase 19 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 15 total
