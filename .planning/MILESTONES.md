@@ -1,5 +1,14 @@
 # Milestones
 
+## v1.4 UI Polish & Feature Completeness (Shipped: 2026-03-14)
+
+**Phases completed:** 5 phases, 7 plans, 4 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.3 User Auth & Identity (Shipped: 2026-03-11)
 
 **Phases completed:** 4 phases (11-14), 8 plans
