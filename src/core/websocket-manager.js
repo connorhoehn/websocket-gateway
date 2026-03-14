@@ -91,24 +91,65 @@ class WebSocketManager {
     const channelClients = this.channels.get(channel);
     if (!channelClients) return 0;
 
-    let sentCount = 0;
+    // Collect recipients first
+    const recipients = [];
     channelClients.forEach(clientId => {
-      if (clientId === excludeClientId) return;
+      if (clientId !== excludeClientId) {
+        recipients.push(clientId);
+      }
+    });
 
+    if (recipients.length === 0) return 0;
+
+    // Helper to send to a single client
+    const sendToOne = (clientId) => {
       const client = this.clients.get(clientId);
       if (client && client.ws.readyState === WebSocket.OPEN) {
         try {
           client.ws.send(message);
-          sentCount++;
+          return true;
         } catch (error) {
           console.error(`Error sending to client ${clientId}:`, error);
           this.removeClient(clientId);
         }
       }
-    });
+      return false;
+    };
 
-    console.log(`Broadcasted to ${sentCount} clients in channel ${channel}`);
-    return sentCount;
+    // For small recipient lists (<=50), send synchronously (no overhead)
+    if (recipients.length <= 50) {
+      let sentCount = 0;
+      for (const clientId of recipients) {
+        if (sendToOne(clientId)) {
+          sentCount++;
+        }
+      }
+      console.log(`Broadcasted to ${sentCount} clients in channel ${channel}`);
+      return sentCount;
+    }
+
+    // For large recipient lists, batch with setImmediate to yield event loop
+    const BATCH_SIZE = 50;
+    let sentCount = 0;
+    let index = 0;
+
+    const sendBatch = () => {
+      const end = Math.min(index + BATCH_SIZE, recipients.length);
+      for (; index < end; index++) {
+        if (sendToOne(recipients[index])) {
+          sentCount++;
+        }
+      }
+
+      if (index < recipients.length) {
+        setImmediate(sendBatch);
+      } else {
+        console.log(`Broadcasted to ${sentCount}/${recipients.length} clients in channel ${channel} (batched)`);
+      }
+    };
+
+    sendBatch();
+    return recipients.length; // Return expected count (actual may differ due to closed connections)
   }
 
   sendToClient(clientId, message) {

@@ -17,21 +17,70 @@ const crypto = require('crypto');
  * @param {Logger} logger - Logger instance
  * @returns {Promise<object>} Connection result with clientId, sessionToken, restored flag
  */
-async function handleReconnection(ws, req, sessionService, messageRouter, logger) {
+async function handleReconnection(ws, req, sessionService, messageRouter, logger, metricsCollector = null) {
   const parsedUrl = url.parse(req.url, true);
   const sessionToken = parsedUrl.query.sessionToken;
 
   // Handle empty string sessionToken (treated as no token)
   if (sessionToken && sessionToken.trim() !== '') {
+    // Record reconnection attempt
+    if (metricsCollector) {
+      try { metricsCollector.recordReconnectionAttempt(); } catch (e) { /* fail open */ }
+    }
+
     // Attempt session recovery
     const session = await sessionService.restoreSession(sessionToken);
 
     if (session) {
       logger.info(`Client reconnecting with session token, restoring clientId: ${session.clientId}`);
 
-      // Restore subscriptions
-      for (const channel of session.subscriptions) {
-        await messageRouter.subscribeToChannel(session.clientId, channel);
+      // Restore subscriptions atomically
+      const restoredChannels = [];
+      try {
+        for (const channel of session.subscriptions) {
+          await messageRouter.subscribeToChannel(session.clientId, channel);
+          restoredChannels.push(channel);
+        }
+      } catch (error) {
+        // Rollback: unsubscribe from all successfully restored channels
+        logger.error(`Subscription restoration failed at channel ${restoredChannels.length + 1}/${session.subscriptions.length}, rolling back`, {
+          clientId: session.clientId,
+          restoredCount: restoredChannels.length,
+          error: error.message
+        });
+
+        for (const channel of restoredChannels) {
+          try {
+            await messageRouter.unsubscribeFromChannel(session.clientId, channel);
+          } catch (rollbackError) {
+            logger.error(`Rollback failed for channel ${channel}`, { error: rollbackError.message });
+          }
+        }
+
+        // Record failed reconnection due to subscription restore failure
+        if (metricsCollector) {
+          try { metricsCollector.recordReconnectionFailure('subscription_restore_failed'); } catch (e) { /* fail open */ }
+        }
+
+        // Treat as new connection since restoration failed
+        logger.warn('Falling back to new connection after subscription restore failure');
+        const newClientId = crypto.randomUUID();
+        return {
+          clientId: newClientId,
+          sessionToken: null,
+          userContext: null,
+          restored: false
+        };
+      }
+
+      logger.info('Subscription restoration complete', { clientId: session.clientId, channelCount: restoredChannels.length });
+
+      // Record successful reconnection with session age
+      if (metricsCollector) {
+        try {
+          const sessionAgeMs = session.createdAt ? Date.now() - session.createdAt : 0;
+          metricsCollector.recordReconnectionSuccess(sessionAgeMs);
+        } catch (e) { /* fail open */ }
       }
 
       return {
@@ -41,6 +90,10 @@ async function handleReconnection(ws, req, sessionService, messageRouter, logger
         restored: true
       };
     } else {
+      // Record failed reconnection
+      if (metricsCollector) {
+        try { metricsCollector.recordReconnectionFailure('expired'); } catch (e) { /* fail open */ }
+      }
       logger.warn('Invalid or expired session token, treating as new connection');
     }
   }

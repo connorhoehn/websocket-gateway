@@ -296,91 +296,118 @@ class DistributedWebSocketServer {
         this.wss.on("connection", async (ws, req, userContext) => {
             const clientIP = req.socket.remoteAddress;
 
-            // Handle reconnection with session token recovery
-            const reconnectionResult = await handleReconnection(
-                ws,
-                req,
-                this.sessionService,
-                this.messageRouter,
-                this.logger
-            );
+            try {
+                // Handle reconnection with session token recovery
+                const reconnectionResult = await handleReconnection(
+                    ws,
+                    req,
+                    this.sessionService,
+                    this.messageRouter,
+                    this.logger,
+                    this.metricsCollector
+                );
 
-            const clientId = reconnectionResult.clientId;
-            const restored = reconnectionResult.restored;
-            let sessionToken = reconnectionResult.sessionToken;
+                const clientId = reconnectionResult.clientId;
+                const restored = reconnectionResult.restored;
+                let sessionToken = reconnectionResult.sessionToken;
 
-            // Record connection in metrics
-            this.metricsCollector.recordConnection(1);
+                // Record connection in metrics
+                this.metricsCollector.recordConnection(1);
 
-            this.logger.info('Client connected', {
-                clientId,
-                ip: clientIP,
-                userId: userContext.userId,
-                restored,
-                totalConnections: this.connections.size + 1
-            });
+                this.logger.info('Client connected', {
+                    clientId,
+                    ip: clientIP,
+                    userId: userContext.userId,
+                    restored,
+                    totalConnections: this.connections.size + 1
+                });
 
-            // For new connections (not restored), create session token
-            if (!restored) {
-                sessionToken = await this.sessionService.createSession(clientId, userContext);
-            }
-
-            // Register client with message router
-            const metadata = {
-                ip: clientIP,
-                userAgent: req.headers['user-agent'],
-                connectedAt: new Date().toISOString(),
-                userContext: userContext,  // Store userContext in metadata
-                sessionToken: sessionToken  // Track session token
-            };
-
-            this.messageRouter.registerLocalClient(clientId, ws, metadata);
-            this.connections.set(clientId, { ws, metadata });
-
-            // WebSocket ping/pong keepalive (every 30 seconds)
-            const pingInterval = setInterval(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.ping();
-                    this.logger.debug(`[keepalive] Ping sent to client ${clientId}`);
+                // For new connections (not restored), create session token
+                if (!restored) {
+                    sessionToken = await this.sessionService.createSession(clientId, userContext);
                 }
-            }, 30000); // 30 seconds
 
-            ws.on('pong', () => {
-                this.logger.debug(`[keepalive] Pong received from client ${clientId}`);
-            });
+                // Register client with message router
+                const metadata = {
+                    ip: clientIP,
+                    userAgent: req.headers['user-agent'],
+                    connectedAt: new Date().toISOString(),
+                    userContext: userContext,  // Store userContext in metadata
+                    sessionToken: sessionToken  // Track session token
+                };
 
-            // Setup message handler
-            ws.on("message", async (message) => {
-                await this.handleMessage(clientId, message);
-            });
+                this.messageRouter.registerLocalClient(clientId, ws, metadata);
+                this.connections.set(clientId, { ws, metadata });
 
-            // Setup close handler
-            ws.on("close", () => {
-                clearInterval(pingInterval);
-                this.metricsCollector.recordConnection(-1);
-                this.logger.info('Client disconnected', { clientId, totalConnections: this.connections.size - 1 });
-                this.handleClientDisconnect(clientId, clientIP);
-            });
+                // WebSocket ping/pong keepalive (every 30 seconds)
+                const pingInterval = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.ping();
+                        this.logger.debug(`[keepalive] Ping sent to client ${clientId}`);
+                    }
+                }, 30000); // 30 seconds
 
-            // Setup error handler
-            ws.on("error", (error) => {
-                clearInterval(pingInterval);
-                this.metricsCollector.recordConnection(-1);
-                this.logger.error('WebSocket error', { clientId, error: error.message });
-                this.handleClientDisconnect(clientId, clientIP);
-            });
+                ws.on('pong', () => {
+                    this.logger.debug(`[keepalive] Pong received from client ${clientId}`);
+                });
 
-            // Send welcome message with session token
-            this.sendToClient(clientId, {
-                type: 'session',
-                status: 'connected',
-                clientId,
-                sessionToken,
-                restored,
-                nodeId: this.nodeManager.nodeId,
-                enabledServices: config.server.enabledServices,
-                timestamp: new Date().toISOString()
-            });
+                // Setup message handler with error boundary
+                ws.on("message", async (message) => {
+                    try {
+                        await this.handleMessage(clientId, message);
+                    } catch (error) {
+                        this.logger.error('Unhandled error in message handler', {
+                            clientId,
+                            error: error.message,
+                            stack: error.stack
+                        });
+                        this.sendToClient(clientId, {
+                            type: 'error',
+                            code: 'INTERNAL_ERROR',
+                            message: 'Internal server error',
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                });
+
+                // Setup close handler
+                ws.on("close", () => {
+                    clearInterval(pingInterval);
+                    this.metricsCollector.recordConnection(-1);
+                    this.logger.info('Client disconnected', { clientId, totalConnections: this.connections.size - 1 });
+                    this.handleClientDisconnect(clientId, clientIP);
+                });
+
+                // Setup error handler
+                ws.on("error", (error) => {
+                    clearInterval(pingInterval);
+                    this.metricsCollector.recordConnection(-1);
+                    this.logger.error('WebSocket error', { clientId, error: error.message });
+                    this.handleClientDisconnect(clientId, clientIP);
+                });
+
+                // Send welcome message with session token
+                this.sendToClient(clientId, {
+                    type: 'session',
+                    status: 'connected',
+                    clientId,
+                    sessionToken,
+                    restored,
+                    nodeId: this.nodeManager.nodeId,
+                    enabledServices: config.server.enabledServices,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (error) {
+                this.logger.error('Unhandled error in connection handler', {
+                    ip: clientIP,
+                    error: error.message,
+                    stack: error.stack
+                });
+                // Close WebSocket with 1011 (unexpected condition)
+                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                    ws.close(1011, 'Unexpected server error');
+                }
+            }
         });
     }
 
@@ -389,58 +416,75 @@ class DistributedWebSocketServer {
         const correlationId = crypto.randomUUID();
         const correlatedLogger = this.logger.withCorrelation(correlationId);
 
-        // Record message start time for latency tracking
-        const startTime = Date.now();
-
-        // Validate and rate-limit message using message router
-        const message = await this.messageRouter.validateAndRateLimit(clientId, rawMessage);
-
-        // If validation or rate limiting failed, validateAndRateLimit already sent error
-        if (!message) {
-            return;
-        }
-
-        correlatedLogger.debug('Message received', { clientId, service: message.service, action: message.action });
-
-        const { service, action, ...data } = message;
-
-        // Route to appropriate service
-        const serviceInstance = this.services.get(service);
-        if (!serviceInstance) {
-            this.sendToClient(clientId, {
-                type: 'error',
-                code: 'SERVICE_NOT_AVAILABLE',
-                message: `Service '${service}' not available`,
-                availableServices: Array.from(this.services.keys()),
-                timestamp: new Date().toISOString()
-            });
-            return;
-        }
-
         try {
-            // Call service method
-            await serviceInstance.handleAction(clientId, action, data);
+            // Record message start time for latency tracking
+            const startTime = Date.now();
 
-            // Record successful message processing latency
-            const latency = Date.now() - startTime;
-            this.metricsCollector.recordMessage(latency);
+            // Validate and rate-limit message using message router
+            const message = await this.messageRouter.validateAndRateLimit(clientId, rawMessage);
+
+            // If validation or rate limiting failed, validateAndRateLimit already sent error
+            if (!message) {
+                return;
+            }
+
+            correlatedLogger.debug('Message received', { clientId, service: message.service, action: message.action });
+
+            const { service, action, ...data } = message;
+
+            // Route to appropriate service
+            const serviceInstance = this.services.get(service);
+            if (!serviceInstance) {
+                this.sendToClient(clientId, {
+                    type: 'error',
+                    code: 'SERVICE_NOT_AVAILABLE',
+                    message: `Service '${service}' not available`,
+                    availableServices: Array.from(this.services.keys()),
+                    timestamp: new Date().toISOString()
+                });
+                return;
+            }
+
+            try {
+                // Pass correlationId to service handlers for cross-service tracing
+                data.correlationId = correlationId;
+
+                // Call service method
+                await serviceInstance.handleAction(clientId, action, data);
+
+                // Record successful message processing latency
+                const latency = Date.now() - startTime;
+                this.metricsCollector.recordMessage(latency);
+            } catch (error) {
+                correlatedLogger.error('Message routing failed', {
+                    error: error.message,
+                    clientId,
+                    service,
+                    action
+                });
+                this.sendToClient(clientId, {
+                    type: 'error',
+                    code: 'SERVICE_ERROR',
+                    message: 'Failed to process message',
+                    timestamp: new Date().toISOString()
+                });
+
+                // Still record latency even for errors
+                const latency = Date.now() - startTime;
+                this.metricsCollector.recordMessage(latency);
+            }
         } catch (error) {
-            correlatedLogger.error('Message routing failed', {
-                error: error.message,
+            correlatedLogger.error('Unhandled error in message handler', {
                 clientId,
-                service,
-                action
+                error: error.message,
+                stack: error.stack
             });
             this.sendToClient(clientId, {
                 type: 'error',
-                code: 'SERVICE_ERROR',
-                message: 'Failed to process message',
+                code: 'INTERNAL_ERROR',
+                message: 'Internal server error',
                 timestamp: new Date().toISOString()
             });
-
-            // Still record latency even for errors
-            const latency = Date.now() - startTime;
-            this.metricsCollector.recordMessage(latency);
         }
     }
 

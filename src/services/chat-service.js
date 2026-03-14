@@ -8,6 +8,33 @@ const { checkChannelPermission, AuthzError } = require('../middleware/authz-midd
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { LRUCache } = require('lru-cache');
 
+const MAX_METADATA_KEYS = 20;
+const MAX_METADATA_SIZE = 4096; // 4KB
+
+function validateMetadata(metadata, logger) {
+    if (!metadata || typeof metadata !== 'object') return {};
+
+    // Limit number of keys
+    const keys = Object.keys(metadata);
+    if (keys.length > MAX_METADATA_KEYS) {
+        logger.warn(`Metadata exceeds key limit: ${keys.length}/${MAX_METADATA_KEYS}`);
+        const truncated = {};
+        for (let i = 0; i < MAX_METADATA_KEYS; i++) {
+            truncated[keys[i]] = metadata[keys[i]];
+        }
+        metadata = truncated;
+    }
+
+    // Limit total serialized size
+    const serialized = JSON.stringify(metadata);
+    if (serialized.length > MAX_METADATA_SIZE) {
+        logger.warn(`Metadata exceeds size limit: ${serialized.length}/${MAX_METADATA_SIZE}`);
+        return { _truncated: true, displayName: metadata.displayName || 'unknown' };
+    }
+
+    return metadata;
+}
+
 class ChatService {
     constructor(messageRouter, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
@@ -157,6 +184,9 @@ class ChatService {
             this.sendError(clientId, 'Message must be a string between 1 and 1000 characters');
             return;
         }
+
+        // Validate metadata for size and key count
+        metadata = validateMetadata(metadata, this.logger);
 
         // Check if client is in the channel
         const clientChannelSet = this.clientChannels.get(clientId);

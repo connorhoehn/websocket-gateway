@@ -1,15 +1,15 @@
 # WebSocket Gateway - AWS Migration & Hardening
 
-## Current Milestone: v1.4 UI Polish & Feature Completeness
+## Current Milestone: v1.5 Production Hardening
 
-**Goal:** Replace HTML test clients with a polished, production-quality React app — all features real, clean reusable components, HTML artifacts deleted.
+**Goal:** Fix reliability issues, resource leaks, and observability gaps that will break under production load or multi-node failure scenarios.
 
-**Target features:**
-- File cleanup: delete HTML test clients, SDK files, stale build artifacts
-- Reaction animations: port 12-type CSS animation system into ReactionsOverlay
-- Production UI layout: clean, structured layout (not stacked dev panels)
-- Per-service dev logs: split EventLog into chat / presence / cursors / reactions / system tabs
-- Typing indicator: visible in chat panel and presence list when others are typing
+**Target fixes:**
+- Error handling: catch all unhandled promise rejections, track metrics health, propagate correlation IDs
+- Connection resilience: atomic subscription restore with rollback, guaranteed disconnect cleanup, secure JWT transport
+- Broadcast: non-blocking batched sends, per-channel sequence numbers for ordering
+- Resource management: bounded session store, race-safe presence cleanup, timer lifecycle tracking
+- Validation & telemetry: metadata size limits, reconnection metrics
 
 ## What This Is
 

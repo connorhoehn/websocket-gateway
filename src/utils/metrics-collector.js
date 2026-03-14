@@ -44,6 +44,9 @@ class MetricsCollector {
         this.nodeId = process.env.NODE_ID || os.hostname();
         this.flushIntervalSeconds = 60; // Metrics are flushed every 60 seconds
 
+        // Track consecutive flush failures for health monitoring
+        this.consecutiveFlushFailures = 0;
+
         // Track last emission time for cost optimization
         this.lastEmittedValues = {
             activeConnections: null,
@@ -162,6 +165,39 @@ class MetricsCollector {
     }
 
     /**
+     * Record a reconnection attempt
+     */
+    recordReconnectionAttempt() {
+        this.recordMetric('ReconnectionAttempts', 1);
+    }
+
+    /**
+     * Record a successful reconnection with session age
+     * @param {number} sessionAgeMs - Age of the session in milliseconds
+     */
+    recordReconnectionSuccess(sessionAgeMs) {
+        this.recordMetric('ReconnectionSuccesses', 1);
+        this.recordMetric('SessionAgeOnReconnect', sessionAgeMs, 'Milliseconds');
+    }
+
+    /**
+     * Record a failed reconnection
+     * @param {string} reason - Reason for failure (e.g., 'expired', 'invalid')
+     */
+    recordReconnectionFailure(reason) {
+        this.recordMetric('ReconnectionFailures', 1);
+    }
+
+    /**
+     * Check if metrics flushing is healthy
+     * Returns false if 3 or more consecutive flush failures have occurred
+     * @returns {boolean} true if metrics are flushing successfully
+     */
+    isHealthy() {
+        return this.consecutiveFlushFailures < 3;
+    }
+
+    /**
      * Get current metrics summary
      * @returns {Object} Current metrics
      */
@@ -170,7 +206,9 @@ class MetricsCollector {
             activeConnections: this.activeConnections,
             messageCount: this.messageCount,
             p95Latency: this.calculateP95Latency(),
-            nodeId: this.nodeId
+            nodeId: this.nodeId,
+            metricsHealthy: this.isHealthy(),
+            consecutiveFlushFailures: this.consecutiveFlushFailures
         };
     }
 
@@ -265,10 +303,18 @@ class MetricsCollector {
             };
             this.lastEmissionTime = Date.now();
 
+            // Reset consecutive failure counter on success
+            this.consecutiveFlushFailures = 0;
+
         } catch (error) {
             // Fail open - log error but don't throw
             // This ensures metrics failures don't break the application
-            this.logger.error('Failed to send metrics to CloudWatch:', error.message);
+            this.consecutiveFlushFailures++;
+            this.logger.error('Failed to send metrics to CloudWatch', {
+                error: error.message,
+                consecutiveFlushFailures: this.consecutiveFlushFailures,
+                metricsHealthy: this.isHealthy()
+            });
         }
     }
 }

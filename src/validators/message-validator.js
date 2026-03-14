@@ -6,10 +6,11 @@ const { ErrorCodes } = require('../utils/error-codes');
  * Custom validation error with code and message
  */
 class ValidationError extends Error {
-    constructor(code, message) {
+    constructor(code, message, context = null) {
         super(message);
         this.name = 'ValidationError';
         this.code = code;
+        this.context = context;
     }
 }
 
@@ -38,7 +39,8 @@ class MessageValidator {
         if (!message.service || !message.action) {
             throw new ValidationError(
                 ErrorCodes.INVALID_MESSAGE_STRUCTURE,
-                'Missing required fields: service and action are required'
+                'Missing required fields: service and action are required',
+                { receivedService: typeof message.service, receivedAction: typeof message.action }
             );
         }
 
@@ -46,7 +48,8 @@ class MessageValidator {
         if (typeof message.service !== 'string' || typeof message.action !== 'string') {
             throw new ValidationError(
                 ErrorCodes.INVALID_MESSAGE_STRUCTURE,
-                'Invalid field types: service and action must be strings'
+                'Invalid field types: service and action must be strings',
+                { receivedService: typeof message.service, receivedAction: typeof message.action }
             );
         }
 
@@ -70,7 +73,8 @@ class MessageValidator {
         if (payloadSize > this.maxPayloadSize) {
             throw new ValidationError(
                 ErrorCodes.PAYLOAD_TOO_LARGE,
-                `Message exceeds 64KB limit: ${payloadSize} bytes > ${this.maxPayloadSize} bytes`
+                `Message exceeds 64KB limit: ${payloadSize} bytes > ${this.maxPayloadSize} bytes`,
+                { payloadSize, limit: this.maxPayloadSize }
             );
         }
     }

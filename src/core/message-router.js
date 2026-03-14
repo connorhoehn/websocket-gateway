@@ -1,5 +1,7 @@
 // core/message-router.js
 
+const { ValidationError } = require('../validators/message-validator');
+
 /**
  * Handles intelligent message routing in a distributed WebSocket system
  * Routes messages only to nodes that have clients subscribed to specific channels
@@ -13,6 +15,7 @@ class MessageRouter {
         this.sessionService = sessionService; // Optional session service for subscription tracking
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
+        this.channelSequences = new Map(); // channel -> monotonic sequence counter
 
         // Redis health tracking
         this.redisAvailable = true; // Assume Redis is available initially
@@ -40,10 +43,10 @@ class MessageRouter {
             channels: new Set(),
             joinedAt: new Date()
         });
-        
+
         // Register with node manager
         this.nodeManager.registerClient(clientId, metadata);
-        
+
         this.logger.debug(`Registered local client ${clientId}`);
     }
 
@@ -70,13 +73,32 @@ class MessageRouter {
     async unregisterLocalClient(clientId) {
         const client = this.localClients.get(clientId);
         if (client) {
-            // Unsubscribe from all channels
-            for (const channel of client.channels) {
-                await this.unsubscribeFromChannel(clientId, channel);
+            // Collect channels before deletion to ensure cleanup
+            const channels = Array.from(client.channels);
+
+            // Unsubscribe from all channels with error isolation
+            const failures = [];
+            for (const channel of channels) {
+                try {
+                    await this.unsubscribeFromChannel(clientId, channel);
+                } catch (error) {
+                    failures.push({ channel, error: error.message });
+                    // Force-remove from local tracking even if Redis unsubscribe fails
+                    client.channels.delete(channel);
+                }
+            }
+
+            if (failures.length > 0) {
+                this.logger.warn(`Cleanup failures for client ${clientId}`, { failures });
             }
 
             this.localClients.delete(clientId);
-            await this.nodeManager.unregisterClient(clientId);
+
+            try {
+                await this.nodeManager.unregisterClient(clientId);
+            } catch (error) {
+                this.logger.warn(`Failed to unregister client ${clientId} from node manager`, { error: error.message });
+            }
 
             this.logger.debug(`Unregistered local client ${clientId}`);
         }
@@ -159,6 +181,16 @@ class MessageRouter {
     }
 
     /**
+     * Get next monotonic sequence number for a channel
+     */
+    getNextSequence(channel) {
+        const current = this.channelSequences.get(channel) || 0;
+        const next = current + 1;
+        this.channelSequences.set(channel, next);
+        return next;
+    }
+
+    /**
      * Validate and rate-limit a message before processing
      * @param {string} clientId - Client identifier
      * @param {string} rawMessage - Raw message string from client
@@ -194,8 +226,30 @@ class MessageRouter {
             return message;
         } catch (error) {
             if (error instanceof ValidationError) {
+                // Log sanitized payload summary for debugging malformed clients
+                let message = null;
+                try { message = JSON.parse(rawMessage); } catch (e) { /* ignore parse errors */ }
+                this.logger.warn('Message validation failed', {
+                    clientId,
+                    code: error.code,
+                    message: error.message,
+                    context: error.context,
+                    payloadPreview: {
+                        service: message?.service,
+                        action: message?.action,
+                        size: typeof rawMessage === 'string' ? rawMessage.length : Buffer.byteLength(rawMessage)
+                    }
+                });
                 this.sendError(clientId, error.code, error.message);
             } else if (error instanceof SyntaxError) {
+                this.logger.warn('Message validation failed', {
+                    clientId,
+                    code: 'INVALID_JSON',
+                    message: error.message,
+                    payloadPreview: {
+                        size: typeof rawMessage === 'string' ? rawMessage.length : Buffer.byteLength(rawMessage)
+                    }
+                });
                 this.sendError(clientId, 'INVALID_JSON', 'Message must be valid JSON');
             } else {
                 this.logger.error(`Message validation error for ${clientId}:`, error);
@@ -239,12 +293,14 @@ class MessageRouter {
                 return;
             }
 
+            const seq = this.getNextSequence(channel);
             const routedMessage = {
                 type: this.messageTypes.CHANNEL_MESSAGE,
                 channel,
                 message,
                 excludeClientId,
                 fromNode: this.nodeManager.nodeId,
+                seq,
                 timestamp: new Date().toISOString(),
                 targetNodes
             };
@@ -278,7 +334,7 @@ class MessageRouter {
         try {
             // Find which node the client is connected to
             const targetNode = await this.nodeManager.getClientNode(clientId);
-            
+
             if (!targetNode) {
                 this.logger.warn(`Client ${clientId} not found in any node`);
                 return false;
@@ -296,7 +352,7 @@ class MessageRouter {
             // Publish to the specific node's direct message channel
             const redisChannel = `websocket:direct:${targetNode}`;
             await this.redisPublisher.publish(redisChannel, JSON.stringify(routedMessage));
-            
+
             this.logger.debug(`Direct message sent to client ${clientId} on node ${targetNode}`);
             return true;
         } catch (error) {
@@ -324,7 +380,7 @@ class MessageRouter {
 
             // Broadcast to all nodes
             await this.redisPublisher.publish('websocket:broadcast:all', JSON.stringify(routedMessage));
-            
+
             this.logger.debug('Message broadcasted to all nodes');
         } catch (error) {
             this.logger.error('Failed to broadcast message:', error);
@@ -432,7 +488,8 @@ class MessageRouter {
             const redisChannel = `websocket:route:${channel}`;
             await this.redisSubscriber.unsubscribe(redisChannel);
             this.subscribedChannels.delete(channel);
-            
+            this.channelSequences.delete(channel);
+
             this.logger.debug(`Unsubscribed from Redis channel: ${redisChannel}`);
         } catch (error) {
             this.logger.error(`Failed to unsubscribe from Redis channel ${channel}:`, error);
@@ -445,7 +502,7 @@ class MessageRouter {
     handleDirectMessage(message, channel) {
         try {
             const data = JSON.parse(message);
-            
+
             if (data.type === this.messageTypes.DIRECT_MESSAGE) {
                 this.sendToLocalClient(data.clientId, data.message);
             }
@@ -460,7 +517,7 @@ class MessageRouter {
     handleBroadcastMessage(message, channel) {
         try {
             const data = JSON.parse(message);
-            
+
             if (data.type === this.messageTypes.BROADCAST && data.fromNode !== this.nodeManager.nodeId) {
                 this.broadcastToLocalClients(data.message, data.excludeClientId);
             }
@@ -475,11 +532,15 @@ class MessageRouter {
     handleChannelMessage(message, redisChannel) {
         try {
             const data = JSON.parse(message);
-            
+
             if (data.type === this.messageTypes.CHANNEL_MESSAGE) {
                 // Only process if this node is in the target nodes list
                 if (data.targetNodes.includes(this.nodeManager.nodeId)) {
-                    this.broadcastToLocalChannel(data.channel, data.message, data.excludeClientId);
+                    // Attach _meta with ordering info for client-side gap detection
+                    const messageWithMeta = typeof data.message === 'object' && data.message !== null
+                        ? { ...data.message, _meta: { seq: data.seq, nodeId: data.fromNode, timestamp: data.timestamp } }
+                        : { data: data.message, _meta: { seq: data.seq, nodeId: data.fromNode, timestamp: data.timestamp } };
+                    this.broadcastToLocalChannel(data.channel, messageWithMeta, data.excludeClientId);
                 }
             }
         } catch (error) {
@@ -508,39 +569,105 @@ class MessageRouter {
 
     /**
      * Broadcast to local clients on a specific channel
+     * Uses batched sends with setImmediate for large recipient lists (>50)
+     * to avoid blocking the event loop.
      */
     broadcastToLocalChannel(channel, message, excludeClientId = null) {
-        let sentCount = 0;
-        
+        const recipients = [];
+
         for (const [clientId, client] of this.localClients) {
             if (clientId === excludeClientId) continue;
             if (!client.channels.has(channel)) continue;
-            
-            if (this.sendToLocalClient(clientId, message)) {
-                sentCount++;
-            }
+            recipients.push(clientId);
         }
-        
-        this.logger.debug(`Broadcasted to ${sentCount} local clients on channel ${channel}`);
-        return sentCount;
+
+        if (recipients.length === 0) return 0;
+
+        // For small recipient lists (<=50), send synchronously (no overhead)
+        if (recipients.length <= 50) {
+            let sentCount = 0;
+            for (const clientId of recipients) {
+                if (this.sendToLocalClient(clientId, message)) {
+                    sentCount++;
+                }
+            }
+            this.logger.debug(`Broadcasted to ${sentCount} local clients on channel ${channel}`);
+            return sentCount;
+        }
+
+        // For large recipient lists, batch with setImmediate to yield event loop
+        const BATCH_SIZE = 50;
+        let sentCount = 0;
+        let index = 0;
+
+        const sendBatch = () => {
+            const end = Math.min(index + BATCH_SIZE, recipients.length);
+            for (; index < end; index++) {
+                if (this.sendToLocalClient(recipients[index], message)) {
+                    sentCount++;
+                }
+            }
+
+            if (index < recipients.length) {
+                setImmediate(sendBatch);
+            } else {
+                this.logger.debug(`Broadcasted to ${sentCount}/${recipients.length} local clients on channel ${channel} (batched)`);
+            }
+        };
+
+        sendBatch();
+        return recipients.length; // Return expected count (actual may differ due to closed connections)
     }
 
     /**
      * Broadcast to all local clients
+     * Uses batched sends with setImmediate for large recipient lists (>50)
+     * to avoid blocking the event loop.
      */
     broadcastToLocalClients(message, excludeClientId = null) {
-        let sentCount = 0;
-        
-        for (const [clientId, client] of this.localClients) {
+        const recipients = [];
+
+        for (const [clientId] of this.localClients) {
             if (clientId === excludeClientId) continue;
-            
-            if (this.sendToLocalClient(clientId, message)) {
-                sentCount++;
-            }
+            recipients.push(clientId);
         }
-        
-        this.logger.debug(`Broadcasted to ${sentCount} local clients`);
-        return sentCount;
+
+        if (recipients.length === 0) return 0;
+
+        // For small recipient lists (<=50), send synchronously (no overhead)
+        if (recipients.length <= 50) {
+            let sentCount = 0;
+            for (const clientId of recipients) {
+                if (this.sendToLocalClient(clientId, message)) {
+                    sentCount++;
+                }
+            }
+            this.logger.debug(`Broadcasted to ${sentCount} local clients`);
+            return sentCount;
+        }
+
+        // For large recipient lists, batch with setImmediate to yield event loop
+        const BATCH_SIZE = 50;
+        let sentCount = 0;
+        let index = 0;
+
+        const sendBatch = () => {
+            const end = Math.min(index + BATCH_SIZE, recipients.length);
+            for (; index < end; index++) {
+                if (this.sendToLocalClient(recipients[index], message)) {
+                    sentCount++;
+                }
+            }
+
+            if (index < recipients.length) {
+                setImmediate(sendBatch);
+            } else {
+                this.logger.debug(`Broadcasted to ${sentCount}/${recipients.length} local clients (batched)`);
+            }
+        };
+
+        sendBatch();
+        return recipients.length; // Return expected count (actual may differ due to closed connections)
     }
 
     /**
@@ -560,13 +687,13 @@ class MessageRouter {
      */
     getChannelDistribution() {
         const distribution = {};
-        
+
         for (const client of this.localClients.values()) {
             for (const channel of client.channels) {
                 distribution[channel] = (distribution[channel] || 0) + 1;
             }
         }
-        
+
         return distribution;
     }
 
@@ -575,7 +702,7 @@ class MessageRouter {
      */
     async cleanup() {
         this.logger.info('Cleaning up message router...');
-        
+
         // Unregister all local clients
         const clientIds = Array.from(this.localClients.keys());
         for (const clientId of clientIds) {
@@ -587,7 +714,7 @@ class MessageRouter {
                 }
             }
         }
-        
+
         // Unsubscribe from all Redis channels
         for (const channel of this.subscribedChannels) {
             try {
@@ -598,10 +725,11 @@ class MessageRouter {
                 }
             }
         }
-        
+
         this.localClients.clear();
         this.subscribedChannels.clear();
-        
+        this.channelSequences.clear();
+
         this.logger.info('Message router cleanup completed');
     }
 }

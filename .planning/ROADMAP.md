@@ -7,6 +7,7 @@
 - ✅ **v1.2 Frontend Layer** — Phases 6-10 (shipped 2026-03-10)
 - ✅ **v1.3 User Auth & Identity** — Phases 11-14 (shipped 2026-03-11)
 - ✅ **v1.4 UI Polish & Feature Completeness** — Phases 15-19 (shipped 2026-03-14)
+- 🔧 **v1.5 Production Hardening** — Phases 20-24
 
 ## Phases
 
@@ -63,9 +64,21 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 </details>
 
 
+### v1.5 Production Hardening (Phases 20-24)
+
+- [ ] Phase 20: Error Handling & Observability — Promise rejection handling, metrics health tracking, correlation ID propagation, validation error context (1 plan)
+- [ ] Phase 21: Connection & Subscription Resilience — Atomic subscription restore with rollback, guaranteed disconnect cleanup, JWT secure transport (1 plan)
+- [ ] Phase 22: Broadcast & Ordering — Non-blocking batched broadcast, per-channel sequence numbers for ordering (1 plan)
+- [ ] Phase 23: Resource Management — Bounded session store (LRU), presence race fix, timer tracking, O(n) channel cleanup (1 plan)
+- [ ] Phase 24: Input Validation & Telemetry — Metadata size/key limits, reconnection metrics (1 plan)
+
+**Execution waves:**
+- Wave 1 (parallel): Phase 20, Phase 22 (independent)
+- Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19
+**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -85,3 +98,8 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 | 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 18. Typing Indicators & Presence Polish | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 19. Per-Service Dev Tools | v1.4 | Complete    | 2026-03-14 | 2026-03-14 |
+| 20. Error Handling & Observability | v1.5 | 0/1 | Not started | — |
+| 21. Connection & Subscription Resilience | v1.5 | 0/1 | Not started | — |
+| 22. Broadcast & Ordering | v1.5 | 0/1 | Not started | — |
+| 23. Resource Management | v1.5 | 0/1 | Not started | — |
+| 24. Input Validation & Telemetry | v1.5 | 0/1 | Not started | — |

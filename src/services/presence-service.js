@@ -7,6 +7,33 @@
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 
+const MAX_METADATA_KEYS = 20;
+const MAX_METADATA_SIZE = 4096; // 4KB
+
+function validateMetadata(metadata, logger) {
+    if (!metadata || typeof metadata !== 'object') return {};
+
+    // Limit number of keys
+    const keys = Object.keys(metadata);
+    if (keys.length > MAX_METADATA_KEYS) {
+        logger.warn(`Metadata exceeds key limit: ${keys.length}/${MAX_METADATA_KEYS}`);
+        const truncated = {};
+        for (let i = 0; i < MAX_METADATA_KEYS; i++) {
+            truncated[keys[i]] = metadata[keys[i]];
+        }
+        metadata = truncated;
+    }
+
+    // Limit total serialized size
+    const serialized = JSON.stringify(metadata);
+    if (serialized.length > MAX_METADATA_SIZE) {
+        logger.warn(`Metadata exceeds size limit: ${serialized.length}/${MAX_METADATA_SIZE}`);
+        return { _truncated: true, displayName: metadata.displayName || 'unknown' };
+    }
+
+    return metadata;
+}
+
 class PresenceService {
     constructor(messageRouter, nodeManager, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
@@ -17,7 +44,10 @@ class PresenceService {
         // Local state management
         this.clientPresence = new Map(); // clientId -> presence data
         this.channelPresence = new Map(); // channel -> Map of clientId -> presence
+        this.clientChannels = new Map(); // clientId -> Set of channels (reverse index)
         this.presenceHeartbeatInterval = null;
+        this.isCleaningUp = false; // Mutex flag for cleanup/heartbeat race
+        this.disconnectTimers = new Map(); // clientId -> timer ID for disconnect delays
         this.heartbeatInterval = 30000; // 30 seconds
         this.presenceTimeout = 60000; // 60 seconds before marking as offline
 
@@ -70,6 +100,9 @@ class PresenceService {
             this.sendError(clientId, `Invalid status. Must be one of: ${validStatuses.join(', ')}`);
             return;
         }
+
+        // Validate metadata for size and key count
+        metadata = validateMetadata(metadata, this.logger);
 
         const presenceData = {
             clientId,
@@ -212,22 +245,43 @@ class PresenceService {
     }
 
     async updateChannelPresence(clientId, presenceData, newChannels) {
-        // Remove client from old channels
-        for (const [channel, channelPresenceMap] of this.channelPresence) {
-            if (channelPresenceMap.has(clientId) && !newChannels.includes(channel)) {
-                channelPresenceMap.delete(clientId);
-                if (channelPresenceMap.size === 0) {
-                    this.channelPresence.delete(channel);
+        const oldChannels = this.clientChannels.get(clientId) || new Set();
+        const newChannelSet = new Set(newChannels);
+
+        // Remove from channels no longer in list (O(old_channels))
+        for (const channel of oldChannels) {
+            if (!newChannelSet.has(channel)) {
+                const channelMap = this.channelPresence.get(channel);
+                if (channelMap) {
+                    channelMap.delete(clientId);
+                    if (channelMap.size === 0) this.channelPresence.delete(channel);
                 }
             }
         }
 
-        // Add client to new channels
+        // Add to new channels
         for (const channel of newChannels) {
             if (!this.channelPresence.has(channel)) {
                 this.channelPresence.set(channel, new Map());
             }
             this.channelPresence.get(channel).set(clientId, presenceData);
+        }
+
+        // Update reverse index
+        this.clientChannels.set(clientId, newChannelSet);
+    }
+
+    removeClientFromAllChannels(clientId) {
+        const channels = this.clientChannels.get(clientId);
+        if (channels) {
+            for (const channel of channels) {
+                const channelMap = this.channelPresence.get(channel);
+                if (channelMap) {
+                    channelMap.delete(clientId);
+                    if (channelMap.size === 0) this.channelPresence.delete(channel);
+                }
+            }
+            this.clientChannels.delete(clientId);
         }
     }
 
@@ -308,29 +362,30 @@ class PresenceService {
     }
 
     cleanupStaleClients() {
-        const now = Date.now();
-        let cleaned = 0;
+        if (this.isCleaningUp) return; // Prevent concurrent cleanup
+        this.isCleaningUp = true;
 
-        for (const [clientId, entry] of this.clientPresence.entries()) {
-            if (now - entry.lastHeartbeat > this.STALE_THRESHOLD) {
-                this.clientPresence.delete(clientId);
-                cleaned++;
-                this.logger.debug(`Cleaned up stale presence: ${clientId}`);
+        try {
+            const now = Date.now();
+            // Snapshot keys to avoid iteration-during-mutation
+            const entries = Array.from(this.clientPresence.entries());
+            let cleaned = 0;
 
-                // Remove from all channels
-                for (const [channel, channelPresenceMap] of this.channelPresence) {
-                    if (channelPresenceMap.has(clientId)) {
-                        channelPresenceMap.delete(clientId);
-                        if (channelPresenceMap.size === 0) {
-                            this.channelPresence.delete(channel);
-                        }
-                    }
+            for (const [clientId, entry] of entries) {
+                // Re-check freshness (heartbeat may have updated during iteration)
+                const currentEntry = this.clientPresence.get(clientId);
+                if (!currentEntry || now - currentEntry.lastHeartbeat > this.STALE_THRESHOLD) {
+                    this.clientPresence.delete(clientId);
+                    cleaned++;
+                    this.removeClientFromAllChannels(clientId);
                 }
             }
-        }
 
-        if (cleaned > 0) {
-            this.logger.info(`Presence cleanup: removed ${cleaned} stale clients`);
+            if (cleaned > 0) {
+                this.logger.info(`Presence cleanup: removed ${cleaned} stale clients`);
+            }
+        } finally {
+            this.isCleaningUp = false;
         }
     }
 
@@ -393,23 +448,16 @@ class PresenceService {
         const presenceData = this.clientPresence.get(clientId);
         if (presenceData) {
             await this.setClientOffline(clientId);
-            
+
             // Clean up after a delay to allow for reconnections
-            setTimeout(() => {
+            const timerId = setTimeout(() => {
                 this.clientPresence.delete(clientId);
-                
-                // Remove from all channels
-                for (const [channel, channelPresenceMap] of this.channelPresence) {
-                    if (channelPresenceMap.has(clientId)) {
-                        channelPresenceMap.delete(clientId);
-                        if (channelPresenceMap.size === 0) {
-                            this.channelPresence.delete(channel);
-                        }
-                    }
-                }
+                this.removeClientFromAllChannels(clientId);
+                this.disconnectTimers.delete(clientId);
             }, 5000); // 5 second delay
+            this.disconnectTimers.set(clientId, timerId);
         }
-        
+
         this.logger.debug(`Client ${clientId} disconnected from presence service`);
     }
 
@@ -427,9 +475,16 @@ class PresenceService {
             this.cleanupInterval = null;
         }
 
+        // Clear all disconnect delay timers
+        for (const timerId of this.disconnectTimers.values()) {
+            clearTimeout(timerId);
+        }
+        this.disconnectTimers.clear();
+
         // Clear all data
         this.clientPresence.clear();
         this.channelPresence.clear();
+        this.clientChannels.clear();
 
         this.logger.info('Presence service shutdown complete');
     }
