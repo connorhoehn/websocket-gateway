@@ -104,10 +104,10 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
   2. The social-api Express service starts locally and responds to `GET /health` with 200
   3. A request to any social-api route without a valid Cognito JWT is rejected with 401
   4. A request with a valid Cognito JWT passes auth middleware and reaches the route handler
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 25-01: CDK social-stack with 9 DynamoDB tables and social-api Express service scaffold with Cognito auth middleware
+- [ ] 25-01-PLAN.md — CDK social-stack with 9 DynamoDB tables + social-api Express service with Cognito auth middleware
 
 ### Phase 26: User Profiles & Social Graph
 **Goal**: Users can manage their own social profile and build a social graph by following and unfollowing other users, with mutual follows surfacing as friendships
