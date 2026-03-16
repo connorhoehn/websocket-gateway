@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
-status: ready_to_plan
-stopped_at: Roadmap created — ready to plan Phase 25
-last_updated: "2026-03-16"
-last_activity: "2026-03-16 — v2.0 roadmap created (phases 25-32)"
+status: planning
+stopped_at: Completed 25-social-infrastructure-25-01-PLAN.md
+last_updated: "2026-03-16T20:26:42.116Z"
+last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 0
-  total_plans: 14
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | 06-10 | 13 | — | ~97-212s |
 | 11-14 | 8 | — | ~21-217s |
 | 15-19 | 7 | — | ~2-109s |
+| Phase 25-social-infrastructure P01 | 127 | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,9 @@ Key decisions affecting v2.0 work:
 - [v2.0 arch]: All social DynamoDB tables keyed on Cognito `sub` for cross-app referential integrity
 - [v2.0 arch]: Rooms map to WebSocket channel IDs — gateway extended with social event types, not replaced
 - [v2.0 frontend]: Borrow patterns from `../threaded_discussions` UI for React hooks and components
+- [Phase 25-social-infrastructure]: SocialStack: PAY_PER_REQUEST + RemovalPolicy.RETAIN for all 9 DynamoDB tables
+- [Phase 25-social-infrastructure]: social-api: express.d.ts force-added past *.d.ts gitignore — module augmentation is a source file
+- [Phase 25-social-infrastructure]: social-api: /health route mounted before requireAuth — health endpoint publicly accessible
 
 ### Pending Todos
 
@@ -73,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16
-Stopped at: Roadmap created — Phase 25 ready to plan
+Last session: 2026-03-16T20:26:42.114Z
+Stopped at: Completed 25-social-infrastructure-25-01-PLAN.md
 Resume file: None
