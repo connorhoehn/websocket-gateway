@@ -1,81 +1,131 @@
-# Requirements: WebSocket Gateway
+# Requirements: WebSocket Gateway — Social Platform
 
-**Defined:** 2026-03-12
-**Core Value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
+**Defined:** 2026-03-16
+**Core Value:** Real-time collaborative platform with Cognito-keyed social layer (profiles, groups, rooms, posts, reactions) designed for cross-app reuse and referential integrity.
 
-## v1.4 Requirements
+## v2.0 Requirements
 
-### Cleanup
+### Profiles
 
-- [x] **CLEAN-01**: Repo is free of HTML test clients (`test/clients/*.html`) and standalone SDK files (`websocket-gateway-sdk.js`, `.css`)
-- [x] **CLEAN-02**: `frontend/dist/` is gitignored and not committed to the repo
-- [x] **CLEAN-03**: Empty placeholder file (`test-client-sdk.html`) is deleted
+- [ ] **PROF-01**: User can create a social profile with display name, bio, and avatar URL backed by their Cognito `sub`
+- [ ] **PROF-02**: User can update their profile display name, bio, and avatar URL
+- [ ] **PROF-03**: User can view their own profile
+- [ ] **PROF-04**: User can view another user's public profile
+- [ ] **PROF-05**: User can set their profile visibility (public / private)
 
-### Layout & UI
+### Social Graph
 
-- [x] **UI-01**: App renders a clean, structured layout with distinct sections for each feature (chat, presence, cursors, reactions, CRDT) — not a stacked dev-panel dump
-- [x] **UI-02**: Auth screens (login/signup) are clean and production-quality
-- [x] **UI-03**: Connection status and channel selector are integrated cleanly into the layout (not floating UI elements)
-- [x] **UI-04**: All collaborative feature components are reusable (no App.tsx-specific coupling preventing reuse elsewhere)
+- [ ] **SOCL-01**: User can follow another user
+- [ ] **SOCL-02**: User can unfollow a user
+- [ ] **SOCL-03**: Mutual follows (both following each other) surface as a "friends" relationship
+- [ ] **SOCL-04**: User can view their list of followers
+- [ ] **SOCL-05**: User can view who they follow
+- [ ] **SOCL-06**: User can view their mutual friends
+
+### Groups
+
+- [ ] **GRUP-01**: User can create a group with name and description
+- [ ] **GRUP-02**: User can delete a group they own
+- [ ] **GRUP-03**: Group owner/admin can invite users to a group by Cognito userId
+- [ ] **GRUP-04**: User can accept or decline a group invitation
+- [ ] **GRUP-05**: User can set group visibility (public / private)
+- [ ] **GRUP-06**: User can join a public group without invitation
+- [ ] **GRUP-07**: User can leave a group they're a member of
+- [ ] **GRUP-08**: Group members have roles (owner / admin / member) with appropriate permission boundaries
+- [ ] **GRUP-09**: User can view group members and their roles
+
+### Rooms
+
+- [ ] **ROOM-01**: User can create a standalone room with a name
+- [ ] **ROOM-02**: Group owner/admin can create rooms scoped within a group
+- [ ] **ROOM-03**: Two mutual friends can open a direct-message (DM) room
+- [ ] **ROOM-04**: Room membership is persisted in DynamoDB keyed on Cognito `sub` for referential integrity
+- [ ] **ROOM-05**: Each room maps to a WebSocket channel ID so real-time events are delivered to members
+- [ ] **ROOM-06**: User can view the member list of a room they belong to
+- [ ] **ROOM-07**: Room maintains persistent post history in DynamoDB (beyond LRU cache)
+- [ ] **ROOM-08**: User can list all rooms they are a member of
+
+### Content
+
+- [ ] **CONT-01**: User can create a text post in a room
+- [ ] **CONT-02**: User can edit their own post
+- [ ] **CONT-03**: User can delete their own post
+- [ ] **CONT-04**: User can view a paginated post feed for a room
+- [ ] **CONT-05**: User can view all posts by a specific user
+- [ ] **CONT-06**: User can comment on a post
+- [ ] **CONT-07**: User can reply to an existing comment (threaded / nested)
+- [ ] **CONT-08**: User can delete their own comment
 
 ### Reactions
 
-- [x] **REACT-01**: ReactionsOverlay supports all 12 emoji types: ❤️ 😂 👍 👎 😮 😢 😡 🎉 🔥 ⚡ 💯 🚀
-- [x] **REACT-02**: Each emoji type has a distinct CSS animation (pulse, shake, bounce, confetti, flicker, fly-up, spin, etc.)
-- [x] **REACT-03**: ReactionButtons displays all 12 emojis in a clean picker grid
+- [ ] **REAC-01**: User can like a post (like stored with attribution — Cognito `sub` of liker)
+- [ ] **REAC-02**: User can unlike a post they previously liked
+- [ ] **REAC-03**: User can like a comment with attribution
+- [ ] **REAC-04**: User can unlike a comment
+- [ ] **REAC-05**: User can react to a post with an emoji (reuses the existing 12-emoji system)
+- [ ] **REAC-06**: User can view the total like count and the list of users who liked a post
 
-### Presence & Typing
+### Real-time
 
-- [ ] **PRES-01**: Typing indicator is visibly displayed in the chat panel (e.g. "Alice is typing…")
-- [ ] **PRES-02**: Typing indicator is also reflected in the presence/user list panel
-
-### Dev Tools
-
-- [x] **DEV-01**: EventLog is split into per-service tabs: Chat / Presence / Cursors / Reactions / System
-- [x] **DEV-02**: Each service tab shows only its own messages with correct timestamps
-- [x] **DEV-03**: Disconnect/reconnect controls remain accessible in the dev tools section
+- [ ] **RTIM-01**: New posts in a room are broadcast via WebSocket to all room members
+- [ ] **RTIM-02**: New comments on a post are broadcast via WebSocket to room members
+- [ ] **RTIM-03**: New likes are broadcast via WebSocket to room members
+- [ ] **RTIM-04**: Room member join and leave events are broadcast via WebSocket to existing members
 
 ## Future Requirements
 
-### SDK
+### Notifications
 
-- **SDK-01**: Standalone JavaScript/TypeScript SDK that wraps the WebSocket protocol — distributable as npm package
-- **SDK-02**: SDK exposes typed event emitters for each service (chat, presence, cursors, reactions, CRDT)
-- **SDK-03**: SDK works in both browser and Node.js environments
+- **NOTF-01**: User receives in-app notification when followed
+- **NOTF-02**: User receives notification when mentioned in a comment
+- **NOTF-03**: User can configure notification preferences per room
+
+### Moderation
+
+- **MODR-01**: User can report a post or comment
+- **MODR-02**: User can block another user
+- **MODR-03**: Group admin can remove a member from a group
+- **MODR-04**: Group admin can delete posts in their group
+
+### Media
+
+- **MDIA-01**: User can attach an image to a post (S3 presigned URL upload)
+- **MDIA-02**: Thumbnail generated on upload
+
+### Search
+
+- **SRCH-01**: User can search posts by keyword across rooms they're a member of
+- **SRCH-02**: User can search for users by display name
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Mobile native apps | Web-first, mobile later |
-| Lambda/AppSync pub/sub | Per-message pricing cost-prohibitive at scale |
-| Video/audio calling | Out of domain for this gateway |
+| Video/audio rooms | High infrastructure complexity; defer to v3+ |
+| OAuth social login (Google, Apple) | Cognito email/password is sufficient for v2.0 |
+| Push notifications (mobile/email) | Not a web-first priority; v3+ |
+| End-to-end encryption for DMs | Complex key management; out of scope for now |
+| v1.5 Production Hardening (phases 20-24) | Deferred — address in a future dedicated pass once social layer ships |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLEAN-01 | Phase 15 | Complete |
-| CLEAN-02 | Phase 15 | Complete |
-| CLEAN-03 | Phase 15 | Complete |
-| UI-01 | Phase 17 | Complete |
-| UI-02 | Phase 17 | Complete |
-| UI-03 | Phase 17 | Complete |
-| UI-04 | Phase 17 | Complete |
-| REACT-01 | Phase 16 | Complete |
-| REACT-02 | Phase 16 | Complete |
-| REACT-03 | Phase 16 | Complete |
-| PRES-01 | Phase 18 | Pending |
-| PRES-02 | Phase 18 | Pending |
-| DEV-01 | Phase 19 | Complete |
-| DEV-02 | Phase 19 | Complete |
-| DEV-03 | Phase 19 | Complete |
+| PROF-01–05 | Phase 26 | Pending |
+| SOCL-01–06 | Phase 26 | Pending |
+| GRUP-01–09 | Phase 27 | Pending |
+| ROOM-01–08 | Phase 28 | Pending |
+| CONT-01–08 | Phase 29 | Pending |
+| REAC-01–06 | Phase 30 | Pending |
+| RTIM-01–04 | Phase 31 | Pending |
 
 **Coverage:**
-- v1.4 requirements: 15 total
-- Mapped to phases: 15
+- v2.0 requirements: 38 total
+- Mapped to phases: 38
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 — traceability populated after roadmap creation*
+*Requirements defined: 2026-03-16*
+*Last updated: 2026-03-16 after initial definition*
