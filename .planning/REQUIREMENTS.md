@@ -113,19 +113,58 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROF-01–05 | Phase 26 | Pending |
-| SOCL-01–06 | Phase 26 | Pending |
-| GRUP-01–09 | Phase 27 | Pending |
-| ROOM-01–08 | Phase 28 | Pending |
-| CONT-01–08 | Phase 29 | Pending |
-| REAC-01–06 | Phase 30 | Pending |
-| RTIM-01–04 | Phase 31 | Pending |
+| PROF-01 | Phase 26 | Pending |
+| PROF-02 | Phase 26 | Pending |
+| PROF-03 | Phase 26 | Pending |
+| PROF-04 | Phase 26 | Pending |
+| PROF-05 | Phase 26 | Pending |
+| SOCL-01 | Phase 26 | Pending |
+| SOCL-02 | Phase 26 | Pending |
+| SOCL-03 | Phase 26 | Pending |
+| SOCL-04 | Phase 26 | Pending |
+| SOCL-05 | Phase 26 | Pending |
+| SOCL-06 | Phase 26 | Pending |
+| GRUP-01 | Phase 27 | Pending |
+| GRUP-02 | Phase 27 | Pending |
+| GRUP-03 | Phase 27 | Pending |
+| GRUP-04 | Phase 27 | Pending |
+| GRUP-05 | Phase 27 | Pending |
+| GRUP-06 | Phase 27 | Pending |
+| GRUP-07 | Phase 27 | Pending |
+| GRUP-08 | Phase 27 | Pending |
+| GRUP-09 | Phase 27 | Pending |
+| ROOM-01 | Phase 28 | Pending |
+| ROOM-02 | Phase 28 | Pending |
+| ROOM-03 | Phase 28 | Pending |
+| ROOM-04 | Phase 28 | Pending |
+| ROOM-05 | Phase 28 | Pending |
+| ROOM-06 | Phase 28 | Pending |
+| ROOM-07 | Phase 28 | Pending |
+| ROOM-08 | Phase 28 | Pending |
+| CONT-01 | Phase 29 | Pending |
+| CONT-02 | Phase 29 | Pending |
+| CONT-03 | Phase 29 | Pending |
+| CONT-04 | Phase 29 | Pending |
+| CONT-05 | Phase 29 | Pending |
+| CONT-06 | Phase 29 | Pending |
+| CONT-07 | Phase 29 | Pending |
+| CONT-08 | Phase 29 | Pending |
+| REAC-01 | Phase 30 | Pending |
+| REAC-02 | Phase 30 | Pending |
+| REAC-03 | Phase 30 | Pending |
+| REAC-04 | Phase 30 | Pending |
+| REAC-05 | Phase 30 | Pending |
+| REAC-06 | Phase 30 | Pending |
+| RTIM-01 | Phase 31 | Pending |
+| RTIM-02 | Phase 31 | Pending |
+| RTIM-03 | Phase 31 | Pending |
+| RTIM-04 | Phase 31 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 38 total
-- Mapped to phases: 38
+- Mapped to phases: 38 (phases 26-31; phase 25 is infrastructure, phase 32 is UI delivery)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-16 after initial definition*
+*Last updated: 2026-03-16 — traceability updated after roadmap creation (phases 25-32)*

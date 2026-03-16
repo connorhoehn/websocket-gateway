@@ -7,7 +7,8 @@
 - ✅ **v1.2 Frontend Layer** — Phases 6-10 (shipped 2026-03-10)
 - ✅ **v1.3 User Auth & Identity** — Phases 11-14 (shipped 2026-03-11)
 - ✅ **v1.4 UI Polish & Feature Completeness** — Phases 15-19 (shipped 2026-03-14)
-- 🔧 **v1.5 Production Hardening** — Phases 20-24
+- 🔧 **v1.5 Production Hardening** — Phases 20-24 (Deferred — skipped in favor of v2.0)
+- 🚧 **v2.0 Social Platform** — Phases 25-32 (in progress)
 
 ## Phases
 
@@ -64,7 +65,9 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 </details>
 
 
-### v1.5 Production Hardening (Phases 20-24)
+### 🔧 v1.5 Production Hardening (Phases 20-24) — DEFERRED
+
+> Deferred in favor of v2.0 Social Platform. Address in a future dedicated hardening pass once the social layer ships.
 
 - [ ] Phase 20: Error Handling & Observability — Promise rejection handling, metrics health tracking, correlation ID propagation, validation error context (1 plan)
 - [ ] Phase 21: Connection & Subscription Resilience — Atomic subscription restore with rollback, guaranteed disconnect cleanup, JWT secure transport (1 plan)
@@ -76,9 +79,149 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - Wave 1 (parallel): Phase 20, Phase 22 (independent)
 - Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
 
+
+### 🚧 v2.0 Social Platform (Phases 25-32)
+
+**Milestone Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, likes with attribution, and real-time broadcast of social events to room members — all keyed on Cognito `sub` for referential integrity and cross-app reuse.
+
+- [ ] **Phase 25: Social Infrastructure** — New CDK social-stack, all 9 DynamoDB tables, Express social-api base with Cognito auth middleware
+- [ ] **Phase 26: User Profiles & Social Graph** — Profile CRUD endpoints and follow/unfollow/friends REST API
+- [ ] **Phase 27: Groups** — Group CRUD, membership management, roles, visibility, and invitations
+- [ ] **Phase 28: Rooms** — Standalone, group-scoped, and DM room CRUD, membership, and WS channel mapping
+- [ ] **Phase 29: Posts & Comments** — Text posts in rooms, threaded comments, post feed, and user post history
+- [ ] **Phase 30: Reactions & Likes** — Like with attribution, unlike, emoji reactions, and who-liked
+- [ ] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members
+- [ ] **Phase 32: Frontend Social Layer** — React hooks and UI components for the complete social feature set
+
+## Phase Details
+
+### Phase 25: Social Infrastructure
+**Goal**: A deployable social-api service with all DynamoDB tables and Cognito-authenticated base routing exists and is reachable — the foundation every subsequent phase builds on
+**Depends on**: Phase 19 (existing gateway and Cognito auth middleware)
+**Requirements**: None (infrastructure foundation — enables PROF, SOCL, GRUP, ROOM, CONT, REAC, RTIM)
+**Success Criteria** (what must be TRUE):
+  1. `cdk deploy social-stack` succeeds and all 9 DynamoDB tables (social-profiles, social-relationships, social-groups, social-group-members, social-rooms, social-room-members, social-posts, social-comments, social-likes) are visible in the AWS console
+  2. The social-api Express service starts locally and responds to `GET /health` with 200
+  3. A request to any social-api route without a valid Cognito JWT is rejected with 401
+  4. A request with a valid Cognito JWT passes auth middleware and reaches the route handler
+**Plans**: TBD
+
+Plans:
+- [ ] 25-01: CDK social-stack with 9 DynamoDB tables and social-api Express service scaffold with Cognito auth middleware
+
+### Phase 26: User Profiles & Social Graph
+**Goal**: Users can manage their own social profile and build a social graph by following and unfollowing other users, with mutual follows surfacing as friendships
+**Depends on**: Phase 25
+**Requirements**: PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, SOCL-01, SOCL-02, SOCL-03, SOCL-04, SOCL-05, SOCL-06
+**Success Criteria** (what must be TRUE):
+  1. User can create a profile with display name, bio, and avatar URL; the profile is stored under their Cognito `sub`
+  2. User can update their own profile fields and retrieve the updated values immediately
+  3. User can view another user's public profile; a private profile returns 404 or 403 for non-friends
+  4. User can follow another user and the follow relationship is persisted; unfollowing removes it
+  5. Two users who follow each other both appear in each other's friends list
+**Plans**: TBD
+
+Plans:
+- [ ] 26-01: Profile CRUD REST endpoints (POST/GET/PUT /profiles, visibility toggle)
+- [ ] 26-02: Follow/unfollow/friends REST endpoints (followers, following, mutual friends)
+
+### Phase 27: Groups
+**Goal**: Users can create and manage groups with role-based membership, visibility controls, and invitation flows
+**Depends on**: Phase 26
+**Requirements**: GRUP-01, GRUP-02, GRUP-03, GRUP-04, GRUP-05, GRUP-06, GRUP-07, GRUP-08, GRUP-09
+**Success Criteria** (what must be TRUE):
+  1. User can create a group, becoming its owner; the owner can delete the group
+  2. Owner or admin can invite a user by Cognito userId; the invited user can accept or decline
+  3. A public group is joinable without invitation; a private group requires invitation
+  4. A member can leave a group; their membership is removed from the member list
+  5. Group member list shows each member's role (owner / admin / member) and enforces that only owner/admin can invite
+**Plans**: TBD
+
+Plans:
+- [ ] 27-01: Group CRUD and visibility REST endpoints (create, delete, update visibility)
+- [ ] 27-02: Membership management REST endpoints (invite, accept/decline, join, leave, list members with roles)
+
+### Phase 28: Rooms
+**Goal**: Users can create standalone rooms, group sub-rooms, and DM rooms; membership and WebSocket channel mapping are persisted so real-time events can be delivered to members
+**Depends on**: Phase 27
+**Requirements**: ROOM-01, ROOM-02, ROOM-03, ROOM-04, ROOM-05, ROOM-06, ROOM-07, ROOM-08
+**Success Criteria** (what must be TRUE):
+  1. User can create a standalone room by name; the room record appears in DynamoDB keyed on Cognito `sub`
+  2. Group owner/admin can create a room scoped to their group; non-admins cannot
+  3. Two mutual friends can open a DM room; the room is not created if they are not mutual friends
+  4. Each room record contains a WebSocket channel ID that the gateway can route events to
+  5. User can list all rooms they are a member of and view the member list for any room they belong to
+**Plans**: TBD
+
+Plans:
+- [ ] 28-01: Room CRUD REST endpoints (standalone, group-scoped, DM) with DynamoDB persistence
+- [ ] 28-02: Room membership REST endpoints (join, list members, list my rooms) and WS channel ID mapping
+
+### Phase 29: Posts & Comments
+**Goal**: Users can create, edit, delete, and read text posts in rooms, and hold threaded comment conversations on those posts
+**Depends on**: Phase 28
+**Requirements**: CONT-01, CONT-02, CONT-03, CONT-04, CONT-05, CONT-06, CONT-07, CONT-08
+**Success Criteria** (what must be TRUE):
+  1. User can create a text post in a room they are a member of; non-members are rejected
+  2. User can edit or delete their own post; they cannot edit or delete another user's post
+  3. User can retrieve a paginated post feed for a room, with the most recent posts first
+  4. User can view all posts authored by a specific user
+  5. User can comment on a post and reply to an existing comment (nested thread); user can delete their own comment
+**Plans**: TBD
+
+Plans:
+- [ ] 29-01: Post REST endpoints (create, edit, delete, paginated room feed, user post history)
+- [ ] 29-02: Comment REST endpoints (create comment, reply to comment, delete comment)
+
+### Phase 30: Reactions & Likes
+**Goal**: Users can like and unlike posts and comments with attribution, react with emoji, and see who has liked a post
+**Depends on**: Phase 29
+**Requirements**: REAC-01, REAC-02, REAC-03, REAC-04, REAC-05, REAC-06
+**Success Criteria** (what must be TRUE):
+  1. User can like a post; the like is stored with their Cognito `sub` as attribution
+  2. User can unlike a post they previously liked; the like record is removed
+  3. User can like and unlike a comment with the same attribution behavior
+  4. User can react to a post with one of the 12 supported emoji types
+  5. User can retrieve the total like count and the list of user display names who liked a post
+**Plans**: TBD
+
+Plans:
+- [ ] 30-01: Like/unlike REST endpoints for posts and comments with attribution (who-liked endpoint)
+- [ ] 30-02: Emoji reaction REST endpoints (post-level, reuses 12-emoji system)
+
+### Phase 31: Real-time Integration
+**Goal**: Social events (new posts, comments, likes, member join/leave) are broadcast in real-time via the existing WebSocket gateway to all room members
+**Depends on**: Phase 30
+**Requirements**: RTIM-01, RTIM-02, RTIM-03, RTIM-04
+**Success Criteria** (what must be TRUE):
+  1. When a user posts in a room, all other connected room members receive a `social:post` WebSocket event within 50ms
+  2. When a comment is created on a post, connected room members receive a `social:comment` event
+  3. When a like is recorded, connected room members receive a `social:like` event
+  4. When a user joins or leaves a room, existing connected members receive a `social:member_joined` or `social:member_left` event
+**Plans**: TBD
+
+Plans:
+- [ ] 31-01: Extend WebSocket gateway with social event types and social-api integration for broadcasting to room channel members
+
+### Phase 32: Frontend Social Layer
+**Goal**: Users can interact with all social features through a React UI — profiles, friends, groups, rooms, posts, comments, and likes — built with reusable hooks and components
+**Depends on**: Phase 31
+**Requirements**: (UI delivery of PROF-01–05, SOCL-01–06, GRUP-01–09, ROOM-01–08, CONT-01–08, REAC-01–06, RTIM-01–04)
+**Success Criteria** (what must be TRUE):
+  1. User can view and edit their social profile via a ProfileCard component in the UI
+  2. User can follow/unfollow users and see their friends list in a FriendsList component
+  3. User can create and join groups and rooms, navigate between them in the GroupPanel and RoomList components
+  4. User can read and write posts and threaded comments in the PostFeed and CommentThread components
+  5. User can like posts and comments via a LikeButton component; real-time social events update the UI without a page refresh
+**Plans**: TBD
+
+Plans:
+- [ ] 32-01: React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes)
+- [ ] 32-02: UI components (ProfileCard, FriendsList, GroupPanel, RoomList, PostFeed, CommentThread, LikeButton)
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22 → 23 → 24
+**Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -97,9 +240,17 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 | 16. Reaction Animations | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 18. Typing Indicators & Presence Polish | v1.4 | 1/1 | Complete | 2026-03-12 |
-| 19. Per-Service Dev Tools | v1.4 | Complete    | 2026-03-14 | 2026-03-14 |
-| 20. Error Handling & Observability | v1.5 | 0/1 | Not started | — |
-| 21. Connection & Subscription Resilience | v1.5 | 0/1 | Not started | — |
-| 22. Broadcast & Ordering | v1.5 | 0/1 | Not started | — |
-| 23. Resource Management | v1.5 | 0/1 | Not started | — |
-| 24. Input Validation & Telemetry | v1.5 | 0/1 | Not started | — |
+| 19. Per-Service Dev Tools | v1.4 | 2/2 | Complete | 2026-03-14 |
+| 20. Error Handling & Observability | v1.5 | 0/1 | Deferred | — |
+| 21. Connection & Subscription Resilience | v1.5 | 0/1 | Deferred | — |
+| 22. Broadcast & Ordering | v1.5 | 0/1 | Deferred | — |
+| 23. Resource Management | v1.5 | 0/1 | Deferred | — |
+| 24. Input Validation & Telemetry | v1.5 | 0/1 | Deferred | — |
+| 25. Social Infrastructure | v2.0 | 0/1 | Not started | — |
+| 26. User Profiles & Social Graph | v2.0 | 0/2 | Not started | — |
+| 27. Groups | v2.0 | 0/2 | Not started | — |
+| 28. Rooms | v2.0 | 0/2 | Not started | — |
+| 29. Posts & Comments | v2.0 | 0/2 | Not started | — |
+| 30. Reactions & Likes | v2.0 | 0/2 | Not started | — |
+| 31. Real-time Integration | v2.0 | 0/1 | Not started | — |
+| 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |

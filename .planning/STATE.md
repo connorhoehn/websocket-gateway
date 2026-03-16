@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
-status: planning
-stopped_at: Defining requirements
+status: ready_to_plan
+stopped_at: Roadmap created — ready to plan Phase 25
 last_updated: "2026-03-16"
-last_activity: "2026-03-16 — Milestone v2.0 started (v1.5 deferred)"
+last_activity: "2026-03-16 — v2.0 roadmap created (phases 25-32)"
 progress:
-  total_phases: 0
+  total_phases: 8
   completed_phases: 0
-  total_plans: 0
+  total_plans: 14
   completed_plans: 0
   percent: 0
 ---
@@ -21,21 +21,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-16)
 
 **Core value:** Real-time collaborative platform with low-cost pub/sub and full social layer (profiles, groups, rooms, posts, reactions) — all Cognito-keyed for cross-app reuse.
-**Current focus:** v2.0 — Social Platform
+**Current focus:** v2.0 — Social Platform, Phase 25: Social Infrastructure
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-16 — Milestone v2.0 started (v1.5 Production Hardening deferred)
+Phase: 25 of 32 (Social Infrastructure)
+Plan: 0 of 1 in current phase
+Status: Ready to plan
+Last activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 
-Progress: [░░░░░░░░░░░░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (v2.0 phases)
 
 ## Performance Metrics
 
 **Velocity (prior milestones):**
-- Total plans completed: 25 (across v1.0–v1.3)
+- Total plans completed: 25 (across v1.0–v1.4)
 - Average duration: ~5 min
 - Total execution time: ~2 hours
 
@@ -47,35 +47,21 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0%
 | 05 | 4 | 1451s | 363s |
 | 06-10 | 13 | — | ~97-212s |
 | 11-14 | 8 | — | ~21-217s |
-| Phase 15-cleanup P01 | 1 | 2 tasks | 5 files |
-| Phase 16 P01 | 67 | 2 tasks | 2 files |
-| Phase 17-ui-layout-and-polish P01 | 68 | 1 tasks | 1 files |
-| Phase 17-ui-layout-and-polish P02 | 109 | 3 tasks | 3 files |
-| Phase 19 P01 | 4 | 2 tasks | 1 files |
-| Phase 19 P02 | 42 | 2 tasks | 1 files |
+| 15-19 | 7 | — | ~2-109s |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Key decisions affecting v1.4 work:
+Key decisions affecting v2.0 work:
 
-- [Phase 10]: ReactionsOverlay embeds @keyframes via JSX style tag — no external CSS, consistent with app inline-style convention
-- [Phase 10]: loggedSendMessage wraps sendMessage for outbound traffic in EventLog without changing hook APIs
-- [Phase 14]: setTyping wired via onTyping prop to ChatPanel — 2s debounce + clear-on-send; typing broadcast is end-to-end
-- [Phase 11]: Pure presentational LoginForm/SignupForm — auth state via props, no internal hook calls
-- [Phase 12]: Shared identity.ts utility — identityToColor/identityToInitials, single source of truth
-- [Phase 15-cleanup]: Used git rm to stage deletions for clean history; frontend/.gitignore dist rule already covers frontend/dist/
-- [Phase 16]: 12-emoji grid uses repeat(4, 1fr) for 4x3 layout
-- [Phase 16]: All @keyframes remain in JSX style tag per Phase 10 convention
-- [Phase 16]: EMOJI_ANIMATIONS map at module level with DEFAULT_ANIMATION fallback for unknown emoji types
-- [Phase 17-01]: AppLayout uses EphemeralReaction/RemoteCursor (actual hook exports) not ActiveReaction/CursorData from plan description
-- [Phase 17-01]: Section headers use <p> tags with sectionHeaderStyle constant to avoid h-tag semantic conflicts with inner component headers
-- [Phase 17-02]: Auth screen outer wrapper uses flexDirection: column to stack brand header above card
-- [Phase 17-02]: background #f8fafc matches AppLayout body — consistent across auth and app screens
-- [Phase 19]: Service-type filtering uses .startsWith() for namespaced types (chat:, reactions:)
-- [Phase 19]: System tab designed as catch-all for error, session, and unmatched types
+- [v2.0 start]: v1.5 Production Hardening (phases 20-24) deferred — social layer ships first
+- [v2.0 arch]: New `social-api` Express service in separate CDK stack (`lib/social-stack.ts`)
+- [v2.0 arch]: Cognito auth middleware reused from existing gateway — no new auth implementation
+- [v2.0 arch]: All social DynamoDB tables keyed on Cognito `sub` for cross-app referential integrity
+- [v2.0 arch]: Rooms map to WebSocket channel IDs — gateway extended with social event types, not replaced
+- [v2.0 frontend]: Borrow patterns from `../threaded_discussions` UI for React hooks and components
 
 ### Pending Todos
 
@@ -87,6 +73,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T04:07:05.606Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-03-16
+Stopped at: Roadmap created — Phase 25 ready to plan
 Resume file: None
