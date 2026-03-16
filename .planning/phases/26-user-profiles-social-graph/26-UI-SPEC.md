@@ -130,7 +130,7 @@ Renders a single user's profile in expanded view.
 
 ### FollowButton
 
-Stateful button with 3 visual states. Height 36px, border-radius 6px.
+Stateful button with 3 visual states. Height 36px, border-radius 8px.
 
 | State | Background | Text | Border |
 |-------|-----------|------|--------|
@@ -179,7 +179,7 @@ Visible only in demo mode. Positioned below the page header.
 | Border | `1px solid #fde68a` (amber-200) |
 | Text | "Demo mode — using mock data. Connect to the social API to go live." — 14px, `#92400e` |
 | Padding | 8px 16px |
-| Border-radius | 6px |
+| Border-radius | 8px |
 
 **Note:** Yellow warning banner is the only color not in the existing palette.
 It is scoped exclusively to the demo mode indicator and must not bleed into
@@ -240,9 +240,9 @@ friendsCount: 18
 1. User clicks "Following" button.
 2. Inline confirmation appears directly beneath the button — NOT a modal.
    - Text: "Unfollow Jordan Rivera?" (14px, `#374151`)
-   - Two buttons side by side: "Cancel" (bordered, `#374151`) and "Unfollow" (background `#dc2626`, white text).
+   - Two buttons side by side: "Keep Following" (bordered, `#374151`) and "Unfollow" (background `#dc2626`, white text).
    - Confirmation row height: 36px, gap: 8px.
-3. "Cancel" dismisses without action. "Unfollow" fires the unfollow action.
+3. "Keep Following" dismisses without action. "Unfollow" fires the unfollow action.
 4. After unfollow: button returns to "Follow" state; followers count decrements.
 
 ### Profile edit (own profile only)
@@ -252,7 +252,7 @@ friendsCount: 18
 3. Fields: Display name (input, max 50 chars), Bio (textarea, max 160 chars), Avatar URL (input).
 4. Visibility toggle: "Public / Private" — two-state pill toggle, active pill `#646cff` background white text.
 5. "Save changes" button (primary, `#646cff`, full width of card).
-6. "Cancel" link (14px, `#64748b`) beside Save.
+6. "Discard Changes" link (14px, `#64748b`) beside Save.
 7. Mock save: 300ms setTimeout, then close form, show updated values.
 
 ### Tab switching (SocialGraph Panel)
@@ -307,10 +307,10 @@ Section header: "Social Profile" — 12px, weight 600, uppercase, letter-spacing
 | Primary CTA (save profile) | "Save Changes" |
 | Following state label | "Following" |
 | Unfollow confirmation heading | "Unfollow {displayName}?" |
-| Cancel unfollow | "Cancel" |
+| Cancel unfollow | "Keep Following" |
 | Confirm unfollow | "Unfollow" |
 | Edit trigger | "Edit profile" |
-| Cancel edit | "Cancel" |
+| Cancel edit | "Discard Changes" |
 | Empty state — Followers tab heading | "No followers yet" |
 | Empty state — Followers tab body | "When someone follows you, they'll appear here." |
 | Empty state — Following tab heading | "Not following anyone yet" |
