@@ -1,19 +1,26 @@
-# WebSocket Gateway - AWS Migration & Hardening
+# WebSocket Gateway — Social Platform
 
-## Current Milestone: v1.5 Production Hardening
+## Current Milestone: v2.0 Social Platform
 
-**Goal:** Fix reliability issues, resource leaks, and observability gaps that will break under production load or multi-node failure scenarios.
+**Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, and likes with attribution — all keyed on Cognito `sub` for referential integrity and reuse across other apps.
 
-**Target fixes:**
-- Error handling: catch all unhandled promise rejections, track metrics health, propagate correlation IDs
-- Connection resilience: atomic subscription restore with rollback, guaranteed disconnect cleanup, secure JWT transport
-- Broadcast: non-blocking batched sends, per-channel sequence numbers for ordering
-- Resource management: bounded session store, race-safe presence cleanup, timer lifecycle tracking
-- Validation & telemetry: metadata size limits, reconnection metrics
+**Target features:**
+- Social profiles: Cognito-backed user profiles with bio and avatar
+- Social graph: follow (asymmetric) + mutual follow = friends
+- Groups: user-created spaces with membership, roles, and visibility
+- Rooms: standalone rooms, group sub-rooms, and DM rooms between mutual friends — all persisted in DynamoDB and mapped to WebSocket channels
+- Posts & threaded comments: text posts in rooms with nested comment threading
+- Reactions & likes: emoji reactions + like attribution (who liked, unlike support)
+- Real-time social events: new posts, comments, and likes broadcast via WebSocket to room members
+
+**Architecture:**
+- New `social-api` Express service (separate CDK stack) with REST endpoints
+- New DynamoDB tables with Cognito `sub` as FK — designed for cross-app reuse
+- Existing WebSocket gateway extended with social event types for real-time delivery
 
 ## What This Is
 
-A production-ready distributed real-time WebSocket gateway deployed on AWS ECS Fargate. Provides secure, monitored pub/sub for collaborative features (cursor tracking, presence, CRDT operations, and chat) with <50ms latency at low cost ($100-150/mo).
+A real-time collaborative platform combining a production WebSocket gateway with a full social layer. The gateway provides low-cost, high-frequency pub/sub for real-time events; the social API provides persistent social graph, group/room management, and content storage — all tightly coupled to AWS Cognito for identity and referential integrity.
 
 ## Core Value
 
@@ -107,15 +114,26 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 - ✓ Silent token refresh triggers gateway reconnect with updated JWT — v1.3
 - ✓ Local user typing indicator broadcast wired end-to-end — v1.3
 
-### Active
-
 <!-- v1.4: UI Polish & Feature Completeness -->
 
-- [ ] Remove all HTML test clients and standalone SDK files from repo — v1.4
-- [ ] React app renders all collaborative features in a clean, production-quality layout — v1.4
-- [ ] Reaction overlay supports 12 emoji types with distinct CSS animations — v1.4
-- [ ] EventLog split into per-service tabs (chat, presence, cursors, reactions, system) — v1.4
-- [ ] Typing indicator visibly displayed in chat and presence panels — v1.4
+- ✓ Remove all HTML test clients and standalone SDK files from repo — v1.4
+- ✓ React app renders all collaborative features in a clean, production-quality layout — v1.4
+- ✓ Reaction overlay supports 12 emoji types with distinct CSS animations — v1.4
+- ✓ EventLog split into per-service tabs (chat, presence, cursors, reactions, system) — v1.4
+- ✓ Typing indicator visibly displayed in chat and presence panels — v1.4
+
+### Active
+
+<!-- v2.0: Social Platform -->
+
+- [ ] Social profiles with display name, bio, avatar URL backed by Cognito sub — v2.0
+- [ ] Follow/unfollow users; mutual follows create friend relationship — v2.0
+- [ ] Groups with membership, roles (owner/admin/member), and visibility — v2.0
+- [ ] Rooms (standalone, group sub-room, DM) persisted in DynamoDB keyed on Cognito sub — v2.0
+- [ ] Text posts in rooms with edit/delete — v2.0
+- [ ] Threaded comments (nested replies) on posts — v2.0
+- [ ] Likes with attribution (who liked, unlike support) on posts and comments — v2.0
+- [ ] Real-time broadcast of social events to room members via WebSocket — v2.0
 
 ### Out of Scope
 
@@ -186,4 +204,4 @@ Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time
 | setTyping wired via onTyping prop to ChatPanel | Clean prop threading; 2s debounce + clear-on-send; ChatPanel manages its own timer | ✅ v1.3 Phase 14: typing indicator broadcast end-to-end |
 
 ---
-*Last updated: 2026-03-11 after v1.3 (User Auth & Identity)*
+*Last updated: 2026-03-16 after v2.0 (Social Platform) milestone start*

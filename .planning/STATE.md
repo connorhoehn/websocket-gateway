@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Production Hardening
+milestone: v2.0
+milestone_name: Social Platform
 status: planning
-stopped_at: Planning complete — ready for execution
-last_updated: "2026-03-14"
-last_activity: "2026-03-14 — Created v1.5 milestone with 5 phases"
+stopped_at: Defining requirements
+last_updated: "2026-03-16"
+last_activity: "2026-03-16 — Milestone v2.0 started (v1.5 deferred)"
 progress:
-  total_phases: 5
+  total_phases: 0
   completed_phases: 0
-  total_plans: 5
+  total_plans: 0
   completed_plans: 0
   percent: 0
 ---
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-11)
+See: .planning/PROJECT.md (updated 2026-03-16)
 
-**Core value:** Provide low-cost, high-frequency pub/sub (<50ms latency) for ephemeral real-time collaboration data where per-message pricing models (Lambda, AppSync) would be cost-prohibitive at scale.
-**Current focus:** v1.5 — Production Hardening
+**Core value:** Real-time collaborative platform with low-cost pub/sub and full social layer (profiles, groups, rooms, posts, reactions) — all Cognito-keyed for cross-app reuse.
+**Current focus:** v2.0 — Social Platform
 
 ## Current Position
 
-Phase: 20 of 24 (Error Handling & Observability)
-Plan: 0 of 1 in current phase
-Status: Planning complete — ready for execution
-Last activity: 2026-03-14 — Created v1.5 milestone plans
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-16 — Milestone v2.0 started (v1.5 Production Hardening deferred)
 
 Progress: [░░░░░░░░░░░░░░░░░░░░░] 0%
 
