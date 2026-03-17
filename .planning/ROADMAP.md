@@ -199,10 +199,12 @@ Plans:
   2. When a comment is created on a post, connected room members receive a `social:comment` event
   3. When a like is recorded, connected room members receive a `social:like` event
   4. When a user joins or leaves a room, existing connected members receive a `social:member_joined` or `social:member_left` event
-**Plans**: 1 plan
+**Plans**: 3 plans
 
 Plans:
-- [ ] 31-01-PLAN.md — BroadcastService in social-api (Redis pub/sub) wired into posts, comments, likes, reactions, and room-members routes
+- [ ] 31-01-PLAN.md — BroadcastService in social-api + wire into posts, comments, likes, reactions, room-members routes (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
+- [ ] 31-02-PLAN.md — SocialService in gateway + validator whitelist: clients subscribe to room channels via WS (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
+- [ ] 31-03-PLAN.md — End-to-end integration test script validating social event delivery (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
 
 ### Phase 32: Frontend Social Layer
 **Goal**: Users can interact with all social features through a React UI — profiles, friends, groups, rooms, posts, comments, and likes — built with reusable hooks and components
@@ -253,5 +255,5 @@ Plans:
 | 28. Rooms | 2/2 | Complete    | 2026-03-17 | — |
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
-| 31. Real-time Integration | v2.0 | 0/1 | Not started | — |
+| 31. Real-time Integration | v2.0 | 0/3 | Not started | — |
 | 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |
