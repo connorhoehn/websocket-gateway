@@ -52,9 +52,9 @@
 - [x] **CONT-03**: User can delete their own post
 - [x] **CONT-04**: User can view a paginated post feed for a room
 - [x] **CONT-05**: User can view all posts by a specific user
-- [ ] **CONT-06**: User can comment on a post
-- [ ] **CONT-07**: User can reply to an existing comment (threaded / nested)
-- [ ] **CONT-08**: User can delete their own comment
+- [x] **CONT-06**: User can comment on a post
+- [x] **CONT-07**: User can reply to an existing comment (threaded / nested)
+- [x] **CONT-08**: User can delete their own comment
 
 ### Reactions
 
@@ -146,9 +146,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONT-03 | Phase 29 | Complete |
 | CONT-04 | Phase 29 | Complete |
 | CONT-05 | Phase 29 | Complete |
-| CONT-06 | Phase 29 | Pending |
-| CONT-07 | Phase 29 | Pending |
-| CONT-08 | Phase 29 | Pending |
+| CONT-06 | Phase 29 | Complete |
+| CONT-07 | Phase 29 | Complete |
+| CONT-08 | Phase 29 | Complete |
 | REAC-01 | Phase 30 | Pending |
 | REAC-02 | Phase 30 | Pending |
 | REAC-03 | Phase 30 | Pending |

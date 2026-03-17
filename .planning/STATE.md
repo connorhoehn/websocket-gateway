@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-17T17:56:00.615Z"
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-03-17T17:58:55.973Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 28-rooms P01 | 65 | 2 tasks | 2 files |
 | Phase 28-rooms P02 | 64 | 2 tasks | 2 files |
 | Phase 29-posts-comments P01 | 84 | 1 tasks | 4 files |
+| Phase 29-posts-comments P02 | 67 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ Key decisions affecting v2.0 work:
 - [Phase 28-rooms]: myRoomsRouter exported separately — GET /api/rooms cannot live in roomMembersRouter (mounted at /rooms/:roomId); separate mount at /rooms before roomsRouter preserves correct routing order
 - [Phase 29-posts-comments]: ULID used for postId — lexicographic sort = chronological order, enabling ScanIndexForward:false for newest-first without secondary index
 - [Phase 29-posts-comments]: postsRouter and userPostsRouter wired into index.ts as Rule 2 auto-fix — endpoints unreachable without mounting
+- [Phase 29-posts-comments]: commentsRouter uses mergeParams:true — receives :roomId and :postId from parent mount path segments
+- [Phase 29-posts-comments]: GET /comments returns flat array; clients group by parentCommentId to reconstruct thread hierarchy
+- [Phase 29-posts-comments]: parentCommentId omitted entirely for top-level comments (not null) — absence of field means top-level
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T17:56:00.613Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-03-17T17:58:50.725Z
+Stopped at: Completed 29-02-PLAN.md
 Resume file: None
