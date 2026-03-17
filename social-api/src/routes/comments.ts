@@ -8,11 +8,13 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
+import { broadcastService } from '../services/broadcast';
 
 const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(ddb);
 const COMMENTS_TABLE = 'social-comments';
 const POSTS_TABLE = 'social-posts';
+const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 // commentsRouter is mounted at /rooms/:roomId/posts/:postId — mergeParams:true exposes :roomId and :postId
@@ -90,6 +92,19 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       TableName: COMMENTS_TABLE,
       Item: item,
     }));
+
+    // Broadcast social:comment to room channel (non-fatal if Redis unavailable)
+    const roomForBroadcast = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId },
+    }));
+    if (roomForBroadcast.Item) {
+      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:comment', {
+        roomId, postId, commentId, authorId, content: content.trim(),
+        ...(parentCommentId ? { parentCommentId } : {}),
+        createdAt: now,
+      });
+    }
 
     res.status(201).json(item);
   } catch (err) {

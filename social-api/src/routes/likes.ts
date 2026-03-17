@@ -8,6 +8,7 @@ import {
   BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
+import { broadcastService } from '../services/broadcast';
 
 const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(ddb);
@@ -15,6 +16,7 @@ const LIKES_TABLE = 'social-likes';
 const PROFILES_TABLE = 'social-profiles';
 const POSTS_TABLE = 'social-posts';
 const COMMENTS_TABLE = 'social-comments';
+const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 // postLikesRouter is mounted at /rooms/:roomId/posts/:postId — mergeParams:true exposes :roomId and :postId
@@ -55,6 +57,17 @@ postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => 
       ConditionExpression: 'attribute_not_exists(#uid)',
       ExpressionAttributeNames: { '#uid': 'userId' },
     }));
+
+    // Broadcast social:like to room channel (non-fatal if Redis unavailable)
+    const roomForBroadcast = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId },
+    }));
+    if (roomForBroadcast.Item) {
+      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:like', {
+        targetId, userId, type: 'like', createdAt,
+      });
+    }
 
     res.status(201).json({ targetId, userId, type: 'like', createdAt });
   } catch (err) {
@@ -217,6 +230,17 @@ commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> 
       ConditionExpression: 'attribute_not_exists(#uid)',
       ExpressionAttributeNames: { '#uid': 'userId' },
     }));
+
+    // Broadcast social:like (comment like) to room channel (non-fatal if Redis unavailable)
+    const roomForBroadcast = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId },
+    }));
+    if (roomForBroadcast.Item) {
+      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:like', {
+        targetId, userId, type: 'like', createdAt,
+      });
+    }
 
     res.status(201).json({ targetId, userId, type: 'like', createdAt });
   } catch (err) {

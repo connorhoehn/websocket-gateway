@@ -10,10 +10,12 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
+import { broadcastService } from '../services/broadcast';
 
 const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(ddb);
 const POSTS_TABLE = 'social-posts';
+const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 // postsRouter is mounted at /rooms/:roomId — mergeParams:true exposes :roomId
@@ -64,6 +66,17 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
         updatedAt: now,
       } as PostItem,
     }));
+
+    // Broadcast social:post to room channel (non-fatal if Redis unavailable)
+    const roomForBroadcast = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId },
+    }));
+    if (roomForBroadcast.Item) {
+      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:post', {
+        roomId, postId, authorId, content: content.trim(), createdAt: now,
+      });
+    }
 
     res.status(201).json({ roomId, postId, authorId, content: content.trim(), createdAt: now });
   } catch (err) {
