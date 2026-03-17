@@ -6,6 +6,7 @@ import {
   QueryCommand,
   ScanCommand,
   BatchGetCommand,
+  DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
@@ -81,6 +82,53 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
     }
   } catch (err) {
     console.error('[room-members] POST /join error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/rooms/:roomId/leave — leave a room (RTIM-04 leave half)
+roomMembersRouter.delete('/leave', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Verify room exists and get channelId for broadcast
+    const roomResult = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId: req.params.roomId },
+    }));
+    if (!roomResult.Item) {
+      res.status(404).json({ error: 'Room not found' });
+      return;
+    }
+
+    // Verify caller is a member
+    const membership = await docClient.send(new GetCommand({
+      TableName: ROOM_MEMBERS_TABLE,
+      Key: { roomId: req.params.roomId, userId: req.user!.sub },
+    }));
+    if (!membership.Item) {
+      res.status(404).json({ error: 'You are not a member of this room' });
+      return;
+    }
+
+    // Owners cannot leave their own room (prevents orphaned rooms)
+    if ((membership.Item as RoomMemberItem).role === 'owner') {
+      res.status(403).json({ error: 'Room owners cannot leave their own room' });
+      return;
+    }
+
+    // Delete member record
+    await docClient.send(new DeleteCommand({
+      TableName: ROOM_MEMBERS_TABLE,
+      Key: { roomId: req.params.roomId, userId: req.user!.sub },
+    }));
+
+    res.status(200).json({ roomId: req.params.roomId, userId: req.user!.sub, left: true });
+
+    // Broadcast social:member_left to room channel (non-fatal if Redis unavailable)
+    void broadcastService.emit(roomResult.Item['channelId'] as string, 'social:member_left', {
+      roomId: req.params.roomId, userId: req.user!.sub, leftAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[room-members] DELETE /leave error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
