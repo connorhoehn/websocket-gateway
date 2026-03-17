@@ -136,11 +136,11 @@ Plans:
   3. A public group is joinable without invitation; a private group requires invitation
   4. A member can leave a group; their membership is removed from the member list
   5. Group member list shows each member's role (owner / admin / member) and enforces that only owner/admin can invite
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 27-01: Group CRUD and visibility REST endpoints (create, delete, update visibility)
-- [ ] 27-02: Membership management REST endpoints (invite, accept/decline, join, leave, list members with roles)
+- [ ] 27-01-PLAN.md — Group CRUD and visibility REST endpoints (create, delete, get, update visibility)
+- [ ] 27-02-PLAN.md — Membership management REST endpoints (invite, accept/decline, join, leave, list members with roles)
 
 ### Phase 28: Rooms
 **Goal**: Users can create standalone rooms, group sub-rooms, and DM rooms; membership and WebSocket channel mapping are persisted so real-time events can be delivered to members
