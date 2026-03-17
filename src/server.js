@@ -18,6 +18,7 @@ const CursorService = require("./services/cursor-service");
 const ReactionService = require("./services/reaction-service");
 const CRDTService = require("./services/crdt-service");
 const SessionService = require("./services/session-service");
+const SocialService = require("./services/social-service");
 
 // Middleware
 const { handleReconnection } = require("./middleware/reconnection-handler");
@@ -223,6 +224,11 @@ class DistributedWebSocketServer {
             this.services.set('crdt', crdtService);
             this.logger.info('✅ CRDT service initialized');
         }
+
+        // Social service is always enabled — required for real-time social event delivery
+        const socialService = new SocialService(this.messageRouter, this.logger, this.metricsCollector);
+        this.services.set('social', socialService);
+        this.logger.info('✅ Social service initialized');
     }
 
     setupHttpServer() {
