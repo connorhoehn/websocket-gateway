@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-03-17T17:12:55.797Z"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-03-17T17:56:00.615Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 27-groups P02 | 62 | 2 tasks | 2 files |
 | Phase 28-rooms P01 | 65 | 2 tasks | 2 files |
 | Phase 28-rooms P02 | 64 | 2 tasks | 2 files |
+| Phase 29-posts-comments P01 | 84 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Key decisions affecting v2.0 work:
 - [Phase 28-rooms]: groupRoomsRouter uses mergeParams: true to expose :groupId from parent mount
 - [Phase 28-rooms]: ExpressionAttributeNames '#t' guards DynamoDB reserved word 'type' in all room FilterExpressions
 - [Phase 28-rooms]: myRoomsRouter exported separately — GET /api/rooms cannot live in roomMembersRouter (mounted at /rooms/:roomId); separate mount at /rooms before roomsRouter preserves correct routing order
+- [Phase 29-posts-comments]: ULID used for postId — lexicographic sort = chronological order, enabling ScanIndexForward:false for newest-first without secondary index
+- [Phase 29-posts-comments]: postsRouter and userPostsRouter wired into index.ts as Rule 2 auto-fix — endpoints unreachable without mounting
 
 ### Pending Todos
 
@@ -99,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T17:10:31.659Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-03-17T17:56:00.613Z
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None

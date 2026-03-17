@@ -47,11 +47,11 @@
 
 ### Content
 
-- [ ] **CONT-01**: User can create a text post in a room
-- [ ] **CONT-02**: User can edit their own post
-- [ ] **CONT-03**: User can delete their own post
-- [ ] **CONT-04**: User can view a paginated post feed for a room
-- [ ] **CONT-05**: User can view all posts by a specific user
+- [x] **CONT-01**: User can create a text post in a room
+- [x] **CONT-02**: User can edit their own post
+- [x] **CONT-03**: User can delete their own post
+- [x] **CONT-04**: User can view a paginated post feed for a room
+- [x] **CONT-05**: User can view all posts by a specific user
 - [ ] **CONT-06**: User can comment on a post
 - [ ] **CONT-07**: User can reply to an existing comment (threaded / nested)
 - [ ] **CONT-08**: User can delete their own comment
@@ -141,11 +141,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ROOM-06 | Phase 28 | Complete |
 | ROOM-07 | Phase 28 | Complete |
 | ROOM-08 | Phase 28 | Complete |
-| CONT-01 | Phase 29 | Pending |
-| CONT-02 | Phase 29 | Pending |
-| CONT-03 | Phase 29 | Pending |
-| CONT-04 | Phase 29 | Pending |
-| CONT-05 | Phase 29 | Pending |
+| CONT-01 | Phase 29 | Complete |
+| CONT-02 | Phase 29 | Complete |
+| CONT-03 | Phase 29 | Complete |
+| CONT-04 | Phase 29 | Complete |
+| CONT-05 | Phase 29 | Complete |
 | CONT-06 | Phase 29 | Pending |
 | CONT-07 | Phase 29 | Pending |
 | CONT-08 | Phase 29 | Pending |
