@@ -6,11 +6,13 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
+import { broadcastService } from '../services/broadcast';
 
 const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(ddb);
 const LIKES_TABLE = 'social-likes';
 const POSTS_TABLE = 'social-posts';
+const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 const VALID_EMOJI = new Set(['❤️', '😂', '👍', '👎', '😮', '😢', '😡', '🎉', '🔥', '⚡', '💯', '🚀']);
@@ -61,6 +63,17 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
       ConditionExpression: 'attribute_not_exists(#uid)',
       ExpressionAttributeNames: { '#uid': 'userId' },
     }));
+
+    // Broadcast social:like (reaction) to room channel (non-fatal if Redis unavailable)
+    const roomForBroadcast = await docClient.send(new GetCommand({
+      TableName: ROOMS_TABLE,
+      Key: { roomId },
+    }));
+    if (roomForBroadcast.Item) {
+      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:like', {
+        targetId, userId, type: 'reaction', emoji, createdAt,
+      });
+    }
 
     res.status(201).json({ targetId, userId, type: 'reaction', emoji, createdAt });
   } catch (err) {

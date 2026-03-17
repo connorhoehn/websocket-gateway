@@ -8,6 +8,7 @@ import {
   BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
+import { broadcastService } from '../services/broadcast';
 
 const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const docClient = DynamoDBDocumentClient.from(ddb);
@@ -71,6 +72,13 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
     }));
 
     res.status(201).json({ roomId: req.params.roomId, userId: req.user!.sub, role: 'member', joinedAt: now });
+
+    // Broadcast social:member_joined to room channel (non-fatal if Redis unavailable)
+    if (roomResult.Item) {
+      void broadcastService.emit(roomResult.Item['channelId'] as string, 'social:member_joined', {
+        roomId: req.params.roomId, userId: req.user!.sub, joinedAt: now,
+      });
+    }
   } catch (err) {
     console.error('[room-members] POST /join error:', err);
     res.status(500).json({ error: 'Internal server error' });
