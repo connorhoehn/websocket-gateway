@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 31-04-PLAN.md
-last_updated: "2026-03-17T19:26:20.118Z"
+stopped_at: Completed 32-01-PLAN.md
+last_updated: "2026-03-17T19:57:58.455Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 16
-  completed_plans: 16
+  total_plans: 19
+  completed_plans: 17
   percent: 0
 ---
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 31-real-time-integration P03 | 62 | 1 tasks | 1 files |
 | Phase 31-real-time-integration P03 | 1 | 1 tasks | 1 files |
 | Phase 31 P04 | 61 | 2 tasks | 2 files |
+| Phase 32 P01 | 3 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,9 @@ Key decisions affecting v2.0 work:
 - [Phase 31-real-time-integration]: Event listener registered before HTTP write in test-realtime-social.js to eliminate race conditions
 - [Phase 31]: DELETE /leave endpoint uses void broadcastService.emit after HTTP 200 response — non-fatal fire-and-forget pattern consistent with all Phase 31 broadcast calls
 - [Phase 31]: Owner leave guard returns 403 — room owner must explicitly delete room; no orphaned rooms
+- [Phase 32]: All 7 hooks read VITE_SOCIAL_API_URL from import.meta.env and send Authorization: Bearer idToken on every request
+- [Phase 32]: useRooms tracks activeRoomRef.current inside setActiveRoom callback so WS closure always sees current room (RTIM-04)
+- [Phase 32]: useLikes bundles reactWithEmoji() to keep PostActions component thin; comment likes skip GET on mount (no who-liked for comments)
 
 ### Pending Todos
 
@@ -134,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:23:56.570Z
-Stopped at: Completed 31-04-PLAN.md
+Last session: 2026-03-17T19:57:58.452Z
+Stopped at: Completed 32-01-PLAN.md
 Resume file: None

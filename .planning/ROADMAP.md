@@ -257,4 +257,4 @@ Plans:
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
-| 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |
+| 32. Frontend Social Layer | 1/3 | In Progress|  | — |
