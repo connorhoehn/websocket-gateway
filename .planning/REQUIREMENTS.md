@@ -7,11 +7,11 @@
 
 ### Profiles
 
-- [ ] **PROF-01**: User can create a social profile with display name, bio, and avatar URL backed by their Cognito `sub`
-- [ ] **PROF-02**: User can update their profile display name, bio, and avatar URL
-- [ ] **PROF-03**: User can view their own profile
-- [ ] **PROF-04**: User can view another user's public profile
-- [ ] **PROF-05**: User can set their profile visibility (public / private)
+- [x] **PROF-01**: User can create a social profile with display name, bio, and avatar URL backed by their Cognito `sub`
+- [x] **PROF-02**: User can update their profile display name, bio, and avatar URL
+- [x] **PROF-03**: User can view their own profile
+- [x] **PROF-04**: User can view another user's public profile
+- [x] **PROF-05**: User can set their profile visibility (public / private)
 
 ### Social Graph
 
@@ -113,11 +113,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROF-01 | Phase 26 | Pending |
-| PROF-02 | Phase 26 | Pending |
-| PROF-03 | Phase 26 | Pending |
-| PROF-04 | Phase 26 | Pending |
-| PROF-05 | Phase 26 | Pending |
+| PROF-01 | Phase 26 | Complete |
+| PROF-02 | Phase 26 | Complete |
+| PROF-03 | Phase 26 | Complete |
+| PROF-04 | Phase 26 | Complete |
+| PROF-05 | Phase 26 | Complete |
 | SOCL-01 | Phase 26 | Pending |
 | SOCL-02 | Phase 26 | Pending |
 | SOCL-03 | Phase 26 | Pending |

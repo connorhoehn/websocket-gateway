@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 25-social-infrastructure-25-01-PLAN.md
-last_updated: "2026-03-16T20:30:41.344Z"
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-17T15:50:30.517Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 4
+  completed_plans: 2
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | 11-14 | 8 | — | ~21-217s |
 | 15-19 | 7 | — | ~2-109s |
 | Phase 25-social-infrastructure P01 | 127 | 2 tasks | 10 files |
+| Phase 26-user-profiles-social-graph P01 | 300 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Key decisions affecting v2.0 work:
 - [Phase 25-social-infrastructure]: SocialStack: PAY_PER_REQUEST + RemovalPolicy.RETAIN for all 9 DynamoDB tables
 - [Phase 25-social-infrastructure]: social-api: express.d.ts force-added past *.d.ts gitignore — module augmentation is a source file
 - [Phase 25-social-infrastructure]: social-api: /health route mounted before requireAuth — health endpoint publicly accessible
+- [Phase 26]: DynamoDBDocumentClient used for automatic JS-to-DynamoDB type marshalling
+- [Phase 26]: PUT /api/profiles uses dynamic UpdateExpression to preserve unspecified fields
+- [Phase 26]: GET /api/profiles/:userId returns 403 (not 404) for private profiles to distinguish access denial from not-found
 
 ### Pending Todos
 
@@ -77,6 +81,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-16T20:26:42.114Z
-Stopped at: Completed 25-social-infrastructure-25-01-PLAN.md
+Last session: 2026-03-17T15:50:30.514Z
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None
