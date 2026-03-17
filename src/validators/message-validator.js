@@ -20,7 +20,7 @@ class ValidationError extends Error {
 class MessageValidator {
     constructor() {
         // Service whitelist - only these services are allowed
-        this.allowedServices = ['chat', 'presence', 'cursor', 'reaction'];
+        this.allowedServices = ['chat', 'presence', 'cursor', 'reaction', 'social'];
 
         // Payload size limit (64KB)
         this.maxPayloadSize = 65536;
