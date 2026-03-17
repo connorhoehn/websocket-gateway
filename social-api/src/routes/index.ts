@@ -9,6 +9,7 @@ import { roomMembersRouter, myRoomsRouter } from './room-members';
 import { postsRouter, userPostsRouter } from './posts';
 import { commentsRouter } from './comments';
 import { postLikesRouter, commentLikesRouter } from './likes';
+import { reactionsRouter } from './reactions';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/posts', userPostsRouter);
 router.use('/rooms/:roomId/posts/:postId/comments', commentsRouter);
 router.use('/rooms/:roomId/posts/:postId/likes', postLikesRouter);
 router.use('/rooms/:roomId/posts/:postId/comments/:commentId/likes', commentLikesRouter);
+router.use('/rooms/:roomId/posts/:postId', reactionsRouter);
 
 export default router;
