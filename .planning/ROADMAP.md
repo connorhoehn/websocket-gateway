@@ -199,10 +199,10 @@ Plans:
   2. When a comment is created on a post, connected room members receive a `social:comment` event
   3. When a like is recorded, connected room members receive a `social:like` event
   4. When a user joins or leaves a room, existing connected members receive a `social:member_joined` or `social:member_left` event
-**Plans**: 3 plans
+**Plans**: 1 plan
 
 Plans:
-- [ ] 31-01: Extend WebSocket gateway with social event types and social-api integration for broadcasting to room channel members
+- [ ] 31-01-PLAN.md — BroadcastService in social-api (Redis pub/sub) wired into posts, comments, likes, reactions, and room-members routes
 
 ### Phase 32: Frontend Social Layer
 **Goal**: Users can interact with all social features through a React UI — profiles, friends, groups, rooms, posts, comments, and likes — built with reusable hooks and components
