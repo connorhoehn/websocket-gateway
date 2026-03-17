@@ -216,12 +216,13 @@ Plans:
   3. User can create and join groups and rooms, navigate between them in the GroupPanel and RoomList components
   4. User can read and write posts and threaded comments in the PostFeed and CommentThread components
   5. User can like posts and comments via a LikeButton component; real-time social events update the UI without a page refresh
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 32-01-PLAN.md — React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes) with real-time WS event handlers
 - [ ] 32-02-PLAN.md — UI components (SocialPanel live, GroupPanel, RoomList, PostFeed, CommentThread)
 - [ ] 32-03-PLAN.md — AppLayout + App.tsx wiring + human verification checkpoint
+- [ ] 32-04-PLAN.md — Gap closure: createGroupRoom (ROOM-02), loadMembers (ROOM-06), getUserPosts (CONT-05), whoLiked display (REAC-06)
 
 ## Progress
 
@@ -257,4 +258,4 @@ Plans:
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
-| 32. Frontend Social Layer | 3/3 | Complete   | 2026-03-17 | — |
+| 32. Frontend Social Layer | 3/4 | Gap Closure | 2026-03-17 | — |
