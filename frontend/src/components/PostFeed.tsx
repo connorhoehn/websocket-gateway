@@ -126,26 +126,34 @@ interface LikeButtonProps {
 }
 
 function LikeButton({ idToken, roomId, postId, onMessage }: LikeButtonProps) {
-  const { isLiked, likeCount, toggle } = useLikes({ idToken, roomId, postId, onMessage });
+  const { isLiked, likeCount, toggle, whoLiked } = useLikes({ idToken, roomId, postId, onMessage });
 
   return (
-    <button
-      onClick={() => void toggle()}
-      aria-label="Like post"
-      style={{
-        background: 'none',
-        border: 'none',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: 0,
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-      }}
-    >
-      <span style={{ fontSize: 16, color: isLiked ? '#646cff' : '#9ca3af' }}>❤</span>
-      <span style={{ fontSize: 14, color: isLiked ? '#646cff' : '#9ca3af' }}>{likeCount}</span>
-    </button>
+    <>
+      <button
+        onClick={() => void toggle()}
+        aria-label="Like post"
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: 0,
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+        }}
+      >
+        <span style={{ fontSize: 16, color: isLiked ? '#646cff' : '#9ca3af' }}>&#10084;</span>
+        <span style={{ fontSize: 14, color: isLiked ? '#646cff' : '#9ca3af' }}>{likeCount}</span>
+      </button>
+      {whoLiked.length > 0 && (
+        <span style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
+          Liked by: {whoLiked.slice(0, 3).map(p => p.displayName).join(', ')}
+          {whoLiked.length > 3 ? ` and ${whoLiked.length - 3} more` : ''}
+        </span>
+      )}
+    </>
   );
 }
 
