@@ -42,8 +42,10 @@ export interface UseRoomsReturn {
   setActiveRoom: (room: RoomItem | null) => void;
   createRoom: (name: string) => Promise<void>;
   createDM: (peerId: string) => Promise<void>;
+  createGroupRoom: (groupId: string, name: string) => Promise<void>;
   joinRoom: (roomId: string) => Promise<void>;
   leaveRoom: (roomId: string) => Promise<void>;
+  loadMembers: (roomId: string) => Promise<void>;
   members: RoomMemberItem[];
   loading: boolean;
   error: string | null;
@@ -119,12 +121,31 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     return unregister;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- loadMembers (ROOM-06) -----------------------------------------------
+
+  const loadMembers = useCallback(async (roomId: string): Promise<void> => {
+    if (!idToken) return;
+    try {
+      const res = await fetch(`${baseUrl}/api/rooms/${roomId}/members`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!res.ok) throw new Error(`Failed to load members (${res.status})`);
+      const data = await res.json() as { members: RoomMemberItem[] };
+      setMembers(data.members ?? []);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- setActiveRoom -------------------------------------------------------
 
   const setActiveRoom = useCallback((room: RoomItem | null): void => {
     activeRoomRef.current = room?.roomId ?? null;
     setActiveRoomState(room);
-  }, []);
+    if (room) {
+      void loadMembers(room.roomId);
+    }
+  }, [loadMembers]);
 
   // ---- createRoom ----------------------------------------------------------
 
@@ -209,14 +230,41 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     }
   }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- createGroupRoom (ROOM-02) -------------------------------------------
+
+  const createGroupRoom = useCallback(async (groupId: string, name: string): Promise<void> => {
+    if (!idToken) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${baseUrl}/api/groups/${groupId}/rooms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(`Failed to create group room (${res.status})`);
+      const room = await res.json() as RoomItem;
+      setRooms((prev) => [room, ...prev]);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     rooms,
     activeRoom,
     setActiveRoom,
     createRoom,
     createDM,
+    createGroupRoom,
     joinRoom,
     leaveRoom,
+    loadMembers,
     members,
     loading,
     error,
