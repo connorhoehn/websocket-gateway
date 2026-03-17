@@ -188,7 +188,7 @@ Plans:
 
 Plans:
 - [ ] 30-01-PLAN.md — likes.ts: like/unlike posts and comments with attribution, who-liked endpoint (REAC-01, REAC-02, REAC-03, REAC-04, REAC-06)
-- [ ] 30-02-PLAN.md — reactions.ts + index.ts wiring: emoji reactions on posts, all Phase 30 router mounts (REAC-05)
+- [x] 30-02-PLAN.md — reactions.ts + index.ts wiring: emoji reactions on posts, all Phase 30 router mounts (REAC-05) (completed 2026-03-17)
 
 ### Phase 31: Real-time Integration
 **Goal**: Social events (new posts, comments, likes, member join/leave) are broadcast in real-time via the existing WebSocket gateway to all room members
@@ -252,6 +252,6 @@ Plans:
 | 27. Groups | 2/2 | Complete    | 2026-03-17 | — |
 | 28. Rooms | 2/2 | Complete    | 2026-03-17 | — |
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
-| 30. Reactions & Likes | 2/2 | Complete   | 2026-03-17 | — |
+| 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | v2.0 | 0/1 | Not started | — |
 | 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |
