@@ -8,7 +8,8 @@
 - ✅ **v1.3 User Auth & Identity** — Phases 11-14 (shipped 2026-03-11)
 - ✅ **v1.4 UI Polish & Feature Completeness** — Phases 15-19 (shipped 2026-03-14)
 - 🔧 **v1.5 Production Hardening** — Phases 20-24 (Deferred — skipped in favor of v2.0)
-- 🚧 **v2.0 Social Platform** — Phases 25-32 (in progress)
+- ✅ **v2.0 Social Platform** — Phases 25-32 (shipped 2026-03-17)
+- 🚧 **v2.1 Social UX Integration** — Phase 33 (in progress)
 
 ## Phases
 
@@ -80,7 +81,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
 
 
-### 🚧 v2.0 Social Platform (Phases 25-32)
+### ✅ v2.0 Social Platform (Phases 25-32) — SHIPPED 2026-03-17
 
 **Milestone Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, likes with attribution, and real-time broadcast of social events to room members — all keyed on Cognito `sub` for referential integrity and cross-app reuse.
 
@@ -92,6 +93,13 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 30: Reactions & Likes** — Like with attribution, unlike, emoji reactions, and who-liked (completed 2026-03-17)
 - [x] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members (completed 2026-03-17)
 - [x] **Phase 32: Frontend Social Layer** — React hooks and UI components for the complete social feature set (completed 2026-03-17)
+
+### 🚧 v2.1 Social UX Integration (Phase 33)
+
+**Milestone Goal:** Wire the social layer and WebSocket gateway together so that selecting a social room activates its real-time channel, and resolve UX friction points that block a real multi-user walkthrough of the platform.
+
+- [ ] **Phase 33: Social UX Integration** — Room→channel wiring, group room management in GroupPanel, friends-picker for DMs, in-app social notifications
+
 
 ## Phase Details
 
@@ -224,9 +232,24 @@ Plans:
 - [ ] 32-03-PLAN.md — AppLayout + App.tsx wiring + human verification checkpoint
 - [ ] 32-04-PLAN.md — Gap closure: createGroupRoom (ROOM-02), loadMembers (ROOM-06), getUserPosts (CONT-05), whoLiked display (REAC-06)
 
+### Phase 33: Social UX Integration
+**Goal**: The social layer and the WebSocket gateway are wired together so that selecting a social room activates its real-time channel, and key UX friction points blocking multi-user testing are resolved — enabling a complete end-to-end walkthrough of all platform features with two or more simultaneous users
+**Depends on**: Phase 32
+**Requirements**: UXIN-01, UXIN-02, UXIN-03, UXIN-04
+**Success Criteria** (what must be TRUE):
+  1. When a user selects a room in RoomList, the active WebSocket channel switches to that room's `channelId`; chat messages sent by two users in that room are visible to both in real-time
+  2. Selecting a group in GroupPanel shows that group's rooms and the owner/admin can create a new room scoped to the group from within the panel
+  3. Opening a DM from RoomList presents a picker of the current user's mutual friends — no raw UUID entry required
+  4. When another user follows the current user, joins their room, or posts in the currently active room, a visible notification appears in the UI without inspecting the EventLog
+**Plans**: 2 plans
+
+Plans:
+- [ ] 33-01-PLAN.md — Room->channel wiring (UXIN-01), group rooms in GroupPanel (UXIN-02), friends picker for DMs (UXIN-03)
+- [ ] 33-02-PLAN.md — In-app notification banner for social events (UXIN-04) + end-to-end human verification
+
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32
+**Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -259,3 +282,4 @@ Plans:
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
 | 32. Frontend Social Layer | 4/4 | Complete    | 2026-03-17 | — |
+| 33. Social UX Integration | v2.1 | 0/2 | Planned | — |
