@@ -219,8 +219,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 32-01: React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes)
-- [ ] 32-02: UI components (ProfileCard, FriendsList, GroupPanel, RoomList, PostFeed, CommentThread, LikeButton)
+- [ ] 32-01-PLAN.md — React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes) with real-time WS event handlers
+- [ ] 32-02-PLAN.md — UI components (SocialPanel live, GroupPanel, RoomList, PostFeed, CommentThread)
+- [ ] 32-03-PLAN.md — AppLayout + App.tsx wiring + human verification checkpoint
 
 ## Progress
 
