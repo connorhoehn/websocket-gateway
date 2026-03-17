@@ -90,7 +90,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 28: Rooms** — Standalone, group-scoped, and DM room CRUD, membership, and WS channel mapping (completed 2026-03-17)
 - [x] **Phase 29: Posts & Comments** — Text posts in rooms, threaded comments, post feed, and user post history (completed 2026-03-17)
 - [x] **Phase 30: Reactions & Likes** — Like with attribution, unlike, emoji reactions, and who-liked (completed 2026-03-17)
-- [ ] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members
+- [x] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members (completed 2026-03-17)
 - [ ] **Phase 32: Frontend Social Layer** — React hooks and UI components for the complete social feature set
 
 ## Phase Details
@@ -255,5 +255,5 @@ Plans:
 | 28. Rooms | 2/2 | Complete    | 2026-03-17 | — |
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
-| 31. Real-time Integration | 2/3 | In Progress|  | — |
+| 31. Real-time Integration | 3/3 | Complete   | 2026-03-17 | — |
 | 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |
