@@ -8,6 +8,7 @@ import { groupRoomsRouter } from './group-rooms';
 import { roomMembersRouter, myRoomsRouter } from './room-members';
 import { postsRouter, userPostsRouter } from './posts';
 import { commentsRouter } from './comments';
+import { postLikesRouter, commentLikesRouter } from './likes';
 
 const router = Router();
 
@@ -22,5 +23,7 @@ router.use('/rooms/:roomId', roomMembersRouter);
 router.use('/rooms/:roomId/posts', postsRouter);
 router.use('/posts', userPostsRouter);
 router.use('/rooms/:roomId/posts/:postId/comments', commentsRouter);
+router.use('/rooms/:roomId/posts/:postId/likes', postLikesRouter);
+router.use('/rooms/:roomId/posts/:postId/comments/:commentId/likes', commentLikesRouter);
 
 export default router;
