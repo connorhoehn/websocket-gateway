@@ -184,11 +184,11 @@ Plans:
   3. User can like and unlike a comment with the same attribution behavior
   4. User can react to a post with one of the 12 supported emoji types
   5. User can retrieve the total like count and the list of user display names who liked a post
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 30-01: Like/unlike REST endpoints for posts and comments with attribution (who-liked endpoint)
-- [ ] 30-02: Emoji reaction REST endpoints (post-level, reuses 12-emoji system)
+- [ ] 30-01-PLAN.md — likes.ts: like/unlike posts and comments with attribution, who-liked endpoint (REAC-01, REAC-02, REAC-03, REAC-04, REAC-06)
+- [ ] 30-02-PLAN.md — reactions.ts + index.ts wiring: emoji reactions on posts, all Phase 30 router mounts (REAC-05)
 
 ### Phase 31: Real-time Integration
 **Goal**: Social events (new posts, comments, likes, member join/leave) are broadcast in real-time via the existing WebSocket gateway to all room members
