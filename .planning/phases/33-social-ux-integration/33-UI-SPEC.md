@@ -36,9 +36,9 @@ Declared values (must be multiples of 4):
 |-------|-------|-------|
 | xs | 4px | Label-to-input gap, badge padding vertical |
 | sm | 8px | Button gaps in forms, list item internal spacing |
-| md | 12px | Form padding, icon-gap in rows |
+| md | 12px | Form padding, icon-gap in rows — **Exception: 12px carried from `RoomList.tsx` form padding and `GroupPanel.tsx` section padding (existing convention in Phase 32 inline styles — not a new value introduced in Phase 33)** |
 | lg | 16px | Default element padding horizontal, section internal padding |
-| xl | 20px | Section card padding (`1.25rem`) |
+| xl | 20px | Section card padding (`1.25rem`) — **Exception: 20px carried from `AppLayout.tsx` sidebar section card padding (existing convention in Phase 32 inline styles — not a new value introduced in Phase 33)** |
 | 2xl | 24px | Page content padding, section-to-section gap |
 | 3xl | 32px | Reserved — not used in this phase |
 
@@ -57,6 +57,8 @@ Exceptions: Touch targets for room rows use `height: 56px` (existing RoomRow con
 
 Font weight constraint: exactly 2 weights in use — 400 (regular) and 600 (semibold). No 500 in new Phase 33 components.
 
+**Note on 12/14/16px proximity:** The three body-adjacent sizes (12px, 14px, 16px) are 2px apart. Differentiation is achieved through three compounding signals — color (`#64748b` vs `#374151` vs `#0f172a`), weight (400 vs 600 at 12px section labels), and case (uppercase letter-spacing on section labels) — so visual hierarchy is unambiguous at the declared sizes without adjustment.
+
 ---
 
 ## Color
@@ -68,7 +70,7 @@ Font weight constraint: exactly 2 weights in use — 400 (regular) and 600 (semi
 | Accent (10%) | `#646cff` | Reserved for: active room left-border indicator, primary CTA buttons ("Create Room", "Create Group Room"), selected visibility toggle pill, notification banner left accent bar |
 | Destructive | `#dc2626` | Reserved for: delete-group button only (carried from Phase 32 `GroupPanel`) |
 
-Accent reserved for (explicit list): active room selection indicator (`border-left: 3px solid #646cff`), filled CTA buttons, selected radio pill background, notification banner accent stripe. Accent is NOT used on secondary/ghost buttons, cancel actions, or DM "Open DM" button.
+Accent reserved for (explicit list): active room selection indicator (`border-left: 3px solid #646cff`), filled CTA buttons, selected radio pill background, notification banner accent stripe. Accent is NOT used on secondary/ghost buttons, or the DM "Open DM" button.
 
 Supporting colors (informational, not accent):
 - `#e2e8f0` — border default for cards, inputs, secondary buttons
@@ -102,7 +104,7 @@ New components introduced in Phase 33 (co-located as unexported internals per pr
 - Each item: `background #ffffff`, `border 1px solid #e2e8f0`, `border-left 3px solid #646cff`, `border-radius 8px`, `padding 12px 16px`, `display flex align-items center justify-content space-between`
 - Auto-dismiss: 4000ms via `setTimeout` + `useEffect` cleanup
 - Message text: 14px, weight 400, `#374151`
-- Dismiss button: `×`, 16px, `#94a3b8`, no background, no border, cursor pointer
+- Dismiss button: `×` character, 16px, color `#94a3b8`, no background, no border, cursor pointer, `aria-label="Dismiss notification"`
 
 Notification message copy per event type:
 - `social:follow` — "{displayName} followed you"
@@ -152,7 +154,7 @@ Notification message copy per event type:
 - Placement: fixed top-right, below header (top: 64px, right: 16px), z-index: 1000
 - Stack: up to 5 notifications visible simultaneously; oldest drops off when 6th arrives
 - Auto-dismiss: each banner disappears after 4000ms
-- Manual dismiss: × button removes immediately
+- Manual dismiss: × button (`aria-label="Dismiss notification"`) removes immediately
 - No sound, no badge count
 
 ---
@@ -172,7 +174,6 @@ Notification message copy per event type:
 | Notification — member joined | "{displayName} joined {roomName}" | New |
 | Notification — new post | "New post in {roomName}" | New — only for active room |
 | Create room loading | "Creating…" | Existing — carry forward |
-| Cancel action | "Cancel" | Existing — carry forward |
 | Error state | No dedicated error UI for UXIN-01–03 — errors logged to console per project convention | Per research: project uses console.error for non-fatal social API errors |
 | Destructive — delete group | Existing inline delete in GroupPanel — no new destructive actions in Phase 33 | Carry forward |
 
