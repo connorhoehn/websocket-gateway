@@ -261,6 +261,8 @@ function GatewayDemo({
       lastError={lastError}
       clientId={clientId}
       sessionToken={sessionToken}
+      idToken={auth.idToken}
+      onMessage={onMessage}
     />
   );
 }

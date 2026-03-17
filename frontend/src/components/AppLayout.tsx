@@ -4,7 +4,8 @@
 // Pure presentational component — no hook calls, all data flows in via props.
 // Replaces the monolithic vertical stack in GatewayDemo.
 
-import type { ConnectionState, GatewayError } from '../types/gateway';
+import { useState } from 'react';
+import type { ConnectionState, GatewayError, GatewayMessage } from '../types/gateway';
 import type { PresenceUser } from '../hooks/usePresence';
 import type { EphemeralReaction } from '../hooks/useReactions';
 import type { ChatMessage } from '../hooks/useChat';
@@ -28,6 +29,15 @@ import { ErrorDisplay } from './ErrorDisplay';
 import { ErrorPanel } from './ErrorPanel';
 import { TabbedEventLog } from './TabbedEventLog';
 import { SocialPanel } from './SocialPanel';
+import { GroupPanel } from './GroupPanel';
+import { RoomList } from './RoomList';
+import { PostFeed } from './PostFeed';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -75,6 +85,10 @@ export interface AppLayoutProps {
   lastError: GatewayError | null;
   clientId: string | null;
   sessionToken: string | null;
+
+  // Social layer
+  idToken: string | null;
+  onMessage: OnMessageFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +144,11 @@ export function AppLayout({
   lastError,
   clientId,
   sessionToken,
+  idToken,
+  onMessage,
 }: AppLayoutProps) {
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+
   // Derive typingUsers from presenceUsers, excluding self
   const typingUsers = presenceUsers
     .filter(
@@ -294,7 +312,21 @@ export function AppLayout({
           </div>
 
           {/* Social section card */}
-          <SocialPanel />
+          <SocialPanel idToken={idToken} onMessage={onMessage} />
+
+          {/* Groups section */}
+          <GroupPanel idToken={idToken} />
+
+          {/* Rooms section */}
+          <RoomList
+            idToken={idToken}
+            onMessage={onMessage}
+            onRoomSelect={(room) => setActiveRoomId(room.roomId)}
+            activeRoomId={activeRoomId}
+          />
+
+          {/* Posts section */}
+          <PostFeed idToken={idToken} roomId={activeRoomId} onMessage={onMessage} />
 
           {/* Dev Tools section */}
           <div style={sectionCardStyle}>
