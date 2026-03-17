@@ -249,7 +249,7 @@ Plans:
 | 24. Input Validation & Telemetry | v1.5 | 0/1 | Deferred | — |
 | 25. Social Infrastructure | 1/1 | Complete    | 2026-03-16 | — |
 | 26. User Profiles & Social Graph | 3/3 | Complete    | 2026-03-17 | — |
-| 27. Groups | v2.0 | 0/2 | Not started | — |
+| 27. Groups | 1/2 | In Progress|  | — |
 | 28. Rooms | v2.0 | 0/2 | Not started | — |
 | 29. Posts & Comments | v2.0 | 0/2 | Not started | — |
 | 30. Reactions & Likes | v2.0 | 0/2 | Not started | — |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-03-17T16:45:41.934Z"
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-17T16:58:57.652Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 26-user-profiles-social-graph P01 | 300 | 2 tasks | 3 files |
 | Phase 26 P03 | 491 | 2 tasks | 2 files |
 | Phase 26-user-profiles-social-graph P02 | 725 | 2 tasks | 2 files |
+| Phase 27-groups P01 | 124 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Key decisions affecting v2.0 work:
 - [Phase 26]: SocialPanel uses named hook imports matching project convention; all sub-components co-located as unexported internals in SocialPanel.tsx
 - [Phase 26]: GET /followers uses ScanCommand (no GSI on followeeId in social-relationships table)
 - [Phase 26]: 409 returned on duplicate follow — callers distinguish already-following from new follow
+- [Phase 27-groups]: uuid installed at execution time (was missing from social-api) — added to package.json as Rule 3 deviation
+- [Phase 27-groups]: DELETE /groups/:groupId does NOT cascade-delete members — cleanup deferred to plan 27-02 per plan spec
+- [Phase 27-groups]: GET /groups/:groupId returns 403 for non-members of private groups to conceal group existence
 
 ### Pending Todos
 
@@ -86,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T16:16:03.350Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-03-17T16:58:57.650Z
+Stopped at: Completed 27-01-PLAN.md
 Resume file: None
