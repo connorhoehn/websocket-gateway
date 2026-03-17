@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-03-17T17:07:59.767Z"
+stopped_at: Completed 28-02-PLAN.md
+last_updated: "2026-03-17T17:10:31.661Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 27-groups P01 | 124 | 2 tasks | 4 files |
 | Phase 27-groups P02 | 62 | 2 tasks | 2 files |
 | Phase 28-rooms P01 | 65 | 2 tasks | 2 files |
+| Phase 28-rooms P02 | 64 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,7 @@ Key decisions affecting v2.0 work:
 - [Phase 28-rooms]: POST /api/rooms/dm defined before /:roomId to prevent Express matching 'dm' as roomId param
 - [Phase 28-rooms]: groupRoomsRouter uses mergeParams: true to expose :groupId from parent mount
 - [Phase 28-rooms]: ExpressionAttributeNames '#t' guards DynamoDB reserved word 'type' in all room FilterExpressions
+- [Phase 28-rooms]: myRoomsRouter exported separately — GET /api/rooms cannot live in roomMembersRouter (mounted at /rooms/:roomId); separate mount at /rooms before roomsRouter preserves correct routing order
 
 ### Pending Todos
 
@@ -97,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T17:07:55.042Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-03-17T17:10:31.659Z
+Stopped at: Completed 28-02-PLAN.md
 Resume file: None

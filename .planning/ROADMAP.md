@@ -87,7 +87,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 25: Social Infrastructure** — New CDK social-stack, all 9 DynamoDB tables, Express social-api base with Cognito auth middleware (completed 2026-03-16)
 - [x] **Phase 26: User Profiles & Social Graph** — Profile CRUD endpoints and follow/unfollow/friends REST API (completed 2026-03-17)
 - [x] **Phase 27: Groups** — Group CRUD, membership management, roles, visibility, and invitations (completed 2026-03-17)
-- [ ] **Phase 28: Rooms** — Standalone, group-scoped, and DM room CRUD, membership, and WS channel mapping
+- [x] **Phase 28: Rooms** — Standalone, group-scoped, and DM room CRUD, membership, and WS channel mapping (completed 2026-03-17)
 - [ ] **Phase 29: Posts & Comments** — Text posts in rooms, threaded comments, post feed, and user post history
 - [ ] **Phase 30: Reactions & Likes** — Like with attribution, unlike, emoji reactions, and who-liked
 - [ ] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members
@@ -250,7 +250,7 @@ Plans:
 | 25. Social Infrastructure | 1/1 | Complete    | 2026-03-16 | — |
 | 26. User Profiles & Social Graph | 3/3 | Complete    | 2026-03-17 | — |
 | 27. Groups | 2/2 | Complete    | 2026-03-17 | — |
-| 28. Rooms | 1/2 | In Progress|  | — |
+| 28. Rooms | 2/2 | Complete   | 2026-03-17 | — |
 | 29. Posts & Comments | v2.0 | 0/2 | Not started | — |
 | 30. Reactions & Likes | v2.0 | 0/2 | Not started | — |
 | 31. Real-time Integration | v2.0 | 0/1 | Not started | — |
