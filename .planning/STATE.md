@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 32-01-PLAN.md
-last_updated: "2026-03-17T19:57:58.455Z"
+stopped_at: Completed 32-02-PLAN.md
+last_updated: "2026-03-17T20:05:08.806Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 31-real-time-integration P03 | 1 | 1 tasks | 1 files |
 | Phase 31 P04 | 61 | 2 tasks | 2 files |
 | Phase 32 P01 | 3 | 2 tasks | 8 files |
+| Phase 32 P02 | 297 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,9 @@ Key decisions affecting v2.0 work:
 - [Phase 32]: All 7 hooks read VITE_SOCIAL_API_URL from import.meta.env and send Authorization: Bearer idToken on every request
 - [Phase 32]: useRooms tracks activeRoomRef.current inside setActiveRoom callback so WS closure always sees current room (RTIM-04)
 - [Phase 32]: useLikes bundles reactWithEmoji() to keep PostActions component thin; comment likes skip GET on mount (no who-liked for comments)
+- [Phase 32]: SocialPanel accepts onMessage for prop symmetry; void-casts it since SocialPanel has no WS subscriptions
+- [Phase 32]: GroupCard Delete button gated on group.ownerId === currentUserId using JWT sub decode (GRUP-02)
+- [Phase 32]: RoomList forwards onMessage prop directly to useRooms — member join/leave handled in hook (RTIM-04)
 
 ### Pending Todos
 
@@ -138,6 +142,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:57:58.452Z
-Stopped at: Completed 32-01-PLAN.md
+Last session: 2026-03-17T20:05:03.132Z
+Stopped at: Completed 32-02-PLAN.md
 Resume file: None
