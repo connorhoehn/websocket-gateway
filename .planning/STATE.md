@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-03-17T19:00:36.103Z"
+stopped_at: Completed 31-01-PLAN.md
+last_updated: "2026-03-17T19:02:28.488Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -62,6 +62,8 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 30 P02 | 57 | 2 tasks | 2 files |
 | Phase 31 P02 | 3 | 2 tasks | 3 files |
 | Phase 31-real-time-integration P02 | 180 | 2 tasks | 3 files |
+| Phase 31-real-time-integration P01 | 153 | 2 tasks | 6 files |
+| Phase 31-real-time-integration P01 | 2 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -107,6 +109,11 @@ Key decisions affecting v2.0 work:
 - [Phase 31]: SocialService delegates entirely to messageRouter.subscribeToChannel/unsubscribeFromChannel — Redis SET node registration handled transparently by message router layer
 - [Phase 31-real-time-integration]: SocialService instantiated unconditionally in initializeServices (not behind enabledServices check) — it has no idle cost (just a Map) and social rooms expect it always available
 - [Phase 31-real-time-integration]: SocialService delegates entirely to messageRouter.subscribeToChannel/unsubscribeFromChannel — Redis SET registration for node discovery handled by message router layer, not by this service
+- [Phase 31-real-time-integration]: BroadcastService uses lazy Redis connection with void emit pattern — social writes always succeed, broadcast failures are non-fatal and only logged
+- [Phase 31-real-time-integration]: targetNodes SMEMBERS check before Redis publish — skips publish entirely if no WS clients subscribed to channel, avoiding wasted Redis bandwidth
+- [Phase 31-real-time-integration]: BroadcastService is non-fatal by design — Redis errors caught internally, social HTTP responses unaffected; void emit() pattern in all route handlers
+- [Phase 31-real-time-integration]: targetNodes SMEMBERS check before publish prevents Redis publish to channels with no subscribed WS clients
+- [Phase 31-real-time-integration]: Room channelId fetched via GetCommand on social-rooms before each emit — routes have roomId from params, one extra DynamoDB read gets channelId
 
 ### Pending Todos
 
@@ -118,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:00:36.101Z
-Stopped at: Completed 31-02-PLAN.md
+Last session: 2026-03-17T19:02:15.019Z
+Stopped at: Completed 31-01-PLAN.md
 Resume file: None
