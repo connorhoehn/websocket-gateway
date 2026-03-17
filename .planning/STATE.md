@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 32-03-PLAN.md
-last_updated: "2026-03-17T20:08:47.243Z"
+stopped_at: Completed 32-04-PLAN.md
+last_updated: "2026-03-17T21:24:54.312Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 8
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 20
+  completed_plans: 20
   percent: 0
 ---
 
@@ -70,6 +70,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 32 P01 | 3 | 2 tasks | 8 files |
 | Phase 32 P02 | 297 | 2 tasks | 5 files |
 | Phase 32 P03 | 90 | 1 tasks | 2 files |
+| Phase 32 P04 | 115 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,8 @@ Key decisions affecting v2.0 work:
 - [Phase 32]: RoomList forwards onMessage prop directly to useRooms — member join/leave handled in hook (RTIM-04)
 - [Phase 32]: activeRoomId state owned by AppLayout; RoomList fires onRoomSelect, PostFeed reads roomId — keeps room selection at layout level
 - [Phase 32]: OnMessageFn type defined locally in AppLayout.tsx (mirrors RoomList.tsx and PostFeed.tsx pattern)
+- [Phase 32]: loadMembers defined before setActiveRoom in useRooms hook so setActiveRoom can include it in useCallback dependency array
+- [Phase 32]: getUserPosts returns PostItem[] directly without mutating room-scoped posts state — caller owns profile view scope
 
 ### Pending Todos
 
@@ -145,6 +148,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T20:08:47.240Z
-Stopped at: Completed 32-03-PLAN.md
+Last session: 2026-03-17T21:24:54.309Z
+Stopped at: Completed 32-04-PLAN.md
 Resume file: None

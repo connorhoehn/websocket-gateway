@@ -258,4 +258,4 @@ Plans:
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
-| 32. Frontend Social Layer | 3/4 | Gap Closure | 2026-03-17 | — |
+| 32. Frontend Social Layer | 4/4 | Complete   | 2026-03-17 | — |
