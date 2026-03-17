@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 32-02-PLAN.md
-last_updated: "2026-03-17T20:05:08.806Z"
+stopped_at: Completed 32-03-PLAN.md
+last_updated: "2026-03-17T20:08:47.243Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 0
 ---
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 31 P04 | 61 | 2 tasks | 2 files |
 | Phase 32 P01 | 3 | 2 tasks | 8 files |
 | Phase 32 P02 | 297 | 2 tasks | 5 files |
+| Phase 32 P03 | 90 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,8 @@ Key decisions affecting v2.0 work:
 - [Phase 32]: SocialPanel accepts onMessage for prop symmetry; void-casts it since SocialPanel has no WS subscriptions
 - [Phase 32]: GroupCard Delete button gated on group.ownerId === currentUserId using JWT sub decode (GRUP-02)
 - [Phase 32]: RoomList forwards onMessage prop directly to useRooms — member join/leave handled in hook (RTIM-04)
+- [Phase 32]: activeRoomId state owned by AppLayout; RoomList fires onRoomSelect, PostFeed reads roomId — keeps room selection at layout level
+- [Phase 32]: OnMessageFn type defined locally in AppLayout.tsx (mirrors RoomList.tsx and PostFeed.tsx pattern)
 
 ### Pending Todos
 
@@ -142,6 +145,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T20:05:03.132Z
-Stopped at: Completed 32-02-PLAN.md
+Last session: 2026-03-17T20:08:47.240Z
+Stopped at: Completed 32-03-PLAN.md
 Resume file: None
