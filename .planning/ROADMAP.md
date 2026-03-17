@@ -168,11 +168,11 @@ Plans:
   3. User can retrieve a paginated post feed for a room, with the most recent posts first
   4. User can view all posts authored by a specific user
   5. User can comment on a post and reply to an existing comment (nested thread); user can delete their own comment
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 29-01: Post REST endpoints (create, edit, delete, paginated room feed, user post history)
-- [ ] 29-02: Comment REST endpoints (create comment, reply to comment, delete comment)
+- [ ] 29-01-PLAN.md — posts.ts: post CRUD, paginated room feed (ULID sort), user post history (CONT-01, CONT-02, CONT-03, CONT-04, CONT-05)
+- [ ] 29-02-PLAN.md — comments.ts + index.ts wiring: threaded comments, replies, delete (CONT-06, CONT-07, CONT-08)
 
 ### Phase 30: Reactions & Likes
 **Goal**: Users can like and unlike posts and comments with attribution, react with emoji, and see who has liked a post
