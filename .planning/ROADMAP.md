@@ -255,5 +255,5 @@ Plans:
 | 28. Rooms | 2/2 | Complete    | 2026-03-17 | — |
 | 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
-| 31. Real-time Integration | v2.0 | 0/3 | Not started | — |
+| 31. Real-time Integration | 1/3 | In Progress|  | — |
 | 32. Frontend Social Layer | v2.0 | 0/2 | Not started | — |

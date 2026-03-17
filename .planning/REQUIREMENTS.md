@@ -67,10 +67,10 @@
 
 ### Real-time
 
-- [ ] **RTIM-01**: New posts in a room are broadcast via WebSocket to all room members
-- [ ] **RTIM-02**: New comments on a post are broadcast via WebSocket to room members
-- [ ] **RTIM-03**: New likes are broadcast via WebSocket to room members
-- [ ] **RTIM-04**: Room member join and leave events are broadcast via WebSocket to existing members
+- [x] **RTIM-01**: New posts in a room are broadcast via WebSocket to all room members
+- [x] **RTIM-02**: New comments on a post are broadcast via WebSocket to room members
+- [x] **RTIM-03**: New likes are broadcast via WebSocket to room members
+- [x] **RTIM-04**: Room member join and leave events are broadcast via WebSocket to existing members
 
 ## Future Requirements
 
@@ -155,10 +155,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REAC-04 | Phase 30 | Complete |
 | REAC-05 | Phase 30 | Complete |
 | REAC-06 | Phase 30 | Complete |
-| RTIM-01 | Phase 31 | Pending |
-| RTIM-02 | Phase 31 | Pending |
-| RTIM-03 | Phase 31 | Pending |
-| RTIM-04 | Phase 31 | Pending |
+| RTIM-01 | Phase 31 | Complete |
+| RTIM-02 | Phase 31 | Complete |
+| RTIM-03 | Phase 31 | Complete |
+| RTIM-04 | Phase 31 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 38 total
