@@ -23,10 +23,13 @@
  *   1 — one or more tests failed
  *
  * RTIM-04 (social:member_joined / social:member_left) requires two Cognito accounts:
- * User 1 subscribes to the channel, User 2 joins the room via POST /api/rooms/:roomId/join.
- * Manual verification: run the script, then in a separate terminal:
+ * User 1 subscribes to the channel, User 2 joins or leaves the room.
+ * Manual verification — join:
  *   curl -X POST http://localhost:3001/api/rooms/$ROOM_ID/join -H "Authorization: Bearer $JWT_TOKEN_2"
  * User 1 should receive { type: 'social:member_joined', ... }
+ * Manual verification — leave:
+ *   curl -X DELETE http://localhost:3001/api/rooms/$ROOM_ID/leave -H "Authorization: Bearer $JWT_TOKEN_2"
+ * User 1 should receive { type: 'social:member_left', channel: channelId, payload: { roomId, userId, leftAt }, ... }
  */
 'use strict';
 
