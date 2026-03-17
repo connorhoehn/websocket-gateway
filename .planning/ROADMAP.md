@@ -85,7 +85,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 **Milestone Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, likes with attribution, and real-time broadcast of social events to room members — all keyed on Cognito `sub` for referential integrity and cross-app reuse.
 
 - [x] **Phase 25: Social Infrastructure** — New CDK social-stack, all 9 DynamoDB tables, Express social-api base with Cognito auth middleware (completed 2026-03-16)
-- [ ] **Phase 26: User Profiles & Social Graph** — Profile CRUD endpoints and follow/unfollow/friends REST API
+- [x] **Phase 26: User Profiles & Social Graph** — Profile CRUD endpoints and follow/unfollow/friends REST API (completed 2026-03-17)
 - [ ] **Phase 27: Groups** — Group CRUD, membership management, roles, visibility, and invitations
 - [ ] **Phase 28: Rooms** — Standalone, group-scoped, and DM room CRUD, membership, and WS channel mapping
 - [ ] **Phase 29: Posts & Comments** — Text posts in rooms, threaded comments, post feed, and user post history
@@ -248,7 +248,7 @@ Plans:
 | 23. Resource Management | v1.5 | 0/1 | Deferred | — |
 | 24. Input Validation & Telemetry | v1.5 | 0/1 | Deferred | — |
 | 25. Social Infrastructure | 1/1 | Complete    | 2026-03-16 | — |
-| 26. User Profiles & Social Graph | 2/3 | In Progress|  | — |
+| 26. User Profiles & Social Graph | 3/3 | Complete   | 2026-03-17 | — |
 | 27. Groups | v2.0 | 0/2 | Not started | — |
 | 28. Rooms | v2.0 | 0/2 | Not started | — |
 | 29. Posts & Comments | v2.0 | 0/2 | Not started | — |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 26-03-PLAN.md
-last_updated: "2026-03-17T15:58:23.073Z"
+stopped_at: Completed 26-02-PLAN.md
+last_updated: "2026-03-17T16:16:03.352Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 25-social-infrastructure P01 | 127 | 2 tasks | 10 files |
 | Phase 26-user-profiles-social-graph P01 | 300 | 2 tasks | 3 files |
 | Phase 26 P03 | 491 | 2 tasks | 2 files |
+| Phase 26-user-profiles-social-graph P02 | 725 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Key decisions affecting v2.0 work:
 - [Phase 26]: PUT /api/profiles uses dynamic UpdateExpression to preserve unspecified fields
 - [Phase 26]: GET /api/profiles/:userId returns 403 (not 404) for private profiles to distinguish access denial from not-found
 - [Phase 26]: SocialPanel uses named hook imports matching project convention; all sub-components co-located as unexported internals in SocialPanel.tsx
+- [Phase 26]: GET /followers uses ScanCommand (no GSI on followeeId in social-relationships table)
+- [Phase 26]: 409 returned on duplicate follow — callers distinguish already-following from new follow
 
 ### Pending Todos
 
@@ -83,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T15:58:23.071Z
-Stopped at: Completed 26-03-PLAN.md
+Last session: 2026-03-17T16:16:03.350Z
+Stopped at: Completed 26-02-PLAN.md
 Resume file: None
