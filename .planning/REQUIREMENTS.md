@@ -26,13 +26,13 @@
 
 - [x] **GRUP-01**: User can create a group with name and description
 - [x] **GRUP-02**: User can delete a group they own
-- [ ] **GRUP-03**: Group owner/admin can invite users to a group by Cognito userId
-- [ ] **GRUP-04**: User can accept or decline a group invitation
+- [x] **GRUP-03**: Group owner/admin can invite users to a group by Cognito userId
+- [x] **GRUP-04**: User can accept or decline a group invitation
 - [x] **GRUP-05**: User can set group visibility (public / private)
-- [ ] **GRUP-06**: User can join a public group without invitation
-- [ ] **GRUP-07**: User can leave a group they're a member of
-- [ ] **GRUP-08**: Group members have roles (owner / admin / member) with appropriate permission boundaries
-- [ ] **GRUP-09**: User can view group members and their roles
+- [x] **GRUP-06**: User can join a public group without invitation
+- [x] **GRUP-07**: User can leave a group they're a member of
+- [x] **GRUP-08**: Group members have roles (owner / admin / member) with appropriate permission boundaries
+- [x] **GRUP-09**: User can view group members and their roles
 
 ### Rooms
 
@@ -126,13 +126,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SOCL-06 | Phase 26 | Complete |
 | GRUP-01 | Phase 27 | Complete |
 | GRUP-02 | Phase 27 | Complete |
-| GRUP-03 | Phase 27 | Pending |
-| GRUP-04 | Phase 27 | Pending |
+| GRUP-03 | Phase 27 | Complete |
+| GRUP-04 | Phase 27 | Complete |
 | GRUP-05 | Phase 27 | Complete |
-| GRUP-06 | Phase 27 | Pending |
-| GRUP-07 | Phase 27 | Pending |
-| GRUP-08 | Phase 27 | Pending |
-| GRUP-09 | Phase 27 | Pending |
+| GRUP-06 | Phase 27 | Complete |
+| GRUP-07 | Phase 27 | Complete |
+| GRUP-08 | Phase 27 | Complete |
+| GRUP-09 | Phase 27 | Complete |
 | ROOM-01 | Phase 28 | Pending |
 | ROOM-02 | Phase 28 | Pending |
 | ROOM-03 | Phase 28 | Pending |
