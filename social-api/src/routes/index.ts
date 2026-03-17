@@ -7,6 +7,7 @@ import { roomsRouter } from './rooms';
 import { groupRoomsRouter } from './group-rooms';
 import { roomMembersRouter, myRoomsRouter } from './room-members';
 import { postsRouter, userPostsRouter } from './posts';
+import { commentsRouter } from './comments';
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use('/rooms', roomsRouter);
 router.use('/rooms/:roomId', roomMembersRouter);
 router.use('/rooms/:roomId/posts', postsRouter);
 router.use('/posts', userPostsRouter);
+router.use('/rooms/:roomId/posts/:postId/comments', commentsRouter);
 
 export default router;
