@@ -7,12 +7,12 @@
  *   - social-api: http://localhost:3001 (or SOCIAL_API_URL)
  *
  * Required env vars:
- *   JWT_TOKEN_1   — Cognito JWT for the subscribing user (room member)
- *   ROOM_ID       — roomId the user is a member of
- *   CHANNEL_ID    — channelId for that room (from social-rooms DynamoDB)
+ *   JWT_TOKEN_1    — Cognito JWT for the subscribing user (room member)
+ *   ROOM_ID        — roomId the user is a member of
+ *   CHANNEL_ID     — channelId for that room (from social-rooms DynamoDB)
  *
  * Optional:
- *   WS_URL        — defaults to ws://localhost:8080
+ *   WS_URL         — defaults to ws://localhost:8080
  *   SOCIAL_API_URL — defaults to http://localhost:3001
  *
  * Usage:
@@ -64,7 +64,10 @@ function connectWS() {
 
 function waitForEvent(ws, matchFn, timeoutMs = TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`Timeout waiting for event after ${timeoutMs}ms`)), timeoutMs);
+    const t = setTimeout(
+      () => reject(new Error(`Timeout waiting for event after ${timeoutMs}ms`)),
+      timeoutMs
+    );
     const handler = (raw) => {
       try {
         const msg = JSON.parse(raw.toString());
@@ -145,7 +148,11 @@ async function main() {
   // Subscribe to social channel
   send(ws, { service: 'social', action: 'subscribe', channelId: CHANNEL_ID });
   try {
-    await waitForEvent(ws, (m) => m.type === 'social' && m.action === 'subscribed' && m.channelId === CHANNEL_ID, 5000);
+    await waitForEvent(
+      ws,
+      (m) => m.type === 'social' && m.action === 'subscribed' && m.channelId === CHANNEL_ID,
+      5000
+    );
     console.log(`  Subscribed to channel ${CHANNEL_ID}\n`);
   } catch (err) {
     console.error(`FAIL: subscribe confirmation not received: ${err.message}`);
@@ -164,7 +171,7 @@ async function main() {
   });
 
   // RTIM-02: social:comment
-  // Create a post first, then comment on it
+  // Create a parent post first so we have a valid postId to comment on
   await runTest('RTIM-02: social:comment event received after POST /rooms/:roomId/posts/:postId/comments', async () => {
     const postResp = await post(`/api/rooms/${ROOM_ID}/posts`, { content: 'rtim-test-comment-parent' });
     const postId = postResp.postId;
@@ -178,6 +185,7 @@ async function main() {
   });
 
   // RTIM-03: social:like
+  // Create a post first so we have a valid postId to like
   await runTest('RTIM-03: social:like event received after POST /rooms/:roomId/posts/:postId/likes', async () => {
     const postResp = await post(`/api/rooms/${ROOM_ID}/posts`, { content: 'rtim-test-like-target' });
     const postId = postResp.postId;
@@ -190,11 +198,10 @@ async function main() {
     }
   });
 
-  // RTIM-04 manual verification note:
-  // social:member_joined requires a second Cognito account (JWT_TOKEN_2).
+  // RTIM-04: social:member_joined — requires two Cognito accounts, manual verification only.
   // Automated assertion is omitted because it needs two separate user tokens.
   // To verify manually:
-  //   1. Keep this script running (or subscribe in a WS client)
+  //   1. Keep a WS client subscribed to this channel (as user 1)
   //   2. In another terminal, run:
   //      curl -X POST http://localhost:3001/api/rooms/$ROOM_ID/join \
   //           -H "Authorization: Bearer $JWT_TOKEN_2"
