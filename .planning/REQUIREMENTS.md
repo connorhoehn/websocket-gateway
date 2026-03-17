@@ -15,12 +15,12 @@
 
 ### Social Graph
 
-- [ ] **SOCL-01**: User can follow another user
-- [ ] **SOCL-02**: User can unfollow a user
-- [ ] **SOCL-03**: Mutual follows (both following each other) surface as a "friends" relationship
-- [ ] **SOCL-04**: User can view their list of followers
-- [ ] **SOCL-05**: User can view who they follow
-- [ ] **SOCL-06**: User can view their mutual friends
+- [x] **SOCL-01**: User can follow another user
+- [x] **SOCL-02**: User can unfollow a user
+- [x] **SOCL-03**: Mutual follows (both following each other) surface as a "friends" relationship
+- [x] **SOCL-04**: User can view their list of followers
+- [x] **SOCL-05**: User can view who they follow
+- [x] **SOCL-06**: User can view their mutual friends
 
 ### Groups
 
@@ -118,12 +118,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROF-03 | Phase 26 | Complete |
 | PROF-04 | Phase 26 | Complete |
 | PROF-05 | Phase 26 | Complete |
-| SOCL-01 | Phase 26 | Pending |
-| SOCL-02 | Phase 26 | Pending |
-| SOCL-03 | Phase 26 | Pending |
-| SOCL-04 | Phase 26 | Pending |
-| SOCL-05 | Phase 26 | Pending |
-| SOCL-06 | Phase 26 | Pending |
+| SOCL-01 | Phase 26 | Complete |
+| SOCL-02 | Phase 26 | Complete |
+| SOCL-03 | Phase 26 | Complete |
+| SOCL-04 | Phase 26 | Complete |
+| SOCL-05 | Phase 26 | Complete |
+| SOCL-06 | Phase 26 | Complete |
 | GRUP-01 | Phase 27 | Pending |
 | GRUP-02 | Phase 27 | Pending |
 | GRUP-03 | Phase 27 | Pending |
