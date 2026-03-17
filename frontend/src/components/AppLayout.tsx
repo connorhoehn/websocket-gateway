@@ -27,6 +27,7 @@ import { SharedTextEditor } from './SharedTextEditor';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ErrorPanel } from './ErrorPanel';
 import { TabbedEventLog } from './TabbedEventLog';
+import { SocialPanel } from './SocialPanel';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -291,6 +292,9 @@ export function AppLayout({
               disabled={connectionState !== 'connected'}
             />
           </div>
+
+          {/* Social section card */}
+          <SocialPanel />
 
           {/* Dev Tools section */}
           <div style={sectionCardStyle}>
