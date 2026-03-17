@@ -1,9 +1,13 @@
 // frontend/src/components/SocialPanel.tsx
 //
 // Social Profile section card — all sub-components co-located as unexported internals.
-// Only SocialPanel is exported. Uses mock data; connect to social API for live data.
+// Only SocialPanel is exported. Connected to live social API hooks.
 
 import { useState, useEffect } from 'react';
+import { useSocialProfile } from '../hooks/useSocialProfile';
+import { useFriends } from '../hooks/useFriends';
+import type { ProfileItem, OnMessageFn } from '../hooks/useSocialProfile';
+import type { PublicProfile } from '../hooks/useFriends';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,6 +16,7 @@ import { useState, useEffect } from 'react';
 type Visibility = 'public' | 'private';
 type FollowState = 'not-following' | 'following' | 'pending';
 
+// Internal display shape (derived from live hook data for sub-components)
 interface UserProfile {
   id: string;
   displayName: string;
@@ -24,54 +29,25 @@ interface UserProfile {
   followState?: FollowState;
 }
 
-// ---------------------------------------------------------------------------
-// Mock data constants (exact values from UI-SPEC — do not alter)
-// ---------------------------------------------------------------------------
+function publicProfileToUserProfile(p: PublicProfile, followState: FollowState): UserProfile {
+  return {
+    id: p.userId,
+    displayName: p.displayName,
+    bio: '',
+    avatarUrl: p.avatarUrl ?? null,
+    visibility: p.visibility,
+    followState,
+  };
+}
 
-const CURRENT_USER: UserProfile = {
-  id: 'user-001',
-  displayName: 'Alex Chen',
-  bio: 'Building real-time systems. Interested in distributed systems and collaborative tools.',
-  avatarUrl: null,
-  visibility: 'public',
-  followersCount: 42,
-  followingCount: 31,
-  friendsCount: 18,
-};
-
-const MOCK_USERS: UserProfile[] = [
-  { id: 'user-002', displayName: 'Jordan Rivera', bio: 'Full-stack developer. React, Node, AWS.', avatarUrl: null, visibility: 'public', followState: 'following' },
-  { id: 'user-003', displayName: 'Sam Patel', bio: 'DevOps and platform engineering.', avatarUrl: null, visibility: 'public', followState: 'not-following' },
-  { id: 'user-004', displayName: 'Morgan Lee', bio: 'UX designer and front-end engineer.', avatarUrl: null, visibility: 'private', followState: 'following' },
-  { id: 'user-005', displayName: 'Casey Kim', bio: 'Open source contributor.', avatarUrl: null, visibility: 'public', followState: 'not-following' },
-];
-
-// Social graph tabs for viewer (user-001):
-// Followers: user-002, user-003
-// Following: user-002, user-004
-// Friends (mutual): user-002 only
-const TAB_FOLLOWERS = MOCK_USERS.filter(u => ['user-002', 'user-003'].includes(u.id));
-const TAB_FOLLOWING = MOCK_USERS.filter(u => ['user-002', 'user-004'].includes(u.id));
-const TAB_FRIENDS = MOCK_USERS.filter(u => ['user-002'].includes(u.id));
-
-// ---------------------------------------------------------------------------
-// MockDataBanner (internal)
-// ---------------------------------------------------------------------------
-
-function MockDataBanner() {
-  return (
-    <div style={{
-      background: '#fefce8',
-      border: '1px solid #fde68a',
-      borderRadius: 8,
-      padding: '8px 16px',
-      marginBottom: 16,
-      fontSize: 14,
-      color: '#92400e',
-    }}>
-      Demo mode — using mock data. Connect to the social API to go live.
-    </div>
-  );
+function profileItemToUserProfile(p: ProfileItem): UserProfile {
+  return {
+    id: p.userId,
+    displayName: p.displayName,
+    bio: p.bio ?? '',
+    avatarUrl: p.avatarUrl ?? null,
+    visibility: p.visibility,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +112,7 @@ function FollowButton({ targetUser, followState, compact = false, onFollowChange
       minWidth: 88,
       padding: '0 16px',
       border: 'none',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
     };
     if (state === 'not-following') return { ...base, background: '#646cff', color: '#ffffff', fontWeight: 600 };
     if (state === 'following') return { ...base, background: '#ffffff', color: '#374151', fontWeight: 400, border: '1px solid #e2e8f0' };
@@ -144,9 +121,6 @@ function FollowButton({ targetUser, followState, compact = false, onFollowChange
 
   const handleFollow = () => {
     onFollowChange(targetUser.id, 'pending');
-    setTimeout(() => {
-      onFollowChange(targetUser.id, 'following');
-    }, 400);
   };
 
   const handleUnfollowClick = () => setShowConfirm(true);
@@ -193,13 +167,13 @@ function FollowButton({ targetUser, followState, compact = false, onFollowChange
           </span>
           <button
             onClick={handleKeepFollowing}
-            style={{ height: 36, borderRadius: 8, fontSize: 14, padding: '0 12px', background: '#ffffff', color: '#374151', border: '1px solid #e2e8f0', cursor: 'pointer' }}
+            style={{ height: 36, borderRadius: 8, fontSize: 14, padding: '0 12px', background: '#ffffff', color: '#374151', border: '1px solid #e2e8f0', cursor: 'pointer', fontFamily: 'system-ui, -apple-system, sans-serif' }}
           >
             Keep Following
           </button>
           <button
             onClick={handleConfirmUnfollow}
-            style={{ height: 36, borderRadius: 8, fontSize: 14, padding: '0 12px', background: '#dc2626', color: '#ffffff', border: 'none', cursor: 'pointer' }}
+            style={{ height: 36, borderRadius: 8, fontSize: 14, padding: '0 12px', background: '#dc2626', color: '#ffffff', border: 'none', cursor: 'pointer', fontFamily: 'system-ui, -apple-system, sans-serif' }}
           >
             Unfollow
           </button>
@@ -216,7 +190,7 @@ function FollowButton({ targetUser, followState, compact = false, onFollowChange
 interface ProfileCardProps {
   user: UserProfile;
   isOwnProfile: boolean;
-  onSave: (updates: Partial<UserProfile>) => void;
+  onSave: (updates: Partial<ProfileItem>) => Promise<void>;
 }
 
 function ProfileCard({ user, isOwnProfile, onSave }: ProfileCardProps) {
@@ -239,13 +213,14 @@ function ProfileCard({ user, isOwnProfile, onSave }: ProfileCardProps) {
     ? { background: '#f0fdf4', color: '#16a34a', fontSize: 12, padding: '2px 8px', borderRadius: 4 }
     : { background: '#f1f5f9', color: '#64748b', fontSize: 12, padding: '2px 8px', borderRadius: 4 };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    setTimeout(() => {
-      onSave({ displayName, bio, avatarUrl: avatarUrl || null, visibility });
-      setSaving(false);
+    try {
+      await onSave({ displayName, bio, avatarUrl: avatarUrl || undefined, visibility });
       setEditing(false);
-    }, 300);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (editing) {
@@ -318,7 +293,7 @@ function ProfileCard({ user, isOwnProfile, onSave }: ProfileCardProps) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
-            onClick={handleSave}
+            onClick={() => { void handleSave(); }}
             disabled={saving}
             style={{
               flex: 1,
@@ -363,9 +338,9 @@ function ProfileCard({ user, isOwnProfile, onSave }: ProfileCardProps) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 16, fontSize: 14, color: '#64748b', marginBottom: 12 }}>
-        <span><strong style={{ color: '#0f172a' }}>{user.followersCount}</strong> Followers</span>
-        <span><strong style={{ color: '#0f172a' }}>{user.followingCount}</strong> Following</span>
-        <span><strong style={{ color: '#0f172a' }}>{user.friendsCount}</strong> Friends</span>
+        <span><strong style={{ color: '#0f172a' }}>{user.followersCount ?? 0}</strong> Followers</span>
+        <span><strong style={{ color: '#0f172a' }}>{user.followingCount ?? 0}</strong> Following</span>
+        <span><strong style={{ color: '#0f172a' }}>{user.friendsCount ?? 0}</strong> Friends</span>
       </div>
       {isOwnProfile && (
         <button
@@ -494,30 +469,35 @@ function SocialGraphPanel({ followers, following, friends, followStates, onFollo
 // SocialPanel (exported)
 // ---------------------------------------------------------------------------
 
-export function SocialPanel() {
-  const [currentUser, setCurrentUser] = useState<UserProfile>(CURRENT_USER);
+export function SocialPanel({ idToken, onMessage }: { idToken: string | null; onMessage: OnMessageFn }) {
+  const { profile, loading: profileLoading, updateProfile } = useSocialProfile({ idToken });
+  const { followers, following, friends, follow, unfollow } = useFriends({ idToken });
 
-  // Follow state map — tracks follow state for all other users
-  const initialFollowStates: Record<string, FollowState> = {};
-  MOCK_USERS.forEach(u => { initialFollowStates[u.id] = u.followState ?? 'not-following'; });
-  const [followStates, setFollowStates] = useState<Record<string, FollowState>>(initialFollowStates);
-
-  // Derived social graph from follow states
-  // Following = users where followState is 'following'
-  const followingUsers = MOCK_USERS.filter(u => followStates[u.id] === 'following');
-  // Followers tab = fixed mock (user-002, user-003 follow viewer)
-  const followerUsers = TAB_FOLLOWERS;
-  // Friends = intersection of followingUsers and followerUsers (by id)
-  const followerIds = new Set(followerUsers.map(u => u.id));
-  const friendUsers = followingUsers.filter(u => followerIds.has(u.id));
+  // Derive follow states from live following array
+  const followingIds = new Set(following.map(u => u.userId));
+  const followStates: Record<string, FollowState> = {};
+  [...followers, ...following, ...friends].forEach(u => {
+    followStates[u.userId] = followingIds.has(u.userId) ? 'following' : 'not-following';
+  });
 
   const handleFollowChange = (userId: string, newState: FollowState) => {
-    setFollowStates(prev => ({ ...prev, [userId]: newState }));
+    if (newState === 'following' || newState === 'pending') {
+      void follow(userId);
+    } else {
+      void unfollow(userId);
+    }
   };
 
-  const handleProfileSave = (updates: Partial<UserProfile>) => {
-    setCurrentUser(prev => ({ ...prev, ...updates }));
-  };
+  const followersProfiles = followers.map(u => publicProfileToUserProfile(u, followStates[u.userId] ?? 'not-following'));
+  const followingProfiles = following.map(u => publicProfileToUserProfile(u, 'following'));
+  const friendsProfiles = friends.map(u => publicProfileToUserProfile(u, 'following'));
+
+  const currentUserProfile: UserProfile | null = profile ? {
+    ...profileItemToUserProfile(profile),
+    followersCount: followers.length,
+    followingCount: following.length,
+    friendsCount: friends.length,
+  } : null;
 
   const sectionCardStyle: React.CSSProperties = {
     background: '#ffffff',
@@ -535,22 +515,33 @@ export function SocialPanel() {
     margin: '0 0 0.75rem 0',
   };
 
+  // Suppress unused warning for onMessage — it's accepted as a prop for symmetry
+  // with GroupPanel / RoomList but SocialPanel itself does not subscribe to WS events.
+  void onMessage;
+
   return (
     <div style={sectionCardStyle}>
       <h2 style={sectionHeaderStyle}>Social Profile</h2>
-      <MockDataBanner />
-      <ProfileCard
-        user={currentUser}
-        isOwnProfile={true}
-        onSave={handleProfileSave}
-      />
-      <SocialGraphPanel
-        followers={followerUsers}
-        following={followingUsers}
-        friends={friendUsers}
-        followStates={followStates}
-        onFollowChange={handleFollowChange}
-      />
+      {profileLoading && !currentUserProfile ? (
+        <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
+          Loading profile…
+        </div>
+      ) : currentUserProfile ? (
+        <>
+          <ProfileCard
+            user={currentUserProfile}
+            isOwnProfile={true}
+            onSave={updateProfile}
+          />
+          <SocialGraphPanel
+            followers={followersProfiles}
+            following={followingProfiles}
+            friends={friendsProfiles}
+            followStates={followStates}
+            onFollowChange={handleFollowChange}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
