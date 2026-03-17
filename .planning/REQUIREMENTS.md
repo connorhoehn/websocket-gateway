@@ -36,13 +36,13 @@
 
 ### Rooms
 
-- [ ] **ROOM-01**: User can create a standalone room with a name
-- [ ] **ROOM-02**: Group owner/admin can create rooms scoped within a group
-- [ ] **ROOM-03**: Two mutual friends can open a direct-message (DM) room
+- [x] **ROOM-01**: User can create a standalone room with a name
+- [x] **ROOM-02**: Group owner/admin can create rooms scoped within a group
+- [x] **ROOM-03**: Two mutual friends can open a direct-message (DM) room
 - [ ] **ROOM-04**: Room membership is persisted in DynamoDB keyed on Cognito `sub` for referential integrity
-- [ ] **ROOM-05**: Each room maps to a WebSocket channel ID so real-time events are delivered to members
+- [x] **ROOM-05**: Each room maps to a WebSocket channel ID so real-time events are delivered to members
 - [ ] **ROOM-06**: User can view the member list of a room they belong to
-- [ ] **ROOM-07**: Room maintains persistent post history in DynamoDB (beyond LRU cache)
+- [x] **ROOM-07**: Room maintains persistent post history in DynamoDB (beyond LRU cache)
 - [ ] **ROOM-08**: User can list all rooms they are a member of
 
 ### Content
@@ -133,13 +133,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GRUP-07 | Phase 27 | Complete |
 | GRUP-08 | Phase 27 | Complete |
 | GRUP-09 | Phase 27 | Complete |
-| ROOM-01 | Phase 28 | Pending |
-| ROOM-02 | Phase 28 | Pending |
-| ROOM-03 | Phase 28 | Pending |
+| ROOM-01 | Phase 28 | Complete |
+| ROOM-02 | Phase 28 | Complete |
+| ROOM-03 | Phase 28 | Complete |
 | ROOM-04 | Phase 28 | Pending |
-| ROOM-05 | Phase 28 | Pending |
+| ROOM-05 | Phase 28 | Complete |
 | ROOM-06 | Phase 28 | Pending |
-| ROOM-07 | Phase 28 | Pending |
+| ROOM-07 | Phase 28 | Complete |
 | ROOM-08 | Phase 28 | Pending |
 | CONT-01 | Phase 29 | Pending |
 | CONT-02 | Phase 29 | Pending |

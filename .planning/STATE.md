@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 27-02-PLAN.md
-last_updated: "2026-03-17T17:04:13.808Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-03-17T17:07:59.767Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 26-user-profiles-social-graph P02 | 725 | 2 tasks | 2 files |
 | Phase 27-groups P01 | 124 | 2 tasks | 4 files |
 | Phase 27-groups P02 | 62 | 2 tasks | 2 files |
+| Phase 28-rooms P01 | 65 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Key decisions affecting v2.0 work:
 - [Phase 27-groups]: GET /groups/:groupId returns 403 for non-members of private groups to conceal group existence
 - [Phase 27-groups]: groupMembersRouter mounted at /groups/:groupId (not /groups) to expose groupId via mergeParams
 - [Phase 27-groups]: status absence treated as 'active' throughout — owner records from 27-01 have no status field
+- [Phase 28-rooms]: POST /api/rooms/dm defined before /:roomId to prevent Express matching 'dm' as roomId param
+- [Phase 28-rooms]: groupRoomsRouter uses mergeParams: true to expose :groupId from parent mount
+- [Phase 28-rooms]: ExpressionAttributeNames '#t' guards DynamoDB reserved word 'type' in all room FilterExpressions
 
 ### Pending Todos
 
@@ -93,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T17:01:51.515Z
-Stopped at: Completed 27-02-PLAN.md
+Last session: 2026-03-17T17:07:55.042Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None
