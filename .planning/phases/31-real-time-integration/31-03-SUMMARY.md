@@ -69,7 +69,7 @@ completed: 2026-03-17
 
 Each task was committed atomically:
 
-1. **Task 1: Write end-to-end integration test script** - `2393d70` (feat)
+1. **Task 1: Write end-to-end integration test script** - `3585e6f` (feat)
 
 **Plan metadata:** _(docs commit follows)_
 
@@ -107,7 +107,7 @@ None - no external service configuration required beyond what's documented in th
 - [x] `node --check` passes (syntax OK)
 - [x] `node scripts/test-realtime-social.js` (no env vars) exits 0, prints SKIP
 - [x] Contains `social:post`, `social:comment`, `social:like`, `RTIM-04` comment, `WS_URL`, `SOCIAL_API_URL`
-- [x] Commit `2393d70` present
+- [x] Commit `3585e6f` present
 
 ## Self-Check: PASSED
 

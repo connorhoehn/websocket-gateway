@@ -4,7 +4,7 @@ milestone: v2.0
 milestone_name: Social Platform
 status: planning
 stopped_at: Completed 31-03-PLAN.md
-last_updated: "2026-03-17T19:05:11.900Z"
+last_updated: "2026-03-17T19:06:39.259Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 31-real-time-integration P01 | 153 | 2 tasks | 6 files |
 | Phase 31-real-time-integration P01 | 2 | 2 tasks | 7 files |
 | Phase 31-real-time-integration P03 | 62 | 1 tasks | 1 files |
+| Phase 31-real-time-integration P03 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Key decisions affecting v2.0 work:
 - [Phase 31-real-time-integration]: Room channelId fetched via GetCommand on social-rooms before each emit — routes have roomId from params, one extra DynamoDB read gets channelId
 - [Phase 31-real-time-integration]: RTIM-04 omitted from automated assertions — requires two Cognito tokens; manual curl verification steps documented in test script
 - [Phase 31-real-time-integration]: WS event listener registered before HTTP write to eliminate race conditions in real-time test assertions
+- [Phase 31-real-time-integration]: RTIM-04 omitted from automated assertions — requires two Cognito tokens; documented as manual curl verification steps in script
+- [Phase 31-real-time-integration]: Event listener registered before HTTP write in test-realtime-social.js to eliminate race conditions
 
 ### Pending Todos
 
@@ -128,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:05:11.897Z
+Last session: 2026-03-17T19:06:39.256Z
 Stopped at: Completed 31-03-PLAN.md
 Resume file: None
