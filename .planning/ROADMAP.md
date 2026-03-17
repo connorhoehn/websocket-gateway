@@ -152,11 +152,11 @@ Plans:
   3. Two mutual friends can open a DM room; the room is not created if they are not mutual friends
   4. Each room record contains a WebSocket channel ID that the gateway can route events to
   5. User can list all rooms they are a member of and view the member list for any room they belong to
-**Plans**: 3 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 28-01: Room CRUD REST endpoints (standalone, group-scoped, DM) with DynamoDB persistence
-- [ ] 28-02: Room membership REST endpoints (join, list members, list my rooms) and WS channel ID mapping
+- [ ] 28-01-PLAN.md — rooms.ts + group-rooms.ts: standalone/DM/group-scoped room CRUD with channelId mapping (ROOM-01, ROOM-02, ROOM-03, ROOM-05, ROOM-07)
+- [ ] 28-02-PLAN.md — room-members.ts + index.ts mount: join, list members, list my rooms (ROOM-04, ROOM-06, ROOM-08)
 
 ### Phase 29: Posts & Comments
 **Goal**: Users can create, edit, delete, and read text posts in rooms, and hold threaded comment conversations on those posts
