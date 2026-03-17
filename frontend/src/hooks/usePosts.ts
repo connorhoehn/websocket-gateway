@@ -34,6 +34,7 @@ export interface UsePostsReturn {
   createPost: (content: string) => Promise<void>;
   editPost: (postId: string, content: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
+  getUserPosts: (userId: string) => Promise<PostItem[]>;
   loading: boolean;
   error: string | null;
   hasMore: boolean;
@@ -198,11 +199,23 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     }
   }, [idToken, roomId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---- getUserPosts (CONT-05) -----------------------------------------------
+
+  const getUserPosts = useCallback(async (userId: string): Promise<PostItem[]> => {
+    if (!idToken) return [];
+    const res = await fetch(`${baseUrl}/api/posts/${userId}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load user posts (${res.status})`);
+    return ((await res.json()) as { posts: PostItem[] }).posts;
+  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     posts,
     createPost,
     editPost,
     deletePost,
+    getUserPosts,
     loading,
     error,
     hasMore: lastKey !== undefined,
