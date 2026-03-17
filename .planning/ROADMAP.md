@@ -119,11 +119,12 @@ Plans:
   3. User can view another user's public profile; a private profile returns 404 or 403 for non-friends
   4. User can follow another user and the follow relationship is persisted; unfollowing removes it
   5. Two users who follow each other both appear in each other's friends list
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 26-01: Profile CRUD REST endpoints (POST/GET/PUT /profiles, visibility toggle)
 - [ ] 26-02: Follow/unfollow/friends REST endpoints (followers, following, mutual friends)
+- [ ] 26-03: Demo UI — Social section card with mock data (ProfileCard, FollowButton, SocialGraphPanel)
 
 ### Phase 27: Groups
 **Goal**: Users can create and manage groups with role-based membership, visibility controls, and invitation flows
@@ -135,7 +136,7 @@ Plans:
   3. A public group is joinable without invitation; a private group requires invitation
   4. A member can leave a group; their membership is removed from the member list
   5. Group member list shows each member's role (owner / admin / member) and enforces that only owner/admin can invite
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 27-01: Group CRUD and visibility REST endpoints (create, delete, update visibility)
@@ -151,7 +152,7 @@ Plans:
   3. Two mutual friends can open a DM room; the room is not created if they are not mutual friends
   4. Each room record contains a WebSocket channel ID that the gateway can route events to
   5. User can list all rooms they are a member of and view the member list for any room they belong to
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 28-01: Room CRUD REST endpoints (standalone, group-scoped, DM) with DynamoDB persistence
@@ -167,7 +168,7 @@ Plans:
   3. User can retrieve a paginated post feed for a room, with the most recent posts first
   4. User can view all posts authored by a specific user
   5. User can comment on a post and reply to an existing comment (nested thread); user can delete their own comment
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 29-01: Post REST endpoints (create, edit, delete, paginated room feed, user post history)
@@ -183,7 +184,7 @@ Plans:
   3. User can like and unlike a comment with the same attribution behavior
   4. User can react to a post with one of the 12 supported emoji types
   5. User can retrieve the total like count and the list of user display names who liked a post
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 30-01: Like/unlike REST endpoints for posts and comments with attribution (who-liked endpoint)
@@ -198,7 +199,7 @@ Plans:
   2. When a comment is created on a post, connected room members receive a `social:comment` event
   3. When a like is recorded, connected room members receive a `social:like` event
   4. When a user joins or leaves a room, existing connected members receive a `social:member_joined` or `social:member_left` event
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 31-01: Extend WebSocket gateway with social event types and social-api integration for broadcasting to room channel members
@@ -213,7 +214,7 @@ Plans:
   3. User can create and join groups and rooms, navigate between them in the GroupPanel and RoomList components
   4. User can read and write posts and threaded comments in the PostFeed and CommentThread components
   5. User can like posts and comments via a LikeButton component; real-time social events update the UI without a page refresh
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 32-01: React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes)
