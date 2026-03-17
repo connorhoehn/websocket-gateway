@@ -58,12 +58,12 @@
 
 ### Reactions
 
-- [ ] **REAC-01**: User can like a post (like stored with attribution — Cognito `sub` of liker)
-- [ ] **REAC-02**: User can unlike a post they previously liked
-- [ ] **REAC-03**: User can like a comment with attribution
-- [ ] **REAC-04**: User can unlike a comment
+- [x] **REAC-01**: User can like a post (like stored with attribution — Cognito `sub` of liker)
+- [x] **REAC-02**: User can unlike a post they previously liked
+- [x] **REAC-03**: User can like a comment with attribution
+- [x] **REAC-04**: User can unlike a comment
 - [ ] **REAC-05**: User can react to a post with an emoji (reuses the existing 12-emoji system)
-- [ ] **REAC-06**: User can view the total like count and the list of users who liked a post
+- [x] **REAC-06**: User can view the total like count and the list of users who liked a post
 
 ### Real-time
 
@@ -149,12 +149,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONT-06 | Phase 29 | Complete |
 | CONT-07 | Phase 29 | Complete |
 | CONT-08 | Phase 29 | Complete |
-| REAC-01 | Phase 30 | Pending |
-| REAC-02 | Phase 30 | Pending |
-| REAC-03 | Phase 30 | Pending |
-| REAC-04 | Phase 30 | Pending |
+| REAC-01 | Phase 30 | Complete |
+| REAC-02 | Phase 30 | Complete |
+| REAC-03 | Phase 30 | Complete |
+| REAC-04 | Phase 30 | Complete |
 | REAC-05 | Phase 30 | Pending |
-| REAC-06 | Phase 30 | Pending |
+| REAC-06 | Phase 30 | Complete |
 | RTIM-01 | Phase 31 | Pending |
 | RTIM-02 | Phase 31 | Pending |
 | RTIM-03 | Phase 31 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 29-02-PLAN.md
-last_updated: "2026-03-17T18:01:26.860Z"
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-03-17T18:37:48.222Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
   completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
   percent: 0
 ---
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 28-rooms P02 | 64 | 2 tasks | 2 files |
 | Phase 29-posts-comments P01 | 84 | 1 tasks | 4 files |
 | Phase 29-posts-comments P02 | 67 | 2 tasks | 2 files |
+| Phase 30-reactions-likes P01 | 1 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Key decisions affecting v2.0 work:
 - [Phase 29-posts-comments]: commentsRouter uses mergeParams:true — receives :roomId and :postId from parent mount path segments
 - [Phase 29-posts-comments]: GET /comments returns flat array; clients group by parentCommentId to reconstruct thread hierarchy
 - [Phase 29-posts-comments]: parentCommentId omitted entirely for top-level comments (not null) — absence of field means top-level
+- [Phase 30-reactions-likes]: Composite targetId key (post:postId / comment:commentId) allows polymorphic likes in single social-likes table
+- [Phase 30-reactions-likes]: GET /likes FilterExpression excludes reaction items (type='reaction') from like count, future-proofing for Phase 31 emoji reactions
+- [Phase 30-reactions-likes]: postLikesRouter and commentLikesRouter mounted in index.ts as Rule 2 auto-fix — consistent with Phase 29 pattern
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T17:58:50.725Z
-Stopped at: Completed 29-02-PLAN.md
+Last session: 2026-03-17T18:37:48.220Z
+Stopped at: Completed 30-01-PLAN.md
 Resume file: None
