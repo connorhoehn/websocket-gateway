@@ -62,7 +62,7 @@
 - [x] **REAC-02**: User can unlike a post they previously liked
 - [x] **REAC-03**: User can like a comment with attribution
 - [x] **REAC-04**: User can unlike a comment
-- [ ] **REAC-05**: User can react to a post with an emoji (reuses the existing 12-emoji system)
+- [x] **REAC-05**: User can react to a post with an emoji (reuses the existing 12-emoji system)
 - [x] **REAC-06**: User can view the total like count and the list of users who liked a post
 
 ### Real-time
@@ -153,7 +153,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REAC-02 | Phase 30 | Complete |
 | REAC-03 | Phase 30 | Complete |
 | REAC-04 | Phase 30 | Complete |
-| REAC-05 | Phase 30 | Pending |
+| REAC-05 | Phase 30 | Complete |
 | REAC-06 | Phase 30 | Complete |
 | RTIM-01 | Phase 31 | Pending |
 | RTIM-02 | Phase 31 | Pending |

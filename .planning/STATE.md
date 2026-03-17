@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Social Platform
 status: planning
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-03-17T18:37:48.222Z"
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-03-17T18:41:01.012Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 29-posts-comments P01 | 84 | 1 tasks | 4 files |
 | Phase 29-posts-comments P02 | 67 | 2 tasks | 2 files |
 | Phase 30-reactions-likes P01 | 1 | 1 tasks | 2 files |
+| Phase 30 P02 | 57 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,7 @@ Key decisions affecting v2.0 work:
 - [Phase 30-reactions-likes]: Composite targetId key (post:postId / comment:commentId) allows polymorphic likes in single social-likes table
 - [Phase 30-reactions-likes]: GET /likes FilterExpression excludes reaction items (type='reaction') from like count, future-proofing for Phase 31 emoji reactions
 - [Phase 30-reactions-likes]: postLikesRouter and commentLikesRouter mounted in index.ts as Rule 2 auto-fix — consistent with Phase 29 pattern
+- [Phase 30]: reactionsRouter mounted at /rooms/:roomId/posts/:postId handling /reactions sub-paths; targetId post:{postId}:reaction distinct from plain like targetId
 
 ### Pending Todos
 
@@ -110,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T18:37:48.220Z
-Stopped at: Completed 30-01-PLAN.md
+Last session: 2026-03-17T18:41:01.010Z
+Stopped at: Completed 30-02-PLAN.md
 Resume file: None
