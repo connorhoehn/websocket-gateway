@@ -4,7 +4,7 @@ milestone: v2.0
 milestone_name: Social Platform
 status: planning
 stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-03-17T19:00:10.436Z"
+last_updated: "2026-03-17T19:00:36.103Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 8
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 30-reactions-likes P01 | 1 | 1 tasks | 2 files |
 | Phase 30 P02 | 57 | 2 tasks | 2 files |
 | Phase 31 P02 | 3 | 2 tasks | 3 files |
+| Phase 31-real-time-integration P02 | 180 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Key decisions affecting v2.0 work:
 - [Phase 30]: reactionsRouter mounted at /rooms/:roomId/posts/:postId handling /reactions sub-paths; targetId post:{postId}:reaction distinct from plain like targetId
 - [Phase 31]: SocialService instantiated unconditionally in initializeServices — no ENABLED_SERVICES gate (zero idle cost, always available for social room clients)
 - [Phase 31]: SocialService delegates entirely to messageRouter.subscribeToChannel/unsubscribeFromChannel — Redis SET node registration handled transparently by message router layer
+- [Phase 31-real-time-integration]: SocialService instantiated unconditionally in initializeServices (not behind enabledServices check) — it has no idle cost (just a Map) and social rooms expect it always available
+- [Phase 31-real-time-integration]: SocialService delegates entirely to messageRouter.subscribeToChannel/unsubscribeFromChannel — Redis SET registration for node discovery handled by message router layer, not by this service
 
 ### Pending Todos
 
@@ -115,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T19:00:10.433Z
+Last session: 2026-03-17T19:00:36.101Z
 Stopped at: Completed 31-02-PLAN.md
 Resume file: None
