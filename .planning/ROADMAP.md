@@ -9,7 +9,8 @@
 - ✅ **v1.4 UI Polish & Feature Completeness** — Phases 15-19 (shipped 2026-03-14)
 - 🔧 **v1.5 Production Hardening** — Phases 20-24 (Deferred — skipped in favor of v2.0)
 - ✅ **v2.0 Social Platform** — Phases 25-32 (shipped 2026-03-17)
-- 🚧 **v2.1 Social UX Integration** — Phase 33 (in progress)
+- ✅ **v2.1 Social UX Integration** — Phase 33 (shipped 2026-03-18)
+- 🚧 **v3.0 Durable Event Architecture** — Phases 34-38 (in progress)
 
 ## Phases
 
@@ -81,7 +82,8 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
 
 
-### ✅ v2.0 Social Platform (Phases 25-32) — SHIPPED 2026-03-17
+<details>
+<summary>✅ v2.0 Social Platform (Phases 25-32) — SHIPPED 2026-03-17</summary>
 
 **Milestone Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, likes with attribution, and real-time broadcast of social events to room members — all keyed on Cognito `sub` for referential integrity and cross-app reuse.
 
@@ -94,11 +96,32 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 31: Real-time Integration** — Extend WebSocket gateway with social event types broadcast to room members (completed 2026-03-17)
 - [x] **Phase 32: Frontend Social Layer** — React hooks and UI components for the complete social feature set (completed 2026-03-17)
 
-### 🚧 v2.1 Social UX Integration (Phase 33)
+</details>
+
+<details>
+<summary>✅ v2.1 Social UX Integration (Phase 33) — SHIPPED 2026-03-18</summary>
 
 **Milestone Goal:** Wire the social layer and WebSocket gateway together so that selecting a social room activates its real-time channel, and resolve UX friction points that block a real multi-user walkthrough of the platform.
 
 - [x] **Phase 33: Social UX Integration** — Room→channel wiring, group room management in GroupPanel, friends-picker for DMs, in-app social notifications (completed 2026-03-18)
+
+</details>
+
+### 🚧 v3.0 Durable Event Architecture (Phases 34-38)
+
+**Milestone Goal:** Replace fire-and-forget social writes with a durable event pipeline (EventBridge → SQS → Lambda → DynamoDB) that never loses events, supports fan-out to multiple consumers (activity log, timeline, notifications), and runs fully locally via LocalStack. CRDT checkpoint writes are routed through the same pipeline. UI surfaces an activity feed and CRDT conflict indicator.
+
+- [ ] **Phase 34: LocalStack Dev Environment** — Docker Compose with LocalStack, EventBridge, SQS, Lambda, Redis; local dev scripts and Lambda debug tooling
+- [ ] **Phase 35: Event Bus Infrastructure** — EventBridge custom bus, typed SQS queues, DLQs, CloudWatch DLQ depth alarms, retry/DLQ behavior
+- [ ] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api
+- [ ] **Phase 37: Activity Log** — Lambda consumer persists all social events to user-activity DynamoDB table; REST endpoint and React UI for viewing activity feed
+- [ ] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI
+
+**Execution order:**
+- Phase 34 first (foundational — all others depend on LocalStack)
+- Phase 35 second (event bus required before publishing or consuming)
+- Phase 36 after Phase 35 (publishing requires the bus)
+- Phases 37 and 38 after Phase 35; can execute in parallel (independent consumers)
 
 
 ## Phase Details
@@ -115,7 +138,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 **Plans**: 1 plan
 
 Plans:
-- [ ] 25-01-PLAN.md — CDK social-stack with 9 DynamoDB tables + social-api Express service with Cognito auth middleware
+- [x] 25-01-PLAN.md — CDK social-stack with 9 DynamoDB tables + social-api Express service with Cognito auth middleware
 
 ### Phase 26: User Profiles & Social Graph
 **Goal**: Users can manage their own social profile and build a social graph by following and unfollowing other users, with mutual follows surfacing as friendships
@@ -130,9 +153,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 26-01: Profile CRUD REST endpoints (POST/GET/PUT /profiles, visibility toggle)
-- [ ] 26-02: Follow/unfollow/friends REST endpoints (followers, following, mutual friends)
-- [ ] 26-03: Demo UI — Social section card with mock data (ProfileCard, FollowButton, SocialGraphPanel)
+- [x] 26-01: Profile CRUD REST endpoints (POST/GET/PUT /profiles, visibility toggle)
+- [x] 26-02: Follow/unfollow/friends REST endpoints (followers, following, mutual friends)
+- [x] 26-03: Demo UI — Social section card with mock data (ProfileCard, FollowButton, SocialGraphPanel)
 
 ### Phase 27: Groups
 **Goal**: Users can create and manage groups with role-based membership, visibility controls, and invitation flows
@@ -147,8 +170,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 27-01-PLAN.md — Group CRUD and visibility REST endpoints (create, delete, get, update visibility)
-- [ ] 27-02-PLAN.md — Membership management REST endpoints (invite, accept/decline, join, leave, list members with roles)
+- [x] 27-01-PLAN.md — Group CRUD and visibility REST endpoints (create, delete, get, update visibility)
+- [x] 27-02-PLAN.md — Membership management REST endpoints (invite, accept/decline, join, leave, list members with roles)
 
 ### Phase 28: Rooms
 **Goal**: Users can create standalone rooms, group sub-rooms, and DM rooms; membership and WebSocket channel mapping are persisted so real-time events can be delivered to members
@@ -163,8 +186,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 28-01-PLAN.md — rooms.ts + group-rooms.ts: standalone/DM/group-scoped room CRUD with channelId mapping (ROOM-01, ROOM-02, ROOM-03, ROOM-05, ROOM-07)
-- [ ] 28-02-PLAN.md — room-members.ts + index.ts mount: join, list members, list my rooms (ROOM-04, ROOM-06, ROOM-08)
+- [x] 28-01-PLAN.md — rooms.ts + group-rooms.ts: standalone/DM/group-scoped room CRUD with channelId mapping (ROOM-01, ROOM-02, ROOM-03, ROOM-05, ROOM-07)
+- [x] 28-02-PLAN.md — room-members.ts + index.ts mount: join, list members, list my rooms (ROOM-04, ROOM-06, ROOM-08)
 
 ### Phase 29: Posts & Comments
 **Goal**: Users can create, edit, delete, and read text posts in rooms, and hold threaded comment conversations on those posts
@@ -179,8 +202,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 29-01-PLAN.md — posts.ts: post CRUD, paginated room feed (ULID sort), user post history (CONT-01, CONT-02, CONT-03, CONT-04, CONT-05)
-- [ ] 29-02-PLAN.md — comments.ts + index.ts wiring: threaded comments, replies, delete (CONT-06, CONT-07, CONT-08)
+- [x] 29-01-PLAN.md — posts.ts: post CRUD, paginated room feed (ULID sort), user post history (CONT-01, CONT-02, CONT-03, CONT-04, CONT-05)
+- [x] 29-02-PLAN.md — comments.ts + index.ts wiring: threaded comments, replies, delete (CONT-06, CONT-07, CONT-08)
 
 ### Phase 30: Reactions & Likes
 **Goal**: Users can like and unlike posts and comments with attribution, react with emoji, and see who has liked a post
@@ -195,7 +218,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 30-01-PLAN.md — likes.ts: like/unlike posts and comments with attribution, who-liked endpoint (REAC-01, REAC-02, REAC-03, REAC-04, REAC-06)
+- [x] 30-01-PLAN.md — likes.ts: like/unlike posts and comments with attribution, who-liked endpoint (REAC-01, REAC-02, REAC-03, REAC-04, REAC-06)
 - [x] 30-02-PLAN.md — reactions.ts + index.ts wiring: emoji reactions on posts, all Phase 30 router mounts (REAC-05) (completed 2026-03-17)
 
 ### Phase 31: Real-time Integration
@@ -210,9 +233,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 31-01-PLAN.md — BroadcastService in social-api + wire into posts, comments, likes, reactions, room-members routes (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
-- [ ] 31-02-PLAN.md — SocialService in gateway + validator whitelist: clients subscribe to room channels via WS (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
-- [ ] 31-03-PLAN.md — End-to-end integration test script validating social event delivery (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
+- [x] 31-01-PLAN.md — BroadcastService in social-api + wire into posts, comments, likes, reactions, room-members routes (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
+- [x] 31-02-PLAN.md — SocialService in gateway + validator whitelist: clients subscribe to room channels via WS (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
+- [x] 31-03-PLAN.md — End-to-end integration test script validating social event delivery (RTIM-01, RTIM-02, RTIM-03, RTIM-04)
 
 ### Phase 32: Frontend Social Layer
 **Goal**: Users can interact with all social features through a React UI — profiles, friends, groups, rooms, posts, comments, and likes — built with reusable hooks and components
@@ -227,10 +250,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 32-01-PLAN.md — React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes) with real-time WS event handlers
-- [ ] 32-02-PLAN.md — UI components (SocialPanel live, GroupPanel, RoomList, PostFeed, CommentThread)
-- [ ] 32-03-PLAN.md — AppLayout + App.tsx wiring + human verification checkpoint
-- [ ] 32-04-PLAN.md — Gap closure: createGroupRoom (ROOM-02), loadMembers (ROOM-06), getUserPosts (CONT-05), whoLiked display (REAC-06)
+- [x] 32-01-PLAN.md — React hooks (useSocialProfile, useFriends, useGroups, useRooms, usePosts, useComments, useLikes) with real-time WS event handlers
+- [x] 32-02-PLAN.md — UI components (SocialPanel live, GroupPanel, RoomList, PostFeed, CommentThread)
+- [x] 32-03-PLAN.md — AppLayout + App.tsx wiring + human verification checkpoint
+- [x] 32-04-PLAN.md — Gap closure: createGroupRoom (ROOM-02), loadMembers (ROOM-06), getUserPosts (CONT-05), whoLiked display (REAC-06)
 
 ### Phase 33: Social UX Integration
 **Goal**: The social layer and the WebSocket gateway are wired together so that selecting a social room activates its real-time channel, and key UX friction points blocking multi-user testing are resolved — enabling a complete end-to-end walkthrough of all platform features with two or more simultaneous users
@@ -244,12 +267,87 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 33-01-PLAN.md — Room->channel wiring (UXIN-01), group rooms in GroupPanel (UXIN-02), friends picker for DMs (UXIN-03)
-- [ ] 33-02-PLAN.md — In-app notification banner for social events (UXIN-04) + end-to-end human verification
+- [x] 33-01-PLAN.md — Room->channel wiring (UXIN-01), group rooms in GroupPanel (UXIN-02), friends picker for DMs (UXIN-03)
+- [x] 33-02-PLAN.md — In-app notification banner for social events (UXIN-04) + end-to-end human verification
+
+### Phase 34: LocalStack Dev Environment
+**Goal**: Every v3.0 AWS service (EventBridge, SQS, Lambda, DynamoDB) runs locally in Docker via LocalStack so development and debugging require no AWS account access
+**Depends on**: Phase 33
+**Requirements**: LDEV-01, LDEV-02, LDEV-03
+**Success Criteria** (what must be TRUE):
+  1. `docker compose up` starts LocalStack, Redis (ECS container), and all application services without error; no AWS credentials or ElastiCache endpoint required
+  2. Developer can invoke a Lambda handler directly against LocalStack using a realistic payload and receive a response in the local terminal
+  3. Developer can set a breakpoint in a Lambda handler and hit it via a local debug attach (e.g., `--inspect` flag or equivalent)
+  4. All downstream phases (35-38) can run their LocalStack-dependent setup against this environment without modification
+**Plans**: TBD
+
+Plans:
+- [ ] 34-01: Docker Compose setup — LocalStack service, Redis container, EventBridge + SQS + DynamoDB bootstrap scripts (LDEV-01, LDEV-02)
+- [ ] 34-02: Lambda local invocation and debug tooling — invoke scripts, local handler entrypoint, debug attach instructions (LDEV-03)
+
+### Phase 35: Event Bus Infrastructure
+**Goal**: An EventBridge custom bus routes social events by category to typed SQS queues, each backed by a DLQ with a CloudWatch alarm — and failed Lambda invocations retry via SQS visibility timeout before landing in the DLQ with full payload preserved
+**Depends on**: Phase 34
+**Requirements**: EBUS-01, EBUS-02, EBUS-03
+**Success Criteria** (what must be TRUE):
+  1. A test event published to the EventBridge custom bus routes to the correct SQS queue based on event category (e.g., social.follow lands in the follows queue, not the posts queue)
+  2. Each SQS queue has a corresponding DLQ; a CloudWatch alarm fires when the DLQ message count exceeds zero
+  3. A Lambda invocation that throws an error does not immediately discard the message — the message reappears in the SQS queue after the visibility timeout and lands in the DLQ after exhausting retries with the original event payload intact
+**Plans**: TBD
+
+Plans:
+- [ ] 35-01: CDK event-bus stack — EventBridge custom bus, typed SQS queues (follow, room, reaction, post), DLQs, CloudWatch DLQ alarms (EBUS-01, EBUS-02)
+- [ ] 35-02: SQS retry and DLQ behavior — Lambda trigger config with maxReceiveCount, DLQ payload preservation verification (EBUS-03)
+
+### Phase 36: Social Event Publishing
+**Goal**: Every social mutation in social-api (room join/leave, follow/unfollow, reaction, post, comment) publishes a typed event to the EventBridge custom bus with full payload and timestamp, replacing fire-and-forget direct writes
+**Depends on**: Phase 35
+**Requirements**: SEVT-01, SEVT-02, SEVT-03, SEVT-04
+**Success Criteria** (what must be TRUE):
+  1. When a user joins or leaves a room, an event with type `social.room.join` or `social.room.leave` appears on the EventBridge bus within the same request cycle
+  2. When a user follows or unfollows another user, a `social.follow` or `social.unfollow` event is published with the follower and followee Cognito `sub` values
+  3. When a reaction or like is recorded, a `social.reaction` or `social.like` event is published with the full target identifier and emoji type
+  4. When a post or comment is created, a `social.post.created` or `social.comment.created` event is published with the room ID, author sub, and content ID
+**Plans**: TBD
+
+Plans:
+- [ ] 36-01: EventPublisher service in social-api — typed publish methods per event category, LocalStack-compatible EventBridge client (SEVT-01, SEVT-02)
+- [ ] 36-02: Wire EventPublisher into room-members, relationships, likes, reactions, posts, and comments routes (SEVT-01, SEVT-02, SEVT-03, SEVT-04)
+
+### Phase 37: Activity Log
+**Goal**: A Lambda consumer persists all social events to a user-activity DynamoDB table, and users can view their recent activity as a chronological list in the app — validating the full EventBridge pipeline end-to-end
+**Depends on**: Phase 35 (event bus), Phase 36 (publishing)
+**Requirements**: ALOG-01, ALOG-02, ALOG-03
+**Success Criteria** (what must be TRUE):
+  1. After a follow, room join, reaction, or post event is published, the corresponding record appears in the user-activity DynamoDB table within a few seconds (Lambda processing time)
+  2. A call to `GET /api/activity` on social-api returns the authenticated user's activity log as a chronological list of events
+  3. The authenticated user can open an Activity tab (or panel) in the React app and see their recent social events listed in reverse-chronological order without inspecting the EventLog panel
+**Plans**: TBD
+
+Plans:
+- [ ] 37-01: user-activity DynamoDB table + Lambda consumer — handler persists all event categories keyed on userId + timestamp (ALOG-01)
+- [ ] 37-02: GET /api/activity REST endpoint on social-api (ALOG-02)
+- [ ] 37-03: ActivityFeed React component + hook wired into AppLayout (ALOG-03)
+
+### Phase 38: CRDT Durability
+**Goal**: CRDT checkpoint writes flow through the EventBridge pipeline instead of synchronous DynamoDB writes, clients recover from the latest snapshot on reconnect, and the UI shows a dismissible indicator when Y.js resolves a merge conflict
+**Depends on**: Phase 35 (event bus)
+**Requirements**: CRDT-01, CRDT-02, CRDT-03
+**Success Criteria** (what must be TRUE):
+  1. When the CRDT snapshot trigger fires (time, operation count, or disconnect), the checkpoint is published to EventBridge and the Lambda consumer persists it to DynamoDB — no direct synchronous write from the gateway
+  2. When a client reconnects after a disconnect, it loads the latest CRDT snapshot from DynamoDB and replays only the ops delta since that checkpoint — the document is restored to the correct state without a full-page reload
+  3. When Y.js resolves a concurrent edit conflict (merge), a dismissible indicator appears in the collaborative editor UI; the indicator disappears when the user dismisses it
+**Plans**: TBD
+
+Plans:
+- [ ] 38-01: Route CRDT checkpoint writes through EventBridge — Lambda consumer persists snapshot to DynamoDB (CRDT-01)
+- [ ] 38-02: Client reconnect snapshot recovery — load latest snapshot + ops delta replay on reconnect (CRDT-02)
+- [ ] 38-03: Y.js conflict indicator in SharedTextEditor UI (CRDT-03)
+
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33
+**Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -274,12 +372,17 @@ Plans:
 | 22. Broadcast & Ordering | v1.5 | 0/1 | Deferred | — |
 | 23. Resource Management | v1.5 | 0/1 | Deferred | — |
 | 24. Input Validation & Telemetry | v1.5 | 0/1 | Deferred | — |
-| 25. Social Infrastructure | 1/1 | Complete    | 2026-03-16 | — |
-| 26. User Profiles & Social Graph | 3/3 | Complete    | 2026-03-17 | — |
-| 27. Groups | 2/2 | Complete    | 2026-03-17 | — |
-| 28. Rooms | 2/2 | Complete    | 2026-03-17 | — |
-| 29. Posts & Comments | 2/2 | Complete    | 2026-03-17 | — |
-| 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
-| 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
-| 32. Frontend Social Layer | 4/4 | Complete    | 2026-03-17 | — |
-| 33. Social UX Integration | 2/2 | Complete   | 2026-03-18 | — |
+| 25. Social Infrastructure | v2.0 | 1/1 | Complete | 2026-03-16 |
+| 26. User Profiles & Social Graph | v2.0 | 3/3 | Complete | 2026-03-17 |
+| 27. Groups | v2.0 | 2/2 | Complete | 2026-03-17 |
+| 28. Rooms | v2.0 | 2/2 | Complete | 2026-03-17 |
+| 29. Posts & Comments | v2.0 | 2/2 | Complete | 2026-03-17 |
+| 30. Reactions & Likes | v2.0 | 2/2 | Complete | 2026-03-17 |
+| 31. Real-time Integration | v2.0 | 4/4 | Complete | 2026-03-17 |
+| 32. Frontend Social Layer | v2.0 | 4/4 | Complete | 2026-03-17 |
+| 33. Social UX Integration | v2.1 | 2/2 | Complete | 2026-03-18 |
+| 34. LocalStack Dev Environment | v3.0 | 0/2 | Not started | — |
+| 35. Event Bus Infrastructure | v3.0 | 0/2 | Not started | — |
+| 36. Social Event Publishing | v3.0 | 0/2 | Not started | — |
+| 37. Activity Log | v3.0 | 0/3 | Not started | — |
+| 38. CRDT Durability | v3.0 | 0/3 | Not started | — |

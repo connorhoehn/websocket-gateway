@@ -168,15 +168,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RTIM-02 | Phase 31 | Complete |
 | RTIM-03 | Phase 31 | Complete |
 | RTIM-04 | Phase 31 | Complete |
-| UXIN-01 | Phase 33 | Planned |
-| UXIN-02 | Phase 33 | Planned |
-| UXIN-03 | Phase 33 | Planned |
-| UXIN-04 | Phase 33 | Planned |
+| UXIN-01 | Phase 33 | Complete |
+| UXIN-02 | Phase 33 | Complete |
+| UXIN-03 | Phase 33 | Complete |
+| UXIN-04 | Phase 33 | Complete |
+| LDEV-01 | Phase 34 | Pending |
+| LDEV-02 | Phase 34 | Pending |
+| LDEV-03 | Phase 34 | Pending |
+| EBUS-01 | Phase 35 | Pending |
+| EBUS-02 | Phase 35 | Pending |
+| EBUS-03 | Phase 35 | Pending |
+| SEVT-01 | Phase 36 | Pending |
+| SEVT-02 | Phase 36 | Pending |
+| SEVT-03 | Phase 36 | Pending |
+| SEVT-04 | Phase 36 | Pending |
+| ALOG-01 | Phase 37 | Pending |
+| ALOG-02 | Phase 37 | Pending |
+| ALOG-03 | Phase 37 | Pending |
+| CRDT-01 | Phase 38 | Pending |
+| CRDT-02 | Phase 38 | Pending |
+| CRDT-03 | Phase 38 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 38 total (phases 25-32, all complete)
-- v2.1 requirements: 4 total (phase 33, complete)
-- v3.0 requirements: 13 total (phases 34+, pending roadmap)
+- v2.1 requirements: 4 total (phase 33, all complete)
+- v3.0 requirements: 13 total (phases 34-38, pending)
 - Unmapped: 0 ✓
 
 ---
@@ -225,4 +241,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-18 — added v3.0 requirements (LDEV, EBUS, SEVT, ALOG, CRDT)*
+*Last updated: 2026-03-18 — v3.0 traceability added (phases 34-38, 13 requirements)*
