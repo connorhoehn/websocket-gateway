@@ -27,6 +27,8 @@ export interface UseCRDTOptions {
 export interface UseCRDTReturn {
   content: string;                        // Current Y.Text content as plain string (reactive)
   applyLocalEdit: (newText: string) => void;  // Called by editor on user input
+  hasConflict: boolean;                   // True when a remote transaction merges into existing doc content
+  dismissConflict: () => void;            // Resets hasConflict to false
 }
 
 // ---------------------------------------------------------------------------
@@ -38,6 +40,7 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
 
   // ---- State ---------------------------------------------------------------
   const [content, setContent] = useState<string>('');
+  const [hasConflict, setHasConflict] = useState<boolean>(false);
 
   // ---- Y.Doc refs ----------------------------------------------------------
   // Y.Doc lives in a ref — stable across renders, one doc per hook instance.
@@ -108,11 +111,21 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
 
     // Reset Y.Doc on each new subscription so stale state from the previous
     // channel or session is cleared. Register a fresh observer on the new doc.
+    setHasConflict(false);
     ydoc.current.destroy();
     ydoc.current = new Y.Doc();
     ytext.current = ydoc.current.getText('content');
     ytext.current.observe(() => setContent(ytext.current.toString()));
     setContent('');
+
+    // CRDT-03: Detect merge conflicts via afterTransaction
+    // A "conflict" is when a remote transaction modifies a doc that already has local content.
+    ydoc.current.on('afterTransaction', (transaction: Y.Transaction) => {
+      // Only flag remote transactions (origin !== null means remote in Y.js)
+      if (transaction.origin !== null && ytext.current.length > 0) {
+        setHasConflict(true);
+      }
+    });
 
     // Subscribe to the channel
     sendMessage({ service: 'crdt', action: 'subscribe', channel: currentChannel });
@@ -128,6 +141,11 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
     };
   }, [currentChannel, connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
   // sendMessage intentionally excluded — we use sendMessageRef for stable access.
+
+  // ---- dismissConflict() --------------------------------------------------
+  const dismissConflict = useCallback(() => {
+    setHasConflict(false);
+  }, []);
 
   // ---- applyLocalEdit() ---------------------------------------------------
   // Stable callback — accesses current channel and sendMessage via refs.
@@ -149,5 +167,5 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // All deps accessed via refs — stable callback that never causes re-renders
 
-  return { content, applyLocalEdit };
+  return { content, applyLocalEdit, hasConflict, dismissConflict };
 }
