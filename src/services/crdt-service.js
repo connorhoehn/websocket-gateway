@@ -7,6 +7,7 @@
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { DynamoDBClient, PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
+const { EventBridgeClient, PutEventsCommand } = require('@aws-sdk/client-eventbridge');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
@@ -22,10 +23,20 @@ class CRDTService {
         this.operationBatches = new Map(); // channelId -> {operations: [], timeout: null, senderClientId: string}
         this.BATCH_WINDOW_MS = 10; // 10ms batch window for <50ms total latency
 
-        // DynamoDB client for snapshot persistence
+        // DynamoDB client for snapshot retrieval
         this.dynamoClient = new DynamoDBClient({
             region: process.env.AWS_REGION || 'us-east-1'
         });
+
+        // EventBridge client for publishing snapshot checkpoints
+        this.eventBridgeClient = new EventBridgeClient({
+            region: process.env.AWS_REGION || 'us-east-1',
+            ...(process.env.LOCALSTACK_ENDPOINT ? {
+                endpoint: process.env.LOCALSTACK_ENDPOINT,
+                credentials: { accessKeyId: 'test', secretAccessKey: 'test' }
+            } : {})
+        });
+        this.eventBusName = process.env.EVENT_BUS_NAME || 'social-events';
 
         // Channel state tracking for snapshots
         this.channelStates = new Map(); // channelId -> {currentSnapshot: Buffer, operationsSinceSnapshot: number, subscriberCount: number}
@@ -360,7 +371,7 @@ class CRDTService {
     }
 
     /**
-     * Write snapshot to DynamoDB
+     * Publish snapshot checkpoint to EventBridge (decoupled persistence via crdt-snapshot Lambda)
      */
     async writeSnapshot(channelId) {
         const state = this.channelStates.get(channelId);
@@ -369,32 +380,30 @@ class CRDTService {
         }
 
         try {
-            // Gzip compress snapshot
+            // Gzip compress snapshot (Lambda consumer stores compressed)
             const compressed = await gzip(state.currentSnapshot);
+            const snapshotBase64 = compressed.toString('base64');
 
-            // Calculate TTL (7 days from now)
-            const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
-
-            // Write to DynamoDB
-            const command = new PutItemCommand({
-                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
-                Item: {
-                    documentId: { S: channelId },
-                    timestamp: { N: String(Date.now()) },
-                    snapshot: { B: compressed },
-                    ttl: { N: String(ttl) }
-                }
-            });
-
-            await this.dynamoClient.send(command);
+            await this.eventBridgeClient.send(new PutEventsCommand({
+                Entries: [{
+                    Source: 'crdt-service',
+                    DetailType: 'crdt.checkpoint',
+                    Detail: JSON.stringify({
+                        channelId,
+                        snapshotData: snapshotBase64,
+                        timestamp: new Date().toISOString()
+                    }),
+                    EventBusName: this.eventBusName,
+                }]
+            }));
 
             // Reset operation counter
             state.operationsSinceSnapshot = 0;
 
-            this.logger.info(`Snapshot written for channel ${channelId}`);
+            this.logger.info(`Snapshot published to EventBridge for channel ${channelId}`);
         } catch (error) {
-            // Graceful degradation: log error but don't crash
-            this.logger.error(`Failed to write snapshot for ${channelId}:`, error.message);
+            // Log-and-continue: publish failure must not crash the gateway
+            this.logger.error(`Failed to publish snapshot for ${channelId}:`, error.message);
         }
     }
 
