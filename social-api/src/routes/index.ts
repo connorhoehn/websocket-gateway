@@ -10,6 +10,7 @@ import { postsRouter, userPostsRouter } from './posts';
 import { commentsRouter } from './comments';
 import { postLikesRouter, commentLikesRouter } from './likes';
 import { reactionsRouter } from './reactions';
+import { activityRouter } from './activity';
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/rooms/:roomId/posts/:postId/comments', commentsRouter);
 router.use('/rooms/:roomId/posts/:postId/likes', postLikesRouter);
 router.use('/rooms/:roomId/posts/:postId/comments/:commentId/likes', commentLikesRouter);
 router.use('/rooms/:roomId/posts/:postId', reactionsRouter);
+router.use('/activity', activityRouter);
 
 export default router;
