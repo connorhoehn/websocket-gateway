@@ -127,7 +127,14 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
       }
     });
 
-    // Subscribe to the channel
+    // CRDT-02 Reconnect Recovery Flow:
+    // 1. connectionState transitions to 'connected' (reconnect or initial)
+    // 2. Y.Doc is destroyed and recreated (clean slate)
+    // 3. Subscribe message sent to gateway
+    // 4. Gateway responds with 'crdt:subscribed' confirmation
+    // 5. Gateway pushes latest snapshot via 'crdt:snapshot' if one exists
+    // 6. onMessage handler (line 64) applies snapshot to fresh Y.Doc
+    // 7. Subsequent real-time crdt:update messages apply normally
     sendMessage({ service: 'crdt', action: 'subscribe', channel: currentChannel });
 
     // Cleanup: unsubscribe when channel changes or unmounts
