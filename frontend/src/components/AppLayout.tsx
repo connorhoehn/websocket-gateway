@@ -145,6 +145,8 @@ export interface AppLayoutProps {
   // CRDT
   crdtContent: string;
   applyLocalEdit: (newText: string) => void;
+  hasConflict?: boolean;
+  onDismissConflict?: () => void;
 
   // Dev tools
   logEntries: LogEntry[];
@@ -207,6 +209,8 @@ export function AppLayout({
   onCanvasMove,
   crdtContent,
   applyLocalEdit,
+  hasConflict,
+  onDismissConflict,
   logEntries,
   errors,
   lastError,
@@ -473,6 +477,8 @@ export function AppLayout({
               content={crdtContent}
               applyLocalEdit={applyLocalEdit}
               disabled={connectionState !== 'connected'}
+              hasConflict={hasConflict}
+              onDismissConflict={onDismissConflict}
             />
           </div>
 

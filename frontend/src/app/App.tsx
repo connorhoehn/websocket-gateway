@@ -209,7 +209,7 @@ function GatewayDemo({
     displayName,
   });
 
-  const { content, applyLocalEdit } = useCRDT({
+  const { content, applyLocalEdit, hasConflict, dismissConflict } = useCRDT({
     sendMessage: loggedSendMessage,
     onMessage,
     currentChannel,
@@ -256,6 +256,8 @@ function GatewayDemo({
       onCanvasMove={sendCanvasUpdate}
       crdtContent={content}
       applyLocalEdit={applyLocalEdit}
+      hasConflict={hasConflict}
+      onDismissConflict={dismissConflict}
       logEntries={logEntries}
       errors={errors}
       lastError={lastError}
@@ -263,6 +265,7 @@ function GatewayDemo({
       sessionToken={sessionToken}
       idToken={auth.idToken}
       onMessage={onMessage}
+      sendMessage={loggedSendMessage}
     />
   );
 }
