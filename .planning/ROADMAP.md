@@ -382,7 +382,7 @@ Plans:
 | 32. Frontend Social Layer | v2.0 | 4/4 | Complete | 2026-03-17 |
 | 33. Social UX Integration | v2.1 | 2/2 | Complete | 2026-03-18 |
 | 34. LocalStack Dev Environment | 2/2 | Complete    | 2026-03-18 | — |
-| 35. Event Bus Infrastructure | v3.0 | 0/2 | Not started | — |
+| 35. Event Bus Infrastructure | 1/2 | In Progress|  | — |
 | 36. Social Event Publishing | v3.0 | 0/2 | Not started | — |
 | 37. Activity Log | v3.0 | 0/3 | Not started | — |
 | 38. CRDT Durability | v3.0 | 0/3 | Not started | — |

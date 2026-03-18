@@ -175,8 +175,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LDEV-01 | Phase 34 | Complete |
 | LDEV-02 | Phase 34 | Complete |
 | LDEV-03 | Phase 34 | Complete |
-| EBUS-01 | Phase 35 | Pending |
-| EBUS-02 | Phase 35 | Pending |
+| EBUS-01 | Phase 35 | Complete |
+| EBUS-02 | Phase 35 | Complete |
 | EBUS-03 | Phase 35 | Pending |
 | SEVT-01 | Phase 36 | Pending |
 | SEVT-02 | Phase 36 | Pending |
@@ -207,8 +207,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ### Event Bus Infrastructure (EBUS)
 
-- [ ] **EBUS-01**: EventBridge custom bus routes social events to typed SQS queues by event category
-- [ ] **EBUS-02**: Each SQS queue has a dead-letter queue with a CloudWatch alarm on DLQ message depth
+- [x] **EBUS-01**: EventBridge custom bus routes social events to typed SQS queues by event category
+- [x] **EBUS-02**: Each SQS queue has a dead-letter queue with a CloudWatch alarm on DLQ message depth
 - [ ] **EBUS-03**: Failed Lambda invocations retry via SQS visibility timeout and land in DLQ with full event payload preserved for replay
 
 ### Social Event Publishing (SEVT)
