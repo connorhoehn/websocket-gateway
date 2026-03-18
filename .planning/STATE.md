@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: ~
-last_updated: "2026-03-18T00:00:00.000Z"
-last_activity: 2026-03-18 — v3.0 roadmap created (phases 34-38)
+stopped_at: Completed 34-01-PLAN.md
+last_updated: "2026-03-18T12:48:37.162Z"
+last_activity: 2026-03-18 — v3.0 roadmap defined (phases 34-38, 13 requirements mapped)
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 12
-  completed_plans: 0
+  total_phases: 14
+  completed_phases: 9
+  total_plans: 24
+  completed_plans: 23
   percent: 0
 ---
 
@@ -45,6 +45,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 |-------|-------|----------|
 | 32. Frontend Social Layer | 4 | ~125s |
 | 33. Social UX Integration | 2 | ~77s |
+| Phase 34 P01 | 158s | 2 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,8 @@ Key decisions affecting v3.0 work:
 - [v3.0 arch]: Social events published from social-api to EventBridge; Lambda consumers handle persistence
 - [v3.0 arch]: CRDT checkpoints route through EventBridge pipeline instead of direct synchronous DynamoDB writes
 - [v3.0 sequence]: Phase 34 (LocalStack) → Phase 35 (Bus) → Phase 36 (Publishing) → Phases 37/38 parallel
+- [Phase 34]: All 9 existing social DynamoDB tables included in bootstrap script so docker compose up is fully self-contained for v3.0 development (addresses Pitfall 3 from research)
+- [Phase 34]: LAMBDA_DOCKER_FLAGS omitted from base compose to avoid inspect-brk blocking all invocations; debug overlay can be added separately
 
 ### Pending Todos
 
@@ -69,6 +72,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18
-Stopped at: v3.0 roadmap created — ready to plan Phase 34
+Last session: 2026-03-18T12:48:37.160Z
+Stopped at: Completed 34-01-PLAN.md
 Resume file: None
