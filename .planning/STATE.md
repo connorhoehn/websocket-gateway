@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 37-01-PLAN.md
-last_updated: "2026-03-18T19:07:19.491Z"
+stopped_at: Completed 37-02-PLAN.md
+last_updated: "2026-03-18T19:10:36.581Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 30
-  completed_plans: 29
+  completed_plans: 30
   percent: 29
 ---
 
@@ -51,6 +51,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 36 P01 | 78s | 2 tasks | 4 files |
 | Phase 36 P02 | 90s | 2 tasks | 5 files |
 | Phase 37-activity-log P01 | 57 | 2 tasks | 3 files |
+| Phase 37-activity-log P02 | 106 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,7 @@ Key decisions affecting v3.0 work:
 - [Phase 36]: Publish calls placed after HTTP 201 response and after successful DynamoDB write — identical pattern to plan 01
 - [Phase 36]: Only creation events published — no DELETE handlers instrumented per CONTEXT.md
 - [Phase 37-01]: Composite SK timestamp#eventId prevents DynamoDB collision for same-millisecond events; SQS batch error isolation via per-record try/catch with [activity-log] prefix
+- [Phase 37-02]: ActivityPanel uses VITE_SOCIAL_API_URL (no /api suffix) + /api/activity path, consistent with useSocialProfile and other hooks in the frontend
 
 ### Pending Todos
 
@@ -90,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T19:07:19.488Z
-Stopped at: Completed 37-01-PLAN.md
+Last session: 2026-03-18T19:10:36.578Z
+Stopped at: Completed 37-02-PLAN.md
 Resume file: None
