@@ -8,7 +8,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient } from '../lib/aws-clients';
+import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 
@@ -76,6 +76,11 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
         roomId: req.params.roomId, userId: req.user!.sub, joinedAt: now,
       });
     }
+    // Publish social.room.join event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.room.join', {
+      roomId: req.params.roomId,
+      userId: req.user!.sub,
+    });
   } catch (err) {
     console.error('[room-members] POST /join error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -122,6 +127,11 @@ roomMembersRouter.delete('/leave', async (req: Request, res: Response): Promise<
     // Broadcast social:member_left to room channel (non-fatal if Redis unavailable)
     void broadcastService.emit(roomResult.Item['channelId'] as string, 'social:member_left', {
       roomId: req.params.roomId, userId: req.user!.sub, leftAt: new Date().toISOString(),
+    });
+    // Publish social.room.leave event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.room.leave', {
+      roomId: req.params.roomId,
+      userId: req.user!.sub,
     });
   } catch (err) {
     console.error('[room-members] DELETE /leave error:', err);

@@ -7,7 +7,7 @@ import {
   ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
-import { docClient } from '../lib/aws-clients';
+import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const REL_TABLE = 'social-relationships';
 const PROF_TABLE = 'social-profiles';
 
@@ -80,6 +80,11 @@ socialRouter.post('/follow/:userId', async (req: Request, res: Response): Promis
     }
 
     res.status(201).json({ followerId, followeeId });
+    // Publish social.follow event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.follow', {
+      followerId,
+      followeeId,
+    });
   } catch (err) {
     console.error('POST /social/follow/:userId error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -112,6 +117,11 @@ socialRouter.delete('/follow/:userId', async (req: Request, res: Response): Prom
     );
 
     res.status(200).json({ message: 'Unfollowed successfully' });
+    // Publish social.unfollow event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.unfollow', {
+      followerId,
+      followeeId,
+    });
   } catch (err) {
     console.error('DELETE /social/follow/:userId error:', err);
     res.status(500).json({ error: 'Internal server error' });
