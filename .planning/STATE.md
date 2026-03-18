@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 38-02-PLAN.md
-last_updated: "2026-03-18T20:18:40.586Z"
+stopped_at: Completed 38-03-PLAN.md
+last_updated: "2026-03-18T20:18:59.825Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
@@ -53,6 +53,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 37-activity-log P01 | 57 | 2 tasks | 3 files |
 | Phase 37-activity-log P02 | 106 | 2 tasks | 2 files |
 | Phase 38 P02 | 75s | 2 tasks | 2 files |
+| Phase 38 P03 | 102 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Key decisions affecting v3.0 work:
 - [Phase 37-02]: ActivityPanel uses VITE_SOCIAL_API_URL (no /api suffix) + /api/activity path, consistent with useSocialProfile and other hooks in the frontend
 - [Phase 38]: Snapshot push in handleSubscribe is non-fatal: own try/catch ensures subscribe completes even if DynamoDB is unavailable
 - [Phase 38]: No new crdt message type needed for reconnect recovery: existing crdt:snapshot handler in useCRDT.ts already processes server-pushed snapshots
+- [Phase 38]: afterTransaction origin !== null used to identify remote Y.js transactions for conflict detection
+- [Phase 38]: CRDT conflict banner uses manual dismiss only (no auto-dismiss) per CRDT-03 spec
 
 ### Pending Todos
 
@@ -95,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T20:18:35.318Z
-Stopped at: Completed 38-02-PLAN.md
+Last session: 2026-03-18T20:18:59.823Z
+Stopped at: Completed 38-03-PLAN.md
 Resume file: None
