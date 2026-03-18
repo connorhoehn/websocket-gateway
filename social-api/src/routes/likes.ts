@@ -1,6 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
   DeleteCommand,
@@ -9,9 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-
-const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const docClient = DynamoDBDocumentClient.from(ddb);
+import { docClient } from '../lib/aws-clients';
 const LIKES_TABLE = 'social-likes';
 const PROFILES_TABLE = 'social-profiles';
 const POSTS_TABLE = 'social-posts';

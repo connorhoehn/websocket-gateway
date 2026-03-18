@@ -1,7 +1,5 @@
 import { ulid } from 'ulid';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
   UpdateCommand,
@@ -11,9 +9,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-
-const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const docClient = DynamoDBDocumentClient.from(ddb);
+import { docClient } from '../lib/aws-clients';
 const POSTS_TABLE = 'social-posts';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';

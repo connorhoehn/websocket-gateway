@@ -1,9 +1,6 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
-
-const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const docClient = DynamoDBDocumentClient.from(ddb);
+import { docClient } from '../lib/aws-clients';
 const TABLE = 'social-profiles';
 
 export const profilesRouter = Router();

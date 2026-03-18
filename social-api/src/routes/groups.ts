@@ -1,7 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
-  DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
   DeleteCommand,
@@ -9,9 +7,7 @@ import {
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
-
-const ddb = new DynamoDBClient({ region: process.env.AWS_REGION ?? 'us-east-1' });
-const docClient = DynamoDBDocumentClient.from(ddb);
+import { docClient } from '../lib/aws-clients';
 const GROUPS_TABLE = 'social-groups';
 const MEMBERS_TABLE = 'social-group-members';
 
