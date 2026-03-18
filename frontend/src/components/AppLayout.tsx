@@ -4,7 +4,7 @@
 // Pure presentational component — no hook calls, all data flows in via props.
 // Replaces the monolithic vertical stack in GatewayDemo.
 
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ConnectionState, GatewayError, GatewayMessage } from '../types/gateway';
 import type { PresenceUser } from '../hooks/usePresence';
 import type { EphemeralReaction } from '../hooks/useReactions';
@@ -40,6 +40,71 @@ import { PostFeed } from './PostFeed';
 // ---------------------------------------------------------------------------
 
 type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
+
+interface Notification {
+  id: string;
+  message: string;
+  type: 'follow' | 'member_joined' | 'post_created';
+  timestamp: number;
+}
+
+// ---------------------------------------------------------------------------
+// NotificationBanner internal component (UXIN-04)
+// ---------------------------------------------------------------------------
+
+function NotificationBanner({ notifications, onDismiss }: {
+  notifications: Notification[];
+  onDismiss: (id: string) => void;
+}) {
+  if (notifications.length === 0) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 64,
+      right: 16,
+      width: 320,
+      zIndex: 1000,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+    }}>
+      {notifications.map(n => (
+        <div key={n.id} style={{
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderLeft: '3px solid #646cff',
+          borderRadius: 8,
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        }}>
+          <span style={{ fontSize: 14, color: '#374151', fontWeight: 400 }}>
+            {n.message}
+          </span>
+          <button
+            onClick={() => onDismiss(n.id)}
+            aria-label="Dismiss notification"
+            style={{
+              fontSize: 16,
+              color: '#94a3b8',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0 0 0 12px',
+              lineHeight: 1,
+            }}
+          >
+            x
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -162,6 +227,59 @@ export function AppLayout({
     onSwitchChannel(room.channelId);
   };
 
+  // Notification state (UXIN-04)
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const activeRoomIdRef = useRef(activeRoomId);
+  useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
+
+  // Stable onMessage ref for notification subscription
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+
+  // Subscribe to social events for notifications
+  useEffect(() => {
+    const unregister = onMessageRef.current((msg) => {
+      let message: string | null = null;
+      let type: Notification['type'] | null = null;
+
+      if (msg.type === 'social:follow') {
+        message = `${(msg.displayName as string) || 'Someone'} followed you`;
+        type = 'follow';
+      } else if (msg.type === 'social:member_joined') {
+        message = `${(msg.displayName as string) || 'Someone'} joined ${(msg.roomName as string) || 'a room'}`;
+        type = 'member_joined';
+      } else if (msg.type === 'social:post_created' && (msg.roomId as string) === activeRoomIdRef.current) {
+        message = `New post in ${(msg.roomName as string) || 'this room'}`;
+        type = 'post_created';
+      }
+
+      if (message && type) {
+        const id = `${Date.now()}-${Math.random()}`;
+        setNotifications(prev => {
+          const next = [{ id, message: message!, type: type!, timestamp: Date.now() }, ...prev];
+          return next.slice(0, 5); // Max 5 visible
+        });
+      }
+    });
+    return unregister;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-dismiss notifications after 4 seconds
+  useEffect(() => {
+    if (notifications.length === 0) return;
+    const oldest = notifications[notifications.length - 1];
+    const age = Date.now() - oldest.timestamp;
+    const delay = Math.max(0, 4000 - age);
+    const timer = setTimeout(() => {
+      setNotifications(prev => prev.slice(0, -1));
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [notifications]);
+
+  const dismissNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
   // Derive typingUsers from presenceUsers, excluding self
   const typingUsers = presenceUsers
     .filter(
@@ -184,6 +302,9 @@ export function AppLayout({
     >
       {/* Reactions overlay — fixed-position, sits above everything */}
       <ReactionsOverlay reactions={activeReactions} />
+
+      {/* Notification banner — fixed-position top-right (UXIN-04) */}
+      <NotificationBanner notifications={notifications} onDismiss={dismissNotification} />
 
       {/* Header bar */}
       <div
