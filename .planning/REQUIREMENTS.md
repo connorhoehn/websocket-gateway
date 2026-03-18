@@ -175,9 +175,54 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 - v2.0 requirements: 38 total (phases 25-32, all complete)
-- v2.1 requirements: 4 total (phase 33, planned)
+- v2.1 requirements: 4 total (phase 33, complete)
+- v3.0 requirements: 13 total (phases 34+, pending roadmap)
 - Unmapped: 0 ✓
 
 ---
+
+## v3.0 Requirements
+
+### Local Dev Environment (LDEV)
+
+- [ ] **LDEV-01**: Developer can run EventBridge + SQS + Lambda locally via LocalStack in Docker without AWS access
+- [ ] **LDEV-02**: Developer can run Redis via ECS container locally (no ElastiCache dependency)
+- [ ] **LDEV-03**: Lambda handlers are invocable and debuggable locally against LocalStack with realistic payloads
+
+### Event Bus Infrastructure (EBUS)
+
+- [ ] **EBUS-01**: EventBridge custom bus routes social events to typed SQS queues by event category
+- [ ] **EBUS-02**: Each SQS queue has a dead-letter queue with a CloudWatch alarm on DLQ message depth
+- [ ] **EBUS-03**: Failed Lambda invocations retry via SQS visibility timeout and land in DLQ with full event payload preserved for replay
+
+### Social Event Publishing (SEVT)
+
+- [ ] **SEVT-01**: Room join/leave events are published to EventBridge with timestamp when membership changes
+- [ ] **SEVT-02**: Follow/unfollow events are published to EventBridge when social graph changes
+- [ ] **SEVT-03**: Reaction and like events are published to EventBridge with full payload and timestamp
+- [ ] **SEVT-04**: Post and comment creation events are published to EventBridge
+
+### Activity Log (ALOG)
+
+- [ ] **ALOG-01**: Lambda consumer persists all social event categories (join, follow, reaction, post) to a user-activity DynamoDB table
+- [ ] **ALOG-02**: User can query their own activity log via a REST endpoint on social-api
+- [ ] **ALOG-03**: User can view their recent activity as a chronological list in the app
+
+### CRDT Durability (CRDT)
+
+- [ ] **CRDT-01**: CRDT checkpoint writes are routed through EventBridge → SQS → Lambda instead of direct synchronous DynamoDB writes
+- [ ] **CRDT-02**: Client reconnect loads the latest CRDT snapshot from DynamoDB and replays ops delta since that checkpoint
+- [ ] **CRDT-03**: UI surfaces a dismissible indicator when Y.js resolves a merge conflict
+
+## Out of Scope (v3.0)
+
+| Feature | Reason |
+|---------|--------|
+| Email / push notifications | Separate notification system — future milestone |
+| Event replay / full event sourcing | Overkill for current scale — DLQ + manual replay is sufficient |
+| IVS recording events | Different system, different pipeline |
+| User timeline UI beyond activity list | Design problem — deferred until activity log is validated |
+
+---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-17 — added UXIN-01–04 for Phase 33 (Social UX Integration)*
+*Last updated: 2026-03-18 — added v3.0 requirements (LDEV, EBUS, SEVT, ALOG, CRDT)*

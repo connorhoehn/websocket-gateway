@@ -1,17 +1,17 @@
 # WebSocket Gateway — Social Platform
 
-## Current Milestone: v2.0 Social Platform
+## Current Milestone: v3.0 Durable Event Architecture
 
-**Goal:** Add a full social layer on top of the existing real-time gateway — user profiles, follow/friend graph, groups, rooms (standalone + group + DM), posts, threaded comments, and likes with attribution — all keyed on Cognito `sub` for referential integrity and reuse across other apps.
+**Goal:** Replace fire-and-forget social writes with a durable event pipeline (EventBridge → SQS → Lambda → DynamoDB) that never loses events, supports fan-out to multiple consumers (activity log, timeline, notifications), and runs fully locally via LocalStack — designed as a reusable template for any app.
 
 **Target features:**
-- Social profiles: Cognito-backed user profiles with bio and avatar
-- Social graph: follow (asymmetric) + mutual follow = friends
-- Groups: user-created spaces with membership, roles, and visibility
-- Rooms: standalone rooms, group sub-rooms, and DM rooms between mutual friends — all persisted in DynamoDB and mapped to WebSocket channels
-- Posts & threaded comments: text posts in rooms with nested comment threading
-- Reactions & likes: emoji reactions + like attribution (who liked, unlike support)
-- Real-time social events: new posts, comments, and likes broadcast via WebSocket to room members
+- LocalStack dev environment: EventBridge + SQS + Lambda + DynamoDB locally, Redis on ECS (no ElastiCache)
+- EventBridge custom bus with typed SQS queues and DLQs for all social event categories
+- Social event publishing: room joins/leaves, follows, reactions, posts routed through the durable pipeline
+- Activity log: Lambda consumers persist all social events to user-activity DynamoDB table
+- Activity feed UI: users can view their recent activity in-app (validates pipeline end-to-end)
+- CRDT durability: checkpoint writes routed through the pipeline; snapshot recovery on reconnect
+- Conflict visibility: UI indicator when Y.js resolves a merge conflict
 
 **Architecture:**
 - New `social-api` Express service (separate CDK stack) with REST endpoints
