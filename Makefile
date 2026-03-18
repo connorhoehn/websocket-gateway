@@ -188,3 +188,16 @@ test-local: dev-detached ## Start local environment and show connection info
 open-test-client: ## Open test client HTML file in browser
 	@echo "Opening WebSocket test client..."
 	@open test/clients/test-client.html
+
+# LocalStack development
+.PHONY: dev-localstack
+dev-localstack: ## Start LocalStack dev environment (EventBridge, SQS, Lambda, DynamoDB, Redis)
+	docker compose -f docker-compose.localstack.yml up --build
+
+.PHONY: dev-localstack-stop
+dev-localstack-stop: ## Stop LocalStack dev environment
+	docker compose -f docker-compose.localstack.yml down
+
+.PHONY: dev-localstack-logs
+dev-localstack-logs: ## Tail LocalStack container logs
+	docker compose -f docker-compose.localstack.yml logs -f localstack

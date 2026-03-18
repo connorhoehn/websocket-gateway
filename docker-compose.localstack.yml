@@ -1,0 +1,98 @@
+version: '3.8'
+
+# LocalStack development environment.
+# Includes LocalStack (EventBridge, SQS, DynamoDB, Lambda), Redis, websocket-gateway, and social-api.
+# Usage: make dev-localstack
+# Note: All app services depend on localstack being healthy before they start.
+
+services:
+  localstack:
+    image: localstack/localstack:stable
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - DEBUG=1
+      - PERSISTENCE=0
+      - LAMBDA_DOCKER_NETWORK=localstack-net
+    volumes:
+      - ./scripts/localstack/init:/etc/localstack/init
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - localstack-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    container_name: localstack-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - localstack-net
+
+  websocket-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ws-gateway-local
+    ports:
+      - "8080:8080"
+    depends_on:
+      localstack:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - REDIS_ENDPOINT=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - ENABLED_SERVICES=chat,presence,cursor,reaction
+      - PORT=8080
+      - COGNITO_REGION=us-east-1
+      - COGNITO_USER_POOL_ID=us-east-1_localdev000
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+    volumes:
+      - ./src:/app/src:ro
+    command: node src/server.js
+    networks:
+      - localstack-net
+
+  social-api:
+    build:
+      context: ./social-api
+      dockerfile: Dockerfile
+    container_name: social-api-local
+    ports:
+      - "3001:3001"
+    depends_on:
+      localstack:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - PORT=3001
+      - REDIS_ENDPOINT=redis
+      - REDIS_PORT=6379
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - COGNITO_REGION=us-east-1
+      - COGNITO_USER_POOL_ID=us-east-1_localdev000
+      - NODE_ENV=development
+    networks:
+      - localstack-net
+
+networks:
+  localstack-net:
+    driver: bridge
