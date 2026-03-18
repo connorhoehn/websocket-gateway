@@ -182,8 +182,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEVT-02 | Phase 36 | Complete |
 | SEVT-03 | Phase 36 | Complete |
 | SEVT-04 | Phase 36 | Complete |
-| ALOG-01 | Phase 37 | Pending |
-| ALOG-02 | Phase 37 | Pending |
+| ALOG-01 | Phase 37 | Complete |
+| ALOG-02 | Phase 37 | Complete |
 | ALOG-03 | Phase 37 | Pending |
 | CRDT-01 | Phase 38 | Pending |
 | CRDT-02 | Phase 38 | Pending |
@@ -220,8 +220,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ### Activity Log (ALOG)
 
-- [ ] **ALOG-01**: Lambda consumer persists all social event categories (join, follow, reaction, post) to a user-activity DynamoDB table
-- [ ] **ALOG-02**: User can query their own activity log via a REST endpoint on social-api
+- [x] **ALOG-01**: Lambda consumer persists all social event categories (join, follow, reaction, post) to a user-activity DynamoDB table
+- [x] **ALOG-02**: User can query their own activity log via a REST endpoint on social-api
 - [ ] **ALOG-03**: User can view their recent activity as a chronological list in the app
 
 ### CRDT Durability (CRDT)

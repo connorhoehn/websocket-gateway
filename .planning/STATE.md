@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 36-02-PLAN.md
-last_updated: "2026-03-18T17:30:37.484Z"
+stopped_at: Completed 37-01-PLAN.md
+last_updated: "2026-03-18T19:07:19.491Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
   completed_phases: 12
-  total_plans: 28
-  completed_plans: 28
+  total_plans: 30
+  completed_plans: 29
   percent: 29
 ---
 
@@ -50,6 +50,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 35-event-bus-infrastructure P02 | 1 | 2 tasks | 3 files |
 | Phase 36 P01 | 78s | 2 tasks | 4 files |
 | Phase 36 P02 | 90s | 2 tasks | 5 files |
+| Phase 37-activity-log P01 | 57 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,7 @@ Key decisions affecting v3.0 work:
 - [Phase 36]: Publish calls placed after HTTP response to ensure DynamoDB mutation succeeded before event fires
 - [Phase 36]: Publish calls placed after HTTP 201 response and after successful DynamoDB write — identical pattern to plan 01
 - [Phase 36]: Only creation events published — no DELETE handlers instrumented per CONTEXT.md
+- [Phase 37-01]: Composite SK timestamp#eventId prevents DynamoDB collision for same-millisecond events; SQS batch error isolation via per-record try/catch with [activity-log] prefix
 
 ### Pending Todos
 
@@ -88,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T17:28:03.781Z
-Stopped at: Completed 36-02-PLAN.md
+Last session: 2026-03-18T19:07:19.488Z
+Stopped at: Completed 37-01-PLAN.md
 Resume file: None
