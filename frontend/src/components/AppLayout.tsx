@@ -15,7 +15,6 @@ import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
 
 import { ConnectionStatus } from './ConnectionStatus';
-import { ChannelSelector } from './ChannelSelector';
 import { PresencePanel } from './PresencePanel';
 import { DisconnectReconnect } from './DisconnectReconnect';
 import { ReactionsOverlay } from './ReactionsOverlay';
@@ -34,6 +33,7 @@ import { SocialPanel } from './SocialPanel';
 import { GroupPanel } from './GroupPanel';
 import { RoomList } from './RoomList';
 import { PostFeed } from './PostFeed';
+import { ActivityPanel } from './ActivityPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -156,6 +156,7 @@ export interface AppLayoutProps {
   // Social layer
   idToken: string | null;
   onMessage: OnMessageFn;
+  sendMessage: (msg: Record<string, unknown>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,24 +214,40 @@ export function AppLayout({
   sessionToken,
   idToken,
   onMessage,
+  sendMessage,
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
 
   const {
     rooms,
+    createRoom,
+    createDM,
     createGroupRoom,
     loading: roomsLoading,
   } = useRooms({ idToken: idToken!, onMessage });
 
+  // Track current social channel subscription so we can unsub on room change
+  const activeSocialChannelRef = useRef<string | null>(null);
+
   const handleRoomSelect = (room: RoomItem) => {
+    // Unsubscribe from previous social channel
+    if (activeSocialChannelRef.current && activeSocialChannelRef.current !== room.channelId) {
+      sendMessage({ service: 'social', action: 'unsubscribe', channelId: activeSocialChannelRef.current });
+    }
+    activeSocialChannelRef.current = room.channelId;
     setActiveRoomId(room.roomId);
     onSwitchChannel(room.channelId);
+    sendMessage({ service: 'social', action: 'subscribe', channelId: room.channelId });
   };
 
   // Notification state (UXIN-04)
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const activeRoomIdRef = useRef(activeRoomId);
   useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
+
+  // Keep a ref to rooms so the notification handler can resolve names without restacking
+  const roomsRef = useRef(rooms);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
 
   // Stable onMessage ref for notification subscription
   const onMessageRef = useRef(onMessage);
@@ -242,22 +259,26 @@ export function AppLayout({
       let message: string | null = null;
       let type: Notification['type'] | null = null;
 
-      if (msg.type === 'social:follow') {
-        message = `${(msg.displayName as string) || 'Someone'} followed you`;
-        type = 'follow';
-      } else if (msg.type === 'social:member_joined') {
-        message = `${(msg.displayName as string) || 'Someone'} joined ${(msg.roomName as string) || 'a room'}`;
+      if (msg.type === 'social:member_joined') {
+        const payload = msg.payload as { userId?: string; roomId?: string } | undefined;
+        const roomName = roomsRef.current.find(r => r.roomId === payload?.roomId)?.name ?? 'a room';
+        const who = payload?.userId?.slice(0, 8) ?? 'Someone';
+        message = `${who} joined ${roomName}`;
         type = 'member_joined';
-      } else if (msg.type === 'social:post_created' && (msg.roomId as string) === activeRoomIdRef.current) {
-        message = `New post in ${(msg.roomName as string) || 'this room'}`;
-        type = 'post_created';
+      } else if (msg.type === 'social:post') {
+        const payload = msg.payload as { roomId?: string } | undefined;
+        if (payload?.roomId === activeRoomIdRef.current) {
+          const roomName = roomsRef.current.find(r => r.roomId === payload.roomId)?.name ?? 'this room';
+          message = `New post in ${roomName}`;
+          type = 'post_created';
+        }
       }
 
       if (message && type) {
         const id = `${Date.now()}-${Math.random()}`;
         setNotifications(prev => {
           const next = [{ id, message: message!, type: type!, timestamp: Date.now() }, ...prev];
-          return next.slice(0, 5); // Max 5 visible
+          return next.slice(0, 5);
         });
       }
     });
@@ -330,10 +351,20 @@ export function AppLayout({
           WebSocket Gateway
         </span>
 
-        {/* Center: connection status + channel selector */}
+        {/* Center: connection status + active room/channel */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, justifyContent: 'center' }}>
           <ConnectionStatus state={connectionState} />
-          <ChannelSelector currentChannel={currentChannel} onSwitch={onSwitchChannel} />
+          <span style={{
+            fontSize: '0.875rem',
+            color: '#64748b',
+            fontFamily: 'monospace',
+            background: '#f1f5f9',
+            border: '1px solid #e2e8f0',
+            borderRadius: 6,
+            padding: '0.25rem 0.625rem',
+          }}>
+            {rooms.find(r => r.roomId === activeRoomId)?.name ?? currentChannel}
+          </span>
         </div>
 
         {/* Right: user email + sign out */}
@@ -460,13 +491,19 @@ export function AppLayout({
           {/* Rooms section */}
           <RoomList
             idToken={idToken}
-            onMessage={onMessage}
+            rooms={rooms}
+            createRoom={createRoom}
+            createDM={createDM}
+            loading={roomsLoading}
             onRoomSelect={handleRoomSelect}
             activeRoomId={activeRoomId}
           />
 
           {/* Posts section */}
           <PostFeed idToken={idToken} roomId={activeRoomId} onMessage={onMessage} />
+
+          {/* Activity section */}
+          <ActivityPanel idToken={idToken} />
 
           {/* Dev Tools section */}
           <div style={sectionCardStyle}>
