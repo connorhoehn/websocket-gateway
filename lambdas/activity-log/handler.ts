@@ -45,19 +45,23 @@ async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void>
   const userId = (detail.userId ?? detail.followerId ?? detail.authorId ?? 'unknown') as string;
   const timestamp = ebEvent.time ?? new Date().toISOString();
 
+  // Composite SK: timestamp#eventId ensures uniqueness when multiple events share the same timestamp
+  const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10);
+  const sk = `${timestamp}#${eventId}`;
+
   console.log(`Processing ${detailType} for user ${userId}`);
 
   await docClient.send(new PutCommand({
     TableName: TABLE,
     Item: {
       userId,
-      timestamp,
+      timestamp: sk,  // "2026-03-18T12:00:00.000Z#a1b2c3d4"
       eventType: detailType,
       detail: JSON.stringify(detail),
     },
   }));
 
-  console.log(`Wrote activity record: userId=${userId}, timestamp=${timestamp}, type=${detailType}`);
+  console.log(`Wrote activity record: userId=${userId}, timestamp=${sk}, type=${detailType}`);
 }
 
 export async function handler(event: SQSEvent | EventBridgeEvent) {
@@ -65,8 +69,13 @@ export async function handler(event: SQSEvent | EventBridgeEvent) {
     // SQS trigger: each record body is a JSON-encoded EventBridge event
     console.log(`Processing ${event.Records.length} SQS record(s)`);
     for (const record of event.Records) {
-      const ebEvent: EventBridgeEvent = JSON.parse(record.body);
-      await processEventBridgeEvent(ebEvent);
+      try {
+        const ebEvent: EventBridgeEvent = JSON.parse(record.body);
+        await processEventBridgeEvent(ebEvent);
+      } catch (err) {
+        console.error(`[activity-log] Failed to process record ${record.messageId}: ${err}`);
+        // Continue to next record — do NOT re-throw; one bad record must not fail the batch
+      }
     }
   } else {
     // Direct invoke: raw EventBridge event
