@@ -174,7 +174,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UXIN-04 | Phase 33 | Complete |
 | LDEV-01 | Phase 34 | Complete |
 | LDEV-02 | Phase 34 | Complete |
-| LDEV-03 | Phase 34 | Pending |
+| LDEV-03 | Phase 34 | Complete |
 | EBUS-01 | Phase 35 | Pending |
 | EBUS-02 | Phase 35 | Pending |
 | EBUS-03 | Phase 35 | Pending |
@@ -203,7 +203,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 - [x] **LDEV-01**: Developer can run EventBridge + SQS + Lambda locally via LocalStack in Docker without AWS access
 - [x] **LDEV-02**: Developer can run Redis via ECS container locally (no ElastiCache dependency)
-- [ ] **LDEV-03**: Lambda handlers are invocable and debuggable locally against LocalStack with realistic payloads
+- [x] **LDEV-03**: Lambda handlers are invocable and debuggable locally against LocalStack with realistic payloads
 
 ### Event Bus Infrastructure (EBUS)
 
