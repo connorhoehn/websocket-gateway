@@ -201,3 +201,8 @@ dev-localstack-stop: ## Stop LocalStack dev environment
 .PHONY: dev-localstack-logs
 dev-localstack-logs: ## Tail LocalStack container logs
 	docker compose -f docker-compose.localstack.yml logs -f localstack
+
+# Lambda invocation
+.PHONY: invoke-lambda
+invoke-lambda: ## Invoke a Lambda against LocalStack (FUNC=activity-log PAYLOAD='{}')
+	./scripts/invoke-lambda.sh $(FUNC) '$(PAYLOAD)'
