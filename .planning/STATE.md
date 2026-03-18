@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 35-01-PLAN.md
-last_updated: "2026-03-18T13:55:37.270Z"
+stopped_at: Completed 35-02-PLAN.md
+last_updated: "2026-03-18T13:59:21.057Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
   percent: 29
 ---
 
@@ -47,6 +47,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | 33. Social UX Integration | 2 | ~77s |
 | Phase 34 P01 | 158s | 2 tasks | 18 files |
 | Phase 35-event-bus-infrastructure P01 | 2 | 2 tasks | 3 files |
+| Phase 35-event-bus-infrastructure P02 | 1 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Key decisions affecting v3.0 work:
 - [Phase 35-01]: VisibilityTimeout=60s set in both bootstrap.sh and CDK EventBusStack for LocalStack/production parity
 - [Phase 35-01]: EventBridge prefix matching routes all variants of a social event type to one queue (e.g., social.post.created and social.post.deleted both go to social-posts)
 - [Phase 35-01]: social.comment.* events route to social-posts (logically post content); social.like.* routes to social-reactions
+- [Phase 35-02]: Dual-mode Lambda handler dispatches on isSQSEvent guard — SQS batch events unwrap Records[].body, direct invoke falls through to raw EventBridge handler
+- [Phase 35-02]: Bootstrap deploys JS stub Lambda (not TypeScript build) — avoids npm/tsc in container init; invoke-lambda.sh deploys real handler during development
+- [Phase 35-02]: event-source-mapping batch-size=1 for local dev simplicity; CDK stack uses batch-size=10 for production
 
 ### Pending Todos
 
@@ -78,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T13:55:37.267Z
-Stopped at: Completed 35-01-PLAN.md
+Last session: 2026-03-18T13:59:21.054Z
+Stopped at: Completed 35-02-PLAN.md
 Resume file: None

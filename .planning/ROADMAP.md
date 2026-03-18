@@ -112,7 +112,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 **Milestone Goal:** Replace fire-and-forget social writes with a durable event pipeline (EventBridge → SQS → Lambda → DynamoDB) that never loses events, supports fan-out to multiple consumers (activity log, timeline, notifications), and runs fully locally via LocalStack. CRDT checkpoint writes are routed through the same pipeline. UI surfaces an activity feed and CRDT conflict indicator.
 
 - [x] **Phase 34: LocalStack Dev Environment** — Docker Compose with LocalStack, EventBridge, SQS, Lambda, Redis; local dev scripts and Lambda debug tooling (completed 2026-03-18)
-- [ ] **Phase 35: Event Bus Infrastructure** — EventBridge custom bus, typed SQS queues, DLQs, CloudWatch DLQ depth alarms, retry/DLQ behavior
+- [x] **Phase 35: Event Bus Infrastructure** — EventBridge custom bus, typed SQS queues, DLQs, CloudWatch DLQ depth alarms, retry/DLQ behavior (completed 2026-03-18)
 - [ ] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api
 - [ ] **Phase 37: Activity Log** — Lambda consumer persists all social events to user-activity DynamoDB table; REST endpoint and React UI for viewing activity feed
 - [ ] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI
@@ -382,7 +382,7 @@ Plans:
 | 32. Frontend Social Layer | v2.0 | 4/4 | Complete | 2026-03-17 |
 | 33. Social UX Integration | v2.1 | 2/2 | Complete | 2026-03-18 |
 | 34. LocalStack Dev Environment | 2/2 | Complete    | 2026-03-18 | — |
-| 35. Event Bus Infrastructure | 1/2 | In Progress|  | — |
+| 35. Event Bus Infrastructure | 2/2 | Complete   | 2026-03-18 | — |
 | 36. Social Event Publishing | v3.0 | 0/2 | Not started | — |
 | 37. Activity Log | v3.0 | 0/3 | Not started | — |
 | 38. CRDT Durability | v3.0 | 0/3 | Not started | — |
