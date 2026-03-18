@@ -215,6 +215,48 @@ awslocal cloudwatch put-metric-alarm \
   --evaluation-periods 1 \
   --treat-missing-data notBreaching || true
 
+# ---- Lambda deployment (Phase 35 - SQS consumer) ----
+echo "==> Deploying activity-log Lambda..."
+LAMBDA_DIR="/tmp/lambda-build"
+mkdir -p "$LAMBDA_DIR"
+
+# Note: In bootstrap context, we create a minimal stub that will be replaced
+# by the real handler via invoke-lambda.sh during development.
+# The stub just logs and returns — enough to verify event-source-mapping works.
+cat > "$LAMBDA_DIR/handler.js" << 'HANDLER_EOF'
+exports.handler = async function(event) {
+  console.log("activity-log stub handler:", JSON.stringify(event));
+  return { statusCode: 200, body: "ok" };
+};
+HANDLER_EOF
+
+cd "$LAMBDA_DIR"
+zip -r /tmp/activity-log-stub.zip handler.js > /dev/null
+cd /
+
+awslocal lambda create-function \
+  --function-name activity-log \
+  --runtime nodejs20.x \
+  --zip-file fileb:///tmp/activity-log-stub.zip \
+  --handler handler.handler \
+  --timeout 30 \
+  --environment "Variables={AWS_REGION=us-east-1,LOCALSTACK_ENDPOINT=http://localstack:4566}" \
+  --role arn:aws:iam::000000000000:role/lambda-role 2>/dev/null || true
+
+# SQS -> Lambda event source mapping
+FOLLOWS_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-follows \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal lambda create-event-source-mapping \
+  --function-name activity-log \
+  --event-source-arn "$FOLLOWS_QUEUE_ARN" \
+  --batch-size 1 \
+  --enabled 2>/dev/null || true
+
+echo "==> Lambda event-source-mappings:"
+awslocal lambda list-event-source-mappings --function-name activity-log
+
 echo "==> Bootstrap complete. Tables:"
 awslocal dynamodb list-tables
 echo "==> EventBridge buses:"

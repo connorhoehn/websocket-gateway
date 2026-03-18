@@ -19,11 +19,31 @@ interface EventBridgeEvent {
   time?: string;
 }
 
-export async function handler(event: EventBridgeEvent) {
-  const detailType = event['detail-type'];
-  const detail = event.detail;
+interface SQSRecord {
+  messageId: string;
+  body: string;
+  receiptHandle: string;
+  attributes: Record<string, string>;
+  messageAttributes: Record<string, unknown>;
+  md5OfBody: string;
+  eventSource: string;
+  eventSourceARN: string;
+  awsRegion: string;
+}
+
+interface SQSEvent {
+  Records: SQSRecord[];
+}
+
+function isSQSEvent(event: unknown): event is SQSEvent {
+  return typeof event === 'object' && event !== null && 'Records' in event && Array.isArray((event as SQSEvent).Records);
+}
+
+async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void> {
+  const detailType = ebEvent['detail-type'];
+  const detail = ebEvent.detail;
   const userId = (detail.userId ?? detail.followerId ?? detail.authorId ?? 'unknown') as string;
-  const timestamp = event.time ?? new Date().toISOString();
+  const timestamp = ebEvent.time ?? new Date().toISOString();
 
   console.log(`Processing ${detailType} for user ${userId}`);
 
@@ -38,5 +58,20 @@ export async function handler(event: EventBridgeEvent) {
   }));
 
   console.log(`Wrote activity record: userId=${userId}, timestamp=${timestamp}, type=${detailType}`);
+}
+
+export async function handler(event: SQSEvent | EventBridgeEvent) {
+  if (isSQSEvent(event)) {
+    // SQS trigger: each record body is a JSON-encoded EventBridge event
+    console.log(`Processing ${event.Records.length} SQS record(s)`);
+    for (const record of event.Records) {
+      const ebEvent: EventBridgeEvent = JSON.parse(record.body);
+      await processEventBridgeEvent(ebEvent);
+    }
+  } else {
+    // Direct invoke: raw EventBridge event
+    await processEventBridgeEvent(event as EventBridgeEvent);
+  }
+
   return { statusCode: 200, body: 'ok' };
 }
