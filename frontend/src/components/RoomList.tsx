@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
 import type { GatewayMessage } from '../types/gateway';
+import { useFriends } from '../hooks/useFriends';
+import type { PublicProfile } from '../hooks/useFriends';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,9 +100,10 @@ function CreateRoomForm({ onCreate, onDiscard, loading }: CreateRoomFormProps) {
 interface DMRoomButtonProps {
   onCreateDM: (peerId: string) => Promise<void>;
   loading: boolean;
+  friends: PublicProfile[];
 }
 
-function DMRoomButton({ onCreateDM, loading }: DMRoomButtonProps) {
+function DMRoomButton({ onCreateDM, loading, friends }: DMRoomButtonProps) {
   const [peerId, setPeerId] = useState('');
   const [showForm, setShowForm] = useState(false);
 
@@ -137,10 +140,10 @@ function DMRoomButton({ onCreateDM, loading }: DMRoomButtonProps) {
   return (
     <form onSubmit={handleSubmit} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
       <div style={{ display: 'flex', gap: 8 }}>
-        <input
+        <select
           value={peerId}
           onChange={e => setPeerId(e.target.value)}
-          placeholder="User ID for DM"
+          disabled={friends.length === 0}
           style={{
             flex: 1,
             border: '1px solid #d1d5db',
@@ -151,10 +154,15 @@ function DMRoomButton({ onCreateDM, loading }: DMRoomButtonProps) {
             background: '#f9fafb',
             color: '#0f172a',
           }}
-        />
+        >
+          <option value="">{friends.length === 0 ? 'No mutual friends yet' : 'Select a friend\u2026'}</option>
+          {friends.map(f => (
+            <option key={f.userId} value={f.userId}>{f.displayName}</option>
+          ))}
+        </select>
         <button
           type="submit"
-          disabled={!peerId.trim() || loading}
+          disabled={!peerId.trim() || loading || friends.length === 0}
           style={{
             height: 36,
             padding: '0 12px',
@@ -233,6 +241,8 @@ export function RoomList({ idToken, onMessage, onRoomSelect, activeRoomId }: Roo
     loading,
   } = useRooms({ idToken, onMessage });
 
+  const { friends } = useFriends({ idToken });
+
   const [showCreateForm, setShowCreateForm] = useState(false);
 
   const handleCreateRoom = async (name: string) => {
@@ -284,7 +294,7 @@ export function RoomList({ idToken, onMessage, onRoomSelect, activeRoomId }: Roo
           loading={loading}
         />
       )}
-      <DMRoomButton onCreateDM={createDM} loading={loading} />
+      <DMRoomButton onCreateDM={createDM} loading={loading} friends={friends} />
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
         {rooms.length === 0 ? (
           <div style={{ padding: '24px 0', textAlign: 'center' }}>
