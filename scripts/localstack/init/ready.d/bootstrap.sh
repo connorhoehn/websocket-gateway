@@ -215,6 +215,52 @@ awslocal cloudwatch put-metric-alarm \
   --evaluation-periods 1 \
   --treat-missing-data notBreaching || true
 
+# ---- crdt-snapshots DynamoDB table (Phase 38) ----
+awslocal dynamodb create-table --table-name crdt-snapshots \
+  --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=timestamp,AttributeType=S \
+  --key-schema AttributeName=documentId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+# ---- crdt-snapshots SQS queue + DLQ (Phase 38) ----
+awslocal sqs create-queue --queue-name crdt-snapshots || true
+awslocal sqs create-queue --queue-name crdt-snapshots-dlq || true
+
+CRDT_DLQ_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/crdt-snapshots-dlq \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal sqs set-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/crdt-snapshots \
+  --attributes "{\"VisibilityTimeout\":\"60\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$CRDT_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+
+# ---- EventBridge rule routing crdt.checkpoint events to crdt-snapshots (Phase 38) ----
+awslocal events put-rule \
+  --name crdt-checkpoint-events \
+  --event-bus-name social-events \
+  --event-pattern '{"detail-type":[{"prefix":"crdt.checkpoint"}]}' || true
+
+CRDT_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/crdt-snapshots \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal events put-targets \
+  --rule crdt-checkpoint-events \
+  --event-bus-name social-events \
+  --targets "Id=crdt-snapshots-target,Arn=$CRDT_QUEUE_ARN" || true
+
+# ---- CloudWatch alarm for crdt-snapshots DLQ depth (Phase 38) ----
+awslocal cloudwatch put-metric-alarm \
+  --alarm-name crdt-snapshots-dlq-depth \
+  --namespace AWS/SQS \
+  --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=crdt-snapshots-dlq \
+  --statistic Sum \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --treat-missing-data notBreaching || true
+
 # ---- Lambda deployment (Phase 35 - SQS consumer) ----
 echo "==> Deploying activity-log Lambda..."
 LAMBDA_DIR="/tmp/lambda-build"
@@ -256,6 +302,45 @@ awslocal lambda create-event-source-mapping \
 
 echo "==> Lambda event-source-mappings:"
 awslocal lambda list-event-source-mappings --function-name activity-log
+
+# ---- crdt-snapshot Lambda deployment (Phase 38) ----
+echo "==> Deploying crdt-snapshot Lambda..."
+LAMBDA_DIR_CRDT="/tmp/lambda-build-crdt"
+mkdir -p "$LAMBDA_DIR_CRDT"
+
+cat > "$LAMBDA_DIR_CRDT/handler.js" << 'HANDLER_EOF'
+exports.handler = async function(event) {
+  console.log("crdt-snapshot stub handler:", JSON.stringify(event));
+  return { statusCode: 200, body: "ok" };
+};
+HANDLER_EOF
+
+cd "$LAMBDA_DIR_CRDT"
+zip -r /tmp/crdt-snapshot-stub.zip handler.js > /dev/null
+cd /
+
+awslocal lambda create-function \
+  --function-name crdt-snapshot \
+  --runtime nodejs20.x \
+  --zip-file fileb:///tmp/crdt-snapshot-stub.zip \
+  --handler handler.handler \
+  --timeout 30 \
+  --environment "Variables={AWS_REGION=us-east-1,LOCALSTACK_ENDPOINT=http://localstack:4566,DYNAMODB_CRDT_TABLE=crdt-snapshots}" \
+  --role arn:aws:iam::000000000000:role/lambda-role 2>/dev/null || true
+
+# SQS -> crdt-snapshot Lambda event source mapping
+CRDT_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/crdt-snapshots \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal lambda create-event-source-mapping \
+  --function-name crdt-snapshot \
+  --event-source-arn "$CRDT_QUEUE_ARN" \
+  --batch-size 1 \
+  --enabled 2>/dev/null || true
+
+echo "==> crdt-snapshot Lambda event-source-mappings:"
+awslocal lambda list-event-source-mappings --function-name crdt-snapshot
 
 echo "==> Bootstrap complete. Tables:"
 awslocal dynamodb list-tables
