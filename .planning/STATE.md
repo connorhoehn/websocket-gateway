@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 38-03-PLAN.md
-last_updated: "2026-03-18T20:18:59.825Z"
+stopped_at: Completed 38-01-PLAN.md
+last_updated: "2026-03-18T20:19:43.476Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
-  completed_phases: 13
+  completed_phases: 14
   total_plans: 33
-  completed_plans: 32
+  completed_plans: 33
   percent: 29
 ---
 
@@ -54,6 +54,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 37-activity-log P02 | 106 | 2 tasks | 2 files |
 | Phase 38 P02 | 75s | 2 tasks | 2 files |
 | Phase 38 P03 | 102 | 2 tasks | 4 files |
+| Phase 38-crdt-durability P01 | 132 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Key decisions affecting v3.0 work:
 - [Phase 38]: No new crdt message type needed for reconnect recovery: existing crdt:snapshot handler in useCRDT.ts already processes server-pushed snapshots
 - [Phase 38]: afterTransaction origin !== null used to identify remote Y.js transactions for conflict detection
 - [Phase 38]: CRDT conflict banner uses manual dismiss only (no auto-dismiss) per CRDT-03 spec
+- [Phase 38-01]: CRDT checkpoints route through EventBridge pipeline (crdt.checkpoint) — gateway publishes, crdt-snapshot Lambda persists to DynamoDB; decouples snapshot writes from real-time gateway process
+- [Phase 38-01]: crdt-snapshot Lambda follows identical dual-mode pattern as activity-log; snapshot data gzip-compressed in gateway, stored as-is (Binary) in DynamoDB by Lambda
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T20:18:59.823Z
-Stopped at: Completed 38-03-PLAN.md
+Last session: 2026-03-18T20:19:43.473Z
+Stopped at: Completed 38-01-PLAN.md
 Resume file: None
