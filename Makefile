@@ -206,3 +206,7 @@ dev-localstack-logs: ## Tail LocalStack container logs
 .PHONY: invoke-lambda
 invoke-lambda: ## Invoke a Lambda against LocalStack (FUNC=activity-log PAYLOAD='{}')
 	./scripts/invoke-lambda.sh $(FUNC) '$(PAYLOAD)'
+
+.PHONY: dev-localstack-debug
+dev-localstack-debug: ## Start LocalStack with Lambda debug mode (attach VS Code to port 9229)
+	docker compose -f docker-compose.localstack.yml -f docker-compose.debug.yml up --build

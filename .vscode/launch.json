@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to LocalStack Lambda",
+      "type": "node",
+      "request": "attach",
+      "address": "127.0.0.1",
+      "port": 9229,
+      "remoteRoot": "/var/task/",
+      "localRoot": "${workspaceFolder}/lambdas",
+      "sourceMaps": true,
+      "timeout": 30000
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# Override for Lambda debugging. Usage:
+#   docker compose -f docker-compose.localstack.yml -f docker-compose.debug.yml up
+# Then invoke a Lambda and attach VS Code debugger to port 9229.
+# WARNING: --inspect-brk pauses Lambda execution until debugger attaches.
+# Do NOT use for automated/routine invocations.
+
+services:
+  localstack:
+    environment:
+      - LAMBDA_DOCKER_FLAGS=-e NODE_OPTIONS=--inspect-brk=0.0.0.0:9229 -p 9229:9229
+    ports:
+      - "9229:9229"
