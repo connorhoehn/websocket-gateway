@@ -98,7 +98,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 **Milestone Goal:** Wire the social layer and WebSocket gateway together so that selecting a social room activates its real-time channel, and resolve UX friction points that block a real multi-user walkthrough of the platform.
 
-- [ ] **Phase 33: Social UX Integration** — Room→channel wiring, group room management in GroupPanel, friends-picker for DMs, in-app social notifications
+- [x] **Phase 33: Social UX Integration** — Room→channel wiring, group room management in GroupPanel, friends-picker for DMs, in-app social notifications (completed 2026-03-18)
 
 
 ## Phase Details
@@ -282,4 +282,4 @@ Plans:
 | 30. Reactions & Likes | 2/2 | Complete    | 2026-03-17 | — |
 | 31. Real-time Integration | 4/4 | Complete    | 2026-03-17 | — |
 | 32. Frontend Social Layer | 4/4 | Complete    | 2026-03-17 | — |
-| 33. Social UX Integration | 1/2 | In Progress|  | — |
+| 33. Social UX Integration | 2/2 | Complete   | 2026-03-18 | — |

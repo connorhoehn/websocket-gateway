@@ -79,7 +79,7 @@
 - [x] **UXIN-01**: Selecting a social room in RoomList switches the active WebSocket channel so that chat, presence, cursors, and reactions all operate within that room (room's `channelId` becomes `currentChannel`)
 - [x] **UXIN-02**: GroupPanel lists rooms scoped to the selected group and allows the group owner/admin to create a new room within that group — without leaving the group view
 - [x] **UXIN-03**: DM room creation uses a picker populated from the current user's mutual friends list instead of a raw Cognito `sub` UUID input
-- [ ] **UXIN-04**: Real-time social events (follow received, member joined room, new post in active room) surface as visible in-app notifications so users see activity without needing to inspect the EventLog
+- [x] **UXIN-04**: Real-time social events (follow received, member joined room, new post in active room) surface as visible in-app notifications so users see activity without needing to inspect the EventLog
 
 ## Future Requirements
 

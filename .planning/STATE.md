@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.1
 milestone_name: Social UX Integration
 status: planning
-stopped_at: Completed 33-01-PLAN.md
-last_updated: "2026-03-18T00:23:36.918Z"
+stopped_at: Completed 33-02-PLAN.md
+last_updated: "2026-03-18T00:26:38.271Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 0
 ---
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 32 P03 | 90 | 1 tasks | 2 files |
 | Phase 32 P04 | 115 | 3 tasks | 3 files |
 | Phase 33-social-ux-integration P01 | 152 | 2 tasks | 3 files |
+| Phase 33-social-ux-integration P02 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,8 @@ Key decisions affecting v2.0 work:
 - [Phase 32]: getUserPosts returns PostItem[] directly without mutating room-scoped posts state — caller owns profile view scope
 - [Phase 33]: AppLayout owns single useRooms instance — rooms/createGroupRoom threaded to GroupPanel as props to prevent state desync
 - [Phase 33]: GroupRoomList added as unexported internal in GroupPanel.tsx — consistent with co-location pattern; DM friends picker uses select over mutual friends, empty list shows No mutual friends yet and disables submit
+- [Phase 33-social-ux-integration]: NotificationBanner placed as unexported internal in AppLayout.tsx — consistent with co-location pattern used throughout Phase 32-33
+- [Phase 33-social-ux-integration]: social:post_created filtered to activeRoomId via activeRoomIdRef (not state) to avoid stale closure inside WS subscription
 
 ### Pending Todos
 
@@ -151,6 +154,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T00:23:36.915Z
-Stopped at: Completed 33-01-PLAN.md
+Last session: 2026-03-18T00:26:38.268Z
+Stopped at: Completed 33-02-PLAN.md
 Resume file: None
