@@ -11,6 +11,8 @@ import type { EphemeralReaction } from '../hooks/useReactions';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CursorMode, RemoteCursor, TextSelectionData } from '../hooks/useCursors';
 import type { LogEntry } from './EventLog';
+import { useRooms } from '../hooks/useRooms';
+import type { RoomItem } from '../hooks/useRooms';
 
 import { ConnectionStatus } from './ConnectionStatus';
 import { ChannelSelector } from './ChannelSelector';
@@ -148,6 +150,17 @@ export function AppLayout({
   onMessage,
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+
+  const {
+    rooms,
+    createGroupRoom,
+    loading: roomsLoading,
+  } = useRooms({ idToken: idToken!, onMessage });
+
+  const handleRoomSelect = (room: RoomItem) => {
+    setActiveRoomId(room.roomId);
+    onSwitchChannel(room.channelId);
+  };
 
   // Derive typingUsers from presenceUsers, excluding self
   const typingUsers = presenceUsers
@@ -315,13 +328,19 @@ export function AppLayout({
           <SocialPanel idToken={idToken} onMessage={onMessage} />
 
           {/* Groups section */}
-          <GroupPanel idToken={idToken} />
+          <GroupPanel
+            idToken={idToken}
+            rooms={rooms}
+            createGroupRoom={createGroupRoom}
+            onRoomSelect={handleRoomSelect}
+            roomsLoading={roomsLoading}
+          />
 
           {/* Rooms section */}
           <RoomList
             idToken={idToken}
             onMessage={onMessage}
-            onRoomSelect={(room) => setActiveRoomId(room.roomId)}
+            onRoomSelect={handleRoomSelect}
             activeRoomId={activeRoomId}
           />
 

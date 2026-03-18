@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { useGroups } from '../hooks/useGroups';
 import type { GroupItem, MemberItem } from '../hooks/useGroups';
+import type { RoomItem } from '../hooks/useRooms';
 
 // ---------------------------------------------------------------------------
 // CreateGroupForm (internal)
@@ -301,10 +302,118 @@ function GroupCard({ group, currentUserId, isSelected, onSelect, onDelete }: Gro
 }
 
 // ---------------------------------------------------------------------------
+// GroupRoomList (internal)
+// ---------------------------------------------------------------------------
+
+function GroupRoomList({ rooms, groupId, selectedGroupRole, createGroupRoom, onRoomSelect, loading }: {
+  rooms: RoomItem[];
+  groupId: string;
+  selectedGroupRole: string;
+  createGroupRoom: (groupId: string, name: string) => Promise<void>;
+  onRoomSelect?: (room: RoomItem) => void;
+  loading: boolean;
+}) {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [roomName, setRoomName] = useState('');
+  const groupRooms = rooms.filter(r => r.groupId === groupId);
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roomName.trim()) return;
+    await createGroupRoom(groupId, roomName.trim());
+    setRoomName('');
+    setShowCreateForm(false);
+  };
+
+  const typeBadgeStyle: React.CSSProperties = {
+    background: '#eff6ff', color: '#3b82f6', fontSize: 12, padding: '2px 8px', borderRadius: 4
+  };
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h3 style={{
+        fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em', color: '#64748b', margin: '0 0 8px 0',
+      }}>GROUP ROOMS</h3>
+      {(selectedGroupRole === 'owner' || selectedGroupRole === 'admin') && (
+        showCreateForm ? (
+          <form onSubmit={handleCreateRoom} style={{ marginBottom: 8, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={roomName}
+                onChange={e => setRoomName(e.target.value.slice(0, 50))}
+                placeholder="Room name"
+                maxLength={50}
+                required
+                style={{
+                  flex: 1, border: '1px solid #d1d5db', borderRadius: 6,
+                  padding: '6px 10px', fontSize: 14,
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  background: '#f9fafb', color: '#0f172a',
+                }}
+              />
+              <button type="submit" disabled={!roomName.trim() || loading} style={{
+                height: 36, padding: '0 12px',
+                background: !roomName.trim() || loading ? '#f1f5f9' : '#646cff',
+                color: !roomName.trim() || loading ? '#9ca3af' : '#ffffff',
+                border: !roomName.trim() || loading ? '1px solid #e2e8f0' : 'none',
+                borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: !roomName.trim() || loading ? 'default' : 'pointer',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+              }}>
+                {loading ? 'Creating\u2026' : 'Create Room'}
+              </button>
+              <button type="button" onClick={() => setShowCreateForm(false)} style={{
+                fontSize: 14, color: '#64748b', background: 'none', border: 'none',
+                cursor: 'pointer', fontFamily: 'system-ui, -apple-system, sans-serif',
+              }}>Cancel</button>
+            </div>
+          </form>
+        ) : (
+          <button onClick={() => setShowCreateForm(true)} style={{
+            width: '100%', height: 36, marginBottom: 8,
+            background: '#646cff', color: '#ffffff', border: 'none',
+            borderRadius: 8, fontSize: 14, fontWeight: 600,
+            cursor: 'pointer', fontFamily: 'system-ui, -apple-system, sans-serif',
+          }}>Create Room</button>
+        )
+      )}
+      {groupRooms.length === 0 ? (
+        <div style={{ fontSize: 14, color: '#9ca3af', padding: '8px 0' }}>
+          No rooms in this group yet.
+        </div>
+      ) : (
+        groupRooms.map(room => (
+          <div
+            key={room.roomId}
+            onClick={() => onRoomSelect?.(room)}
+            style={{
+              display: 'flex', alignItems: 'center', height: 48,
+              borderBottom: '1px solid #f1f5f9', cursor: 'pointer', paddingRight: 8,
+            }}
+          >
+            <div style={{ flex: 1, fontSize: 16, color: '#0f172a' }}>{room.name}</div>
+            <span style={typeBadgeStyle}>group</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GroupPanel (exported)
 // ---------------------------------------------------------------------------
 
-export function GroupPanel({ idToken }: { idToken: string | null }) {
+interface GroupPanelProps {
+  idToken: string | null;
+  rooms: RoomItem[];
+  createGroupRoom: (groupId: string, name: string) => Promise<void>;
+  onRoomSelect?: (room: RoomItem) => void;
+  roomsLoading: boolean;
+}
+
+export function GroupPanel({ idToken, rooms, createGroupRoom, onRoomSelect, roomsLoading }: GroupPanelProps) {
   const {
     groups,
     createGroup,
@@ -420,6 +529,14 @@ export function GroupPanel({ idToken }: { idToken: string | null }) {
           {(selectedGroupRole === 'owner' || selectedGroupRole === 'admin') && (
             <InviteForm groupId={selectedGroupId} onInvite={inviteUser} />
           )}
+          <GroupRoomList
+            rooms={rooms}
+            groupId={selectedGroupId}
+            selectedGroupRole={selectedGroupRole}
+            createGroupRoom={createGroupRoom}
+            onRoomSelect={onRoomSelect}
+            loading={roomsLoading}
+          />
         </div>
       )}
     </div>
