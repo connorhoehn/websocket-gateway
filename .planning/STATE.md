@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Phase 38 context gathered
-last_updated: "2026-03-18T19:50:53.622Z"
+stopped_at: Completed 38-02-PLAN.md
+last_updated: "2026-03-18T20:18:40.586Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
   completed_phases: 13
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 33
+  completed_plans: 32
   percent: 29
 ---
 
@@ -52,6 +52,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 36 P02 | 90s | 2 tasks | 5 files |
 | Phase 37-activity-log P01 | 57 | 2 tasks | 3 files |
 | Phase 37-activity-log P02 | 106 | 2 tasks | 2 files |
+| Phase 38 P02 | 75s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Key decisions affecting v3.0 work:
 - [Phase 36]: Only creation events published — no DELETE handlers instrumented per CONTEXT.md
 - [Phase 37-01]: Composite SK timestamp#eventId prevents DynamoDB collision for same-millisecond events; SQS batch error isolation via per-record try/catch with [activity-log] prefix
 - [Phase 37-02]: ActivityPanel uses VITE_SOCIAL_API_URL (no /api suffix) + /api/activity path, consistent with useSocialProfile and other hooks in the frontend
+- [Phase 38]: Snapshot push in handleSubscribe is non-fatal: own try/catch ensures subscribe completes even if DynamoDB is unavailable
+- [Phase 38]: No new crdt message type needed for reconnect recovery: existing crdt:snapshot handler in useCRDT.ts already processes server-pushed snapshots
 
 ### Pending Todos
 
@@ -92,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T19:50:53.619Z
-Stopped at: Phase 38 context gathered
-Resume file: .planning/phases/38-crdt-durability/38-CONTEXT.md
+Last session: 2026-03-18T20:18:35.318Z
+Stopped at: Completed 38-02-PLAN.md
+Resume file: None
