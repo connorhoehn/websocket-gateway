@@ -63,9 +63,165 @@ awslocal dynamodb create-table --table-name user-activity \
   --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+# ---- DLQ sibling queues (Phase 35) ----
+awslocal sqs create-queue --queue-name social-follows-dlq || true
+awslocal sqs create-queue --queue-name social-rooms-dlq || true
+awslocal sqs create-queue --queue-name social-posts-dlq || true
+awslocal sqs create-queue --queue-name social-reactions-dlq || true
+
+# ---- Set VisibilityTimeout=60s and RedrivePolicy on main queues (Phase 35) ----
+# VisibilityTimeout is set to 60s to match CDK EventBusStack (production parity).
+# Without this, LocalStack defaults to 30s while production runs at 60s.
+
+FOLLOWS_DLQ_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-follows-dlq \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal sqs set-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-follows \
+  --attributes "{\"VisibilityTimeout\":\"60\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$FOLLOWS_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+
+ROOMS_DLQ_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-rooms-dlq \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal sqs set-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-rooms \
+  --attributes "{\"VisibilityTimeout\":\"60\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$ROOMS_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+
+POSTS_DLQ_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-posts-dlq \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal sqs set-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-posts \
+  --attributes "{\"VisibilityTimeout\":\"60\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$POSTS_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+
+REACTIONS_DLQ_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-reactions-dlq \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal sqs set-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-reactions \
+  --attributes "{\"VisibilityTimeout\":\"60\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$REACTIONS_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+
+# ---- EventBridge routing rules (Phase 35) ----
+# Routes social events by detail-type prefix to the correct typed SQS queue.
+
+awslocal events put-rule \
+  --name follow-events \
+  --event-bus-name social-events \
+  --event-pattern '{"detail-type":[{"prefix":"social.follow"}]}' || true
+
+FOLLOWS_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-follows \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal events put-targets \
+  --rule follow-events \
+  --event-bus-name social-events \
+  --targets "Id=social-follows-target,Arn=$FOLLOWS_QUEUE_ARN" || true
+
+awslocal events put-rule \
+  --name room-events \
+  --event-bus-name social-events \
+  --event-pattern '{"detail-type":[{"prefix":"social.room"}]}' || true
+
+ROOMS_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-rooms \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal events put-targets \
+  --rule room-events \
+  --event-bus-name social-events \
+  --targets "Id=social-rooms-target,Arn=$ROOMS_QUEUE_ARN" || true
+
+awslocal events put-rule \
+  --name post-events \
+  --event-bus-name social-events \
+  --event-pattern '{"detail-type":[{"prefix":"social.post"},{"prefix":"social.comment"}]}' || true
+
+POSTS_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-posts \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal events put-targets \
+  --rule post-events \
+  --event-bus-name social-events \
+  --targets "Id=social-posts-target,Arn=$POSTS_QUEUE_ARN" || true
+
+awslocal events put-rule \
+  --name reaction-events \
+  --event-bus-name social-events \
+  --event-pattern '{"detail-type":[{"prefix":"social.reaction"},{"prefix":"social.like"}]}' || true
+
+REACTIONS_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-reactions \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal events put-targets \
+  --rule reaction-events \
+  --event-bus-name social-events \
+  --targets "Id=social-reactions-target,Arn=$REACTIONS_QUEUE_ARN" || true
+
+# ---- CloudWatch alarms for DLQ depth (Phase 35) ----
+# Each alarm fires when ApproximateNumberOfMessagesVisible > 0.
+
+awslocal cloudwatch put-metric-alarm \
+  --alarm-name social-follows-dlq-depth \
+  --namespace AWS/SQS \
+  --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=social-follows-dlq \
+  --statistic Sum \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --treat-missing-data notBreaching || true
+
+awslocal cloudwatch put-metric-alarm \
+  --alarm-name social-rooms-dlq-depth \
+  --namespace AWS/SQS \
+  --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=social-rooms-dlq \
+  --statistic Sum \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --treat-missing-data notBreaching || true
+
+awslocal cloudwatch put-metric-alarm \
+  --alarm-name social-posts-dlq-depth \
+  --namespace AWS/SQS \
+  --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=social-posts-dlq \
+  --statistic Sum \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --treat-missing-data notBreaching || true
+
+awslocal cloudwatch put-metric-alarm \
+  --alarm-name social-reactions-dlq-depth \
+  --namespace AWS/SQS \
+  --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=social-reactions-dlq \
+  --statistic Sum \
+  --period 60 \
+  --threshold 0 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --treat-missing-data notBreaching || true
+
 echo "==> Bootstrap complete. Tables:"
 awslocal dynamodb list-tables
 echo "==> EventBridge buses:"
 awslocal events list-event-buses
 echo "==> SQS queues:"
 awslocal sqs list-queues
+echo "==> EventBridge rules:"
+awslocal events list-rules --event-bus-name social-events
+echo "==> CloudWatch alarms:"
+awslocal cloudwatch describe-alarms --query 'MetricAlarms[].AlarmName'
