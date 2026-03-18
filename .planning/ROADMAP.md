@@ -316,7 +316,7 @@ Plans:
   1. After a follow, room join, reaction, or post event is published, the corresponding record appears in the user-activity DynamoDB table within a few seconds (Lambda processing time)
   2. A call to `GET /api/activity` on social-api returns the authenticated user's activity log as a chronological list of events
   3. The authenticated user can open an Activity tab (or panel) in the React app and see their recent social events listed in reverse-chronological order without inspecting the EventLog panel
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
 - [ ] 37-01: user-activity DynamoDB table + Lambda consumer — handler persists all event categories keyed on userId + timestamp (ALOG-01)
@@ -331,12 +331,12 @@ Plans:
   1. When the CRDT snapshot trigger fires (time, operation count, or disconnect), the checkpoint is published to EventBridge and the Lambda consumer persists it to DynamoDB — no direct synchronous write from the gateway
   2. When a client reconnects after a disconnect, it loads the latest CRDT snapshot from DynamoDB and replays only the ops delta since that checkpoint — the document is restored to the correct state without a full-page reload
   3. When Y.js resolves a concurrent edit conflict (merge), a dismissible indicator appears in the collaborative editor UI; the indicator disappears when the user dismisses it
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 38-01: Route CRDT checkpoint writes through EventBridge — Lambda consumer persists snapshot to DynamoDB (CRDT-01)
-- [ ] 38-02: Client reconnect snapshot recovery — load latest snapshot + ops delta replay on reconnect (CRDT-02)
-- [ ] 38-03: Y.js conflict indicator in SharedTextEditor UI (CRDT-03)
+- [ ] 38-01-PLAN.md — Route CRDT checkpoint writes through EventBridge — Lambda consumer persists snapshot to DynamoDB (CRDT-01)
+- [ ] 38-02-PLAN.md — Client reconnect snapshot recovery — load latest snapshot + ops delta replay on reconnect (CRDT-02)
+- [ ] 38-03-PLAN.md — Y.js conflict indicator in SharedTextEditor UI (CRDT-03)
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
