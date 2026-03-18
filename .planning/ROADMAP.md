@@ -282,8 +282,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 34-01: Docker Compose setup — LocalStack service, Redis container, EventBridge + SQS + DynamoDB bootstrap scripts (LDEV-01, LDEV-02)
-- [ ] 34-02: Lambda local invocation and debug tooling — invoke scripts, local handler entrypoint, debug attach instructions (LDEV-03)
+- [x] 34-01: Docker Compose setup — LocalStack service, Redis container, EventBridge + SQS + DynamoDB bootstrap scripts (LDEV-01, LDEV-02)
+- [x] 34-02: Lambda local invocation and debug tooling — invoke scripts, local handler entrypoint, debug attach instructions (LDEV-03)
 
 ### Phase 35: Event Bus Infrastructure
 **Goal**: An EventBridge custom bus routes social events by category to typed SQS queues, each backed by a DLQ with a CloudWatch alarm — and failed Lambda invocations retry via SQS visibility timeout before landing in the DLQ with full payload preserved
@@ -296,8 +296,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 35-01: CDK event-bus stack — EventBridge custom bus, typed SQS queues (follow, room, reaction, post), DLQs, CloudWatch DLQ alarms (EBUS-01, EBUS-02)
-- [ ] 35-02: SQS retry and DLQ behavior — Lambda trigger config with maxReceiveCount, DLQ payload preservation verification (EBUS-03)
+- [ ] 35-01-PLAN.md — Bootstrap DLQs, redrive policies, EventBridge routing rules, CloudWatch DLQ alarms + CDK EventBusStack + test-event-routing.sh (EBUS-01, EBUS-02)
+- [ ] 35-02-PLAN.md — SQS event format in Lambda handler, event-source-mapping bootstrap, DLQ retry verification script (EBUS-03)
 
 ### Phase 36: Social Event Publishing
 **Goal**: Every social mutation in social-api (room join/leave, follow/unfollow, reaction, post, comment) publishes a typed event to the EventBridge custom bus with full payload and timestamp, replacing fire-and-forget direct writes
