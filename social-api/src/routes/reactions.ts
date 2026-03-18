@@ -5,7 +5,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient } from '../lib/aws-clients';
+import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const LIKES_TABLE = 'social-likes';
 const POSTS_TABLE = 'social-posts';
 const ROOMS_TABLE = 'social-rooms';
@@ -72,6 +72,15 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
     }
 
     res.status(201).json({ targetId, userId, type: 'reaction', emoji, createdAt });
+
+    // Publish social.reaction event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.reaction', {
+      targetId,
+      userId,
+      roomId,
+      postId,
+      emoji,
+    });
   } catch (err) {
     if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
       res.status(409).json({ error: 'Already reacted. Delete your existing reaction first.' });

@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient } from '../lib/aws-clients';
+import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const COMMENTS_TABLE = 'social-comments';
 const POSTS_TABLE = 'social-posts';
 const ROOMS_TABLE = 'social-rooms';
@@ -103,6 +103,14 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     res.status(201).json(item);
+
+    // Publish social.comment.created event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.comment.created', {
+      roomId,
+      postId,
+      commentId,
+      authorId,
+    });
   } catch (err) {
     console.error('[comments] POST / error:', err);
     res.status(500).json({ error: 'Internal server error' });

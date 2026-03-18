@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient } from '../lib/aws-clients';
+import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const LIKES_TABLE = 'social-likes';
 const PROFILES_TABLE = 'social-profiles';
 const POSTS_TABLE = 'social-posts';
@@ -66,6 +66,14 @@ postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => 
     }
 
     res.status(201).json({ targetId, userId, type: 'like', createdAt });
+
+    // Publish social.like event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.like', {
+      targetId,
+      userId,
+      roomId,
+      postId,
+    });
   } catch (err) {
     if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
       res.status(409).json({ error: 'Already liked' });
@@ -239,6 +247,14 @@ commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> 
     }
 
     res.status(201).json({ targetId, userId, type: 'like', createdAt });
+
+    // Publish social.like event to EventBridge (log-and-continue)
+    void publishSocialEvent('social.like', {
+      targetId,
+      userId,
+      roomId,
+      commentId,
+    });
   } catch (err) {
     if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
       res.status(409).json({ error: 'Already liked' });
