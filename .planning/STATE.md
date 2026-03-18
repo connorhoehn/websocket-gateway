@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Social Platform
+milestone: v2.1
+milestone_name: Social UX Integration
 status: planning
-stopped_at: Completed 32-04-PLAN.md
-last_updated: "2026-03-17T21:28:23.399Z"
+stopped_at: Completed 33-01-PLAN.md
+last_updated: "2026-03-18T00:23:36.918Z"
 last_activity: 2026-03-16 — v2.0 roadmap created (phases 25-32), v1.5 deferred
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 8
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 22
+  completed_plans: 21
   percent: 0
 ---
 
@@ -71,6 +71,7 @@ Progress: [░░░░░░░░░░░░░░░░░░░░░] 0% (
 | Phase 32 P02 | 297 | 2 tasks | 5 files |
 | Phase 32 P03 | 90 | 1 tasks | 2 files |
 | Phase 32 P04 | 115 | 3 tasks | 3 files |
+| Phase 33-social-ux-integration P01 | 152 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,8 @@ Key decisions affecting v2.0 work:
 - [Phase 32]: OnMessageFn type defined locally in AppLayout.tsx (mirrors RoomList.tsx and PostFeed.tsx pattern)
 - [Phase 32]: loadMembers defined before setActiveRoom in useRooms hook so setActiveRoom can include it in useCallback dependency array
 - [Phase 32]: getUserPosts returns PostItem[] directly without mutating room-scoped posts state — caller owns profile view scope
+- [Phase 33]: AppLayout owns single useRooms instance — rooms/createGroupRoom threaded to GroupPanel as props to prevent state desync
+- [Phase 33]: GroupRoomList added as unexported internal in GroupPanel.tsx — consistent with co-location pattern; DM friends picker uses select over mutual friends, empty list shows No mutual friends yet and disables submit
 
 ### Pending Todos
 
@@ -148,6 +151,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-17T21:24:54.309Z
-Stopped at: Completed 32-04-PLAN.md
+Last session: 2026-03-18T00:23:36.915Z
+Stopped at: Completed 33-01-PLAN.md
 Resume file: None

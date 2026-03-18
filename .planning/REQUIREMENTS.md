@@ -72,6 +72,15 @@
 - [x] **RTIM-03**: New likes are broadcast via WebSocket to room members
 - [x] **RTIM-04**: Room member join and leave events are broadcast via WebSocket to existing members
 
+## v2.1 Requirements
+
+### UX Integration (Phase 33)
+
+- [x] **UXIN-01**: Selecting a social room in RoomList switches the active WebSocket channel so that chat, presence, cursors, and reactions all operate within that room (room's `channelId` becomes `currentChannel`)
+- [x] **UXIN-02**: GroupPanel lists rooms scoped to the selected group and allows the group owner/admin to create a new room within that group — without leaving the group view
+- [x] **UXIN-03**: DM room creation uses a picker populated from the current user's mutual friends list instead of a raw Cognito `sub` UUID input
+- [ ] **UXIN-04**: Real-time social events (follow received, member joined room, new post in active room) surface as visible in-app notifications so users see activity without needing to inspect the EventLog
+
 ## Future Requirements
 
 ### Notifications
@@ -159,12 +168,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RTIM-02 | Phase 31 | Complete |
 | RTIM-03 | Phase 31 | Complete |
 | RTIM-04 | Phase 31 | Complete |
+| UXIN-01 | Phase 33 | Planned |
+| UXIN-02 | Phase 33 | Planned |
+| UXIN-03 | Phase 33 | Planned |
+| UXIN-04 | Phase 33 | Planned |
 
 **Coverage:**
-- v2.0 requirements: 38 total
-- Mapped to phases: 38 (phases 26-31; phase 25 is infrastructure, phase 32 is UI delivery)
+- v2.0 requirements: 38 total (phases 25-32, all complete)
+- v2.1 requirements: 4 total (phase 33, planned)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-16 — traceability updated after roadmap creation (phases 25-32)*
+*Last updated: 2026-03-17 — added UXIN-01–04 for Phase 33 (Social UX Integration)*
