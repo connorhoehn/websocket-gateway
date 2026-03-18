@@ -65,8 +65,6 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 </details>
-
-
 ### 🔧 v1.5 Production Hardening (Phases 20-24) — DEFERRED
 
 > Deferred in favor of v2.0 Social Platform. Address in a future dedicated hardening pass once the social layer ships.
@@ -80,8 +78,6 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 **Execution waves:**
 - Wave 1 (parallel): Phase 20, Phase 22 (independent)
 - Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
-
-
 <details>
 <summary>✅ v2.0 Social Platform (Phases 25-32) — SHIPPED 2026-03-17</summary>
 
@@ -122,8 +118,6 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - Phase 35 second (event bus required before publishing or consuming)
 - Phase 36 after Phase 35 (publishing requires the bus)
 - Phases 37 and 38 after Phase 35; can execute in parallel (independent consumers)
-
-
 ## Phase Details
 
 ### Phase 25: Social Infrastructure
@@ -311,8 +305,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 36-01: EventPublisher service in social-api — typed publish methods per event category, LocalStack-compatible EventBridge client (SEVT-01, SEVT-02)
-- [ ] 36-02: Wire EventPublisher into room-members, relationships, likes, reactions, posts, and comments routes (SEVT-01, SEVT-02, SEVT-03, SEVT-04)
+- [ ] 36-01-PLAN.md — publishSocialEvent helper in aws-clients.ts + wire into room-members.ts and social.ts (SEVT-01, SEVT-02)
+- [ ] 36-02-PLAN.md — Wire publishSocialEvent into likes, reactions, posts, comments routes + verification script (SEVT-01, SEVT-02, SEVT-03, SEVT-04)
 
 ### Phase 37: Activity Log
 **Goal**: A Lambda consumer persists all social events to a user-activity DynamoDB table, and users can view their recent activity as a chronological list in the app — validating the full EventBridge pipeline end-to-end
@@ -343,8 +337,6 @@ Plans:
 - [ ] 38-01: Route CRDT checkpoint writes through EventBridge — Lambda consumer persists snapshot to DynamoDB (CRDT-01)
 - [ ] 38-02: Client reconnect snapshot recovery — load latest snapshot + ops delta replay on reconnect (CRDT-02)
 - [ ] 38-03: Y.js conflict indicator in SharedTextEditor UI (CRDT-03)
-
-
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
