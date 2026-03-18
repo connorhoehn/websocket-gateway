@@ -180,8 +180,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EBUS-03 | Phase 35 | Complete |
 | SEVT-01 | Phase 36 | Complete |
 | SEVT-02 | Phase 36 | Complete |
-| SEVT-03 | Phase 36 | Pending |
-| SEVT-04 | Phase 36 | Pending |
+| SEVT-03 | Phase 36 | Complete |
+| SEVT-04 | Phase 36 | Complete |
 | ALOG-01 | Phase 37 | Pending |
 | ALOG-02 | Phase 37 | Pending |
 | ALOG-03 | Phase 37 | Pending |
@@ -215,8 +215,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 - [x] **SEVT-01**: Room join/leave events are published to EventBridge with timestamp when membership changes
 - [x] **SEVT-02**: Follow/unfollow events are published to EventBridge when social graph changes
-- [ ] **SEVT-03**: Reaction and like events are published to EventBridge with full payload and timestamp
-- [ ] **SEVT-04**: Post and comment creation events are published to EventBridge
+- [x] **SEVT-03**: Reaction and like events are published to EventBridge with full payload and timestamp
+- [x] **SEVT-04**: Post and comment creation events are published to EventBridge
 
 ### Activity Log (ALOG)
 

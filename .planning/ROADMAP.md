@@ -109,7 +109,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 - [x] **Phase 34: LocalStack Dev Environment** — Docker Compose with LocalStack, EventBridge, SQS, Lambda, Redis; local dev scripts and Lambda debug tooling (completed 2026-03-18)
 - [x] **Phase 35: Event Bus Infrastructure** — EventBridge custom bus, typed SQS queues, DLQs, CloudWatch DLQ depth alarms, retry/DLQ behavior (completed 2026-03-18)
-- [ ] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api
+- [x] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api (completed 2026-03-18)
 - [ ] **Phase 37: Activity Log** — Lambda consumer persists all social events to user-activity DynamoDB table; REST endpoint and React UI for viewing activity feed
 - [ ] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI
 
@@ -375,6 +375,6 @@ Plans:
 | 33. Social UX Integration | v2.1 | 2/2 | Complete | 2026-03-18 |
 | 34. LocalStack Dev Environment | 2/2 | Complete    | 2026-03-18 | — |
 | 35. Event Bus Infrastructure | 2/2 | Complete    | 2026-03-18 | — |
-| 36. Social Event Publishing | 1/2 | In Progress|  | — |
+| 36. Social Event Publishing | 2/2 | Complete   | 2026-03-18 | — |
 | 37. Activity Log | v3.0 | 0/3 | Not started | — |
 | 38. CRDT Durability | v3.0 | 0/3 | Not started | — |

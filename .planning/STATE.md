@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 36-01-PLAN.md
-last_updated: "2026-03-18T17:24:35.655Z"
+stopped_at: Completed 36-02-PLAN.md
+last_updated: "2026-03-18T17:28:03.784Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 14
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 28
-  completed_plans: 27
+  completed_plans: 28
   percent: 29
 ---
 
@@ -49,6 +49,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 35-event-bus-infrastructure P01 | 2 | 2 tasks | 3 files |
 | Phase 35-event-bus-infrastructure P02 | 1 | 2 tasks | 3 files |
 | Phase 36 P01 | 78s | 2 tasks | 4 files |
+| Phase 36 P02 | 90s | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Key decisions affecting v3.0 work:
 - [Phase 35-02]: event-source-mapping batch-size=1 for local dev simplicity; CDK stack uses batch-size=10 for production
 - [Phase 36]: publishSocialEvent uses void fire-and-forget identical to broadcastService.emit pattern
 - [Phase 36]: Publish calls placed after HTTP response to ensure DynamoDB mutation succeeded before event fires
+- [Phase 36]: Publish calls placed after HTTP 201 response and after successful DynamoDB write — identical pattern to plan 01
+- [Phase 36]: Only creation events published — no DELETE handlers instrumented per CONTEXT.md
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T17:24:35.653Z
-Stopped at: Completed 36-01-PLAN.md
+Last session: 2026-03-18T17:28:03.781Z
+Stopped at: Completed 36-02-PLAN.md
 Resume file: None
