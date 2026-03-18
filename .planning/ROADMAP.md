@@ -279,7 +279,7 @@ Plans:
   2. Developer can invoke a Lambda handler directly against LocalStack using a realistic payload and receive a response in the local terminal
   3. Developer can set a breakpoint in a Lambda handler and hit it via a local debug attach (e.g., `--inspect` flag or equivalent)
   4. All downstream phases (35-38) can run their LocalStack-dependent setup against this environment without modification
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 34-01: Docker Compose setup — LocalStack service, Redis container, EventBridge + SQS + DynamoDB bootstrap scripts (LDEV-01, LDEV-02)
@@ -293,7 +293,7 @@ Plans:
   1. A test event published to the EventBridge custom bus routes to the correct SQS queue based on event category (e.g., social.follow lands in the follows queue, not the posts queue)
   2. Each SQS queue has a corresponding DLQ; a CloudWatch alarm fires when the DLQ message count exceeds zero
   3. A Lambda invocation that throws an error does not immediately discard the message — the message reappears in the SQS queue after the visibility timeout and lands in the DLQ after exhausting retries with the original event payload intact
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 35-01: CDK event-bus stack — EventBridge custom bus, typed SQS queues (follow, room, reaction, post), DLQs, CloudWatch DLQ alarms (EBUS-01, EBUS-02)
@@ -308,7 +308,7 @@ Plans:
   2. When a user follows or unfollows another user, a `social.follow` or `social.unfollow` event is published with the follower and followee Cognito `sub` values
   3. When a reaction or like is recorded, a `social.reaction` or `social.like` event is published with the full target identifier and emoji type
   4. When a post or comment is created, a `social.post.created` or `social.comment.created` event is published with the room ID, author sub, and content ID
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 36-01: EventPublisher service in social-api — typed publish methods per event category, LocalStack-compatible EventBridge client (SEVT-01, SEVT-02)
