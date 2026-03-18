@@ -104,6 +104,24 @@ class CRDTService {
                 timestamp: new Date().toISOString()
             });
 
+            // Push latest snapshot to client on subscribe (CRDT-02: reconnect recovery)
+            try {
+                const snapshot = await this.retrieveLatestSnapshot(channel);
+                if (snapshot.data) {
+                    this.sendToClient(clientId, {
+                        type: 'crdt',
+                        action: 'snapshot',
+                        channel,
+                        snapshot: snapshot.data,
+                        timestamp: snapshot.timestamp,
+                    });
+                    this.logger.info(`Snapshot pushed to client ${clientId} for channel ${channel}`);
+                }
+            } catch (snapshotError) {
+                // Non-fatal: client starts with empty doc if snapshot retrieval fails
+                this.logger.error(`Failed to push snapshot for ${channel} to ${clientId}:`, snapshotError.message);
+            }
+
             this.logger.info(`Client ${clientId} subscribed to CRDT channel: ${channel}`);
         } catch (error) {
             this.logger.error(`Error subscribing to channel ${channel} for client ${clientId}:`, error);
