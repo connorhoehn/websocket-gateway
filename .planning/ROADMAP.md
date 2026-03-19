@@ -366,6 +366,19 @@ Plans:
 Plans:
 - [ ] 40-01: Add event-source-mappings for social-rooms, social-posts, social-reactions → activity-log Lambda in bootstrap.sh
 
+### Phase 41: CRDT Live Update Relay Fix
+**Goal**: Live collaborative CRDT edits reach all connected clients in real-time, and social-api has explicit EVENT_BUS_NAME config
+**Depends on**: Phase 39
+**Requirements**: CRDT-02, CRDT-03
+**Gap Closure**: Closes MISS-A, MISS-B from v3.0 audit
+**Success Criteria** (what must be TRUE):
+  1. When one client edits the CRDT document, the other connected client receives the update and renders it in real-time (broadcastBatch sends crdt:update format matching useCRDT.ts)
+  2. social-api container has EVENT_BUS_NAME=social-events in docker-compose environment block
+**Plans**: 1 plan
+
+Plans:
+- [ ] 41-01-PLAN.md — Fix broadcastBatch() protocol mismatch + add EVENT_BUS_NAME to social-api docker-compose (CRDT-02, CRDT-03, MISS-A, MISS-B)
+
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
@@ -409,3 +422,4 @@ Plans:
 | 38. CRDT Durability | 3/3 | Complete    | 2026-03-18 | — |
 | 39. CRDT Integration Fix | 1/1 | Complete    | 2026-03-19 | — |
 | 40. Activity Log Full Pipeline Wiring | 1/1 | Complete    | 2026-03-19 | — |
+| 41. CRDT Live Update Relay Fix | v3.0 | 0/1 | Planned | — |
