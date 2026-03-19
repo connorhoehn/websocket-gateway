@@ -112,7 +112,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api (completed 2026-03-18)
 - [x] **Phase 37: Activity Log** — Lambda consumer persists all social events to user-activity DynamoDB table; REST endpoint and React UI for viewing activity feed (completed 2026-03-18)
 - [x] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI (completed 2026-03-18)
-- [ ] **Phase 39: CRDT Integration Fix** — Fix CRDT service ENABLED_SERVICES, message type protocol mismatch, and DynamoDB timestamp type — closes CRDT-01, CRDT-02, CRDT-03 gaps from v3.0 audit
+- [x] **Phase 39: CRDT Integration Fix** — Fix CRDT service ENABLED_SERVICES, message type protocol mismatch, and DynamoDB timestamp type — closes CRDT-01, CRDT-02, CRDT-03 gaps from v3.0 audit (completed 2026-03-19)
 - [ ] **Phase 40: Activity Log Full Pipeline Wiring** — Add missing event-source-mappings for social-rooms, social-posts, social-reactions queues to activity-log Lambda — closes ALOG-01 gap from v3.0 audit
 
 **Execution order:**
@@ -406,5 +406,5 @@ Plans:
 | 36. Social Event Publishing | 2/2 | Complete    | 2026-03-18 | — |
 | 37. Activity Log | 2/2 | Complete    | 2026-03-18 | — |
 | 38. CRDT Durability | 3/3 | Complete    | 2026-03-18 | — |
-| 39. CRDT Integration Fix | v3.0 | 0/1 | Pending | — |
+| 39. CRDT Integration Fix | 1/1 | Complete   | 2026-03-19 | — |
 | 40. Activity Log Full Pipeline Wiring | v3.0 | 0/1 | Pending | — |

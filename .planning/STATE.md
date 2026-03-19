@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 38-01-PLAN.md
-last_updated: "2026-03-18T20:22:58.192Z"
+stopped_at: Completed 39-01-PLAN.md
+last_updated: "2026-03-19T16:32:22.735Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
-  total_phases: 14
-  completed_phases: 14
-  total_plans: 33
-  completed_plans: 33
+  total_phases: 16
+  completed_phases: 15
+  total_plans: 34
+  completed_plans: 34
   percent: 29
 ---
 
@@ -55,6 +55,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 38 P02 | 75s | 2 tasks | 2 files |
 | Phase 38 P03 | 102 | 2 tasks | 4 files |
 | Phase 38-crdt-durability P01 | 132 | 2 tasks | 5 files |
+| Phase 39-crdt-integration-fix P01 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Key decisions affecting v3.0 work:
 - [Phase 38]: CRDT conflict banner uses manual dismiss only (no auto-dismiss) per CRDT-03 spec
 - [Phase 38-01]: CRDT checkpoints route through EventBridge pipeline (crdt.checkpoint) — gateway publishes, crdt-snapshot Lambda persists to DynamoDB; decouples snapshot writes from real-time gateway process
 - [Phase 38-01]: crdt-snapshot Lambda follows identical dual-mode pattern as activity-log; snapshot data gzip-compressed in gateway, stored as-is (Binary) in DynamoDB by Lambda
+- [Phase 39-crdt-integration-fix]: MISS-2: crdt-service.js snapshot messages changed from {type:'crdt',action:'snapshot'} to {type:'crdt:snapshot'} — no action field, matches useCRDT.ts client check
+- [Phase 39-crdt-integration-fix]: MISS-4: crdt-snapshot Lambda writes timestamp as Date.now() Number (not String) so DynamoDBDocumentClient marshalls {N:...} matching gateway parseInt(item.timestamp.N,10) reader
+- [Phase 39-crdt-integration-fix]: EVENT_BUS_NAME=social-events made explicit in websocket-gateway docker-compose environment block rather than relying on code default
 
 ### Pending Todos
 
@@ -101,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T20:19:43.473Z
-Stopped at: Completed 38-01-PLAN.md
+Last session: 2026-03-19T16:32:22.733Z
+Stopped at: Completed 39-01-PLAN.md
 Resume file: None
