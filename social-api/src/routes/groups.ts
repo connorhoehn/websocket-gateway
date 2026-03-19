@@ -1,11 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
   GetCommand,
-  PutCommand,
   DeleteCommand,
   UpdateCommand,
   QueryCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
 const GROUPS_TABLE = 'social-groups';
@@ -67,12 +68,6 @@ groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       updatedAt: now,
     };
 
-    // Write group record
-    await docClient.send(new PutCommand({
-      TableName: GROUPS_TABLE,
-      Item: groupItem,
-    }));
-
     // Write owner membership record
     const memberItem: GroupMemberItem = {
       groupId,
@@ -81,10 +76,32 @@ groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       joinedAt: now,
     };
 
-    await docClient.send(new PutCommand({
-      TableName: MEMBERS_TABLE,
-      Item: memberItem,
-    }));
+    // Atomic group + owner membership creation (GRUP-01)
+    try {
+      await docClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: GROUPS_TABLE,
+              Item: groupItem,
+              ConditionExpression: 'attribute_not_exists(groupId)',
+            },
+          },
+          {
+            Put: {
+              TableName: MEMBERS_TABLE,
+              Item: memberItem,
+            },
+          },
+        ],
+      }));
+    } catch (err) {
+      if (err instanceof TransactionCanceledException) {
+        res.status(409).json({ error: 'Group creation conflict — please retry' });
+        return;
+      }
+      throw err;
+    }
 
     res.status(201).json({ ...groupItem, role: 'owner' });
   } catch (err) {

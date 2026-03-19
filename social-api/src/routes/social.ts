@@ -63,7 +63,7 @@ socialRouter.post('/follow/:userId', async (req: Request, res: Response): Promis
             followeeId,
             createdAt: new Date().toISOString(),
           },
-          ConditionExpression: 'attribute_not_exists(followerId)',
+          ConditionExpression: 'attribute_not_exists(followeeId)',
         }),
       );
     } catch (err: unknown) {
