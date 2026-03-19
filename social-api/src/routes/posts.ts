@@ -33,7 +33,8 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const { content } = req.body as { content?: string };
     const authorId = req.user!.sub;
 
-    if (!content || content.trim().length === 0 || content.length > 10000) {
+    const trimmedContent = (content ?? '').trim();
+    if (!trimmedContent || trimmedContent.length > 10000) {
       res.status(400).json({ error: 'content is required (max 10000 chars)' });
       return;
     }
@@ -57,7 +58,7 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
         roomId,
         postId,
         authorId,
-        content: content.trim(),
+        content: trimmedContent,
         createdAt: now,
         updatedAt: now,
       } as PostItem,
@@ -70,11 +71,11 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }));
     if (roomForBroadcast.Item) {
       void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:post', {
-        roomId, postId, authorId, content: content.trim(), createdAt: now,
+        roomId, postId, authorId, content: trimmedContent, createdAt: now,
       });
     }
 
-    res.status(201).json({ roomId, postId, authorId, content: content.trim(), createdAt: now });
+    res.status(201).json({ roomId, postId, authorId, content: trimmedContent, createdAt: now });
 
     // Publish social.post.created event to EventBridge (log-and-continue)
     void publishSocialEvent('social.post.created', {
@@ -95,7 +96,8 @@ postsRouter.put('/:postId', async (req: Request, res: Response): Promise<void> =
     const { content } = req.body as { content?: string };
     const callerId = req.user!.sub;
 
-    if (!content || content.trim().length === 0 || content.length > 10000) {
+    const trimmedContent = (content ?? '').trim();
+    if (!trimmedContent || trimmedContent.length > 10000) {
       res.status(400).json({ error: 'content is required (max 10000 chars)' });
       return;
     }
@@ -120,10 +122,10 @@ postsRouter.put('/:postId', async (req: Request, res: Response): Promise<void> =
       Key: { roomId, postId },
       UpdateExpression: 'SET #c = :content, updatedAt = :now',
       ExpressionAttributeNames: { '#c': 'content' },
-      ExpressionAttributeValues: { ':content': content.trim(), ':now': now },
+      ExpressionAttributeValues: { ':content': trimmedContent, ':now': now },
     }));
 
-    res.status(200).json({ roomId, postId, content: content.trim(), updatedAt: now });
+    res.status(200).json({ roomId, postId, content: trimmedContent, updatedAt: now });
   } catch (err) {
     console.error('[posts] PUT /:postId error:', err);
     res.status(500).json({ error: 'Internal server error' });

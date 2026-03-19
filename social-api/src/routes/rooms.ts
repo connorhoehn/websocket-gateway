@@ -3,7 +3,6 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
-  ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
@@ -73,48 +72,51 @@ roomsRouter.post('/dm', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // DM deduplication guard (check both orderings of owner/peer)
-    const existing = await docClient.send(new ScanCommand({
-      TableName: ROOMS_TABLE,
-      FilterExpression: '#t = :dm AND ((ownerId = :caller AND dmPeerUserId = :peer) OR (ownerId = :peer AND dmPeerUserId = :caller))',
-      ExpressionAttributeNames: { '#t': 'type' },
-      ExpressionAttributeValues: { ':dm': 'dm', ':caller': callerId, ':peer': targetUserId },
-    }));
-    if ((existing.Items?.length ?? 0) > 0) {
-      res.status(409).json({ error: 'A DM room already exists between these two users', roomId: existing.Items![0]['roomId'] });
-      return;
-    }
-
-    const roomId = uuidv4();
+    // Deterministic DM roomId — sorted to ensure same key regardless of who initiates (ROOM-03)
+    const dmRoomId = ['dm', ...[callerId, targetUserId].sort()].join('#');
     const channelId = uuidv4();
     const now = new Date().toISOString();
 
-    // Write room item to social-rooms
-    await docClient.send(new PutCommand({
-      TableName: ROOMS_TABLE,
-      Item: {
-        roomId,
-        channelId,
-        name: `dm-${callerId.slice(-6)}-${targetUserId.slice(-6)}`,
-        type: 'dm',
-        ownerId: callerId,
-        dmPeerUserId: targetUserId,
-        createdAt: now,
-        updatedAt: now,
-      } as RoomItem,
-    }));
+    // Write room item with ConditionExpression to prevent duplicate DM rooms (TOCTOU-safe)
+    try {
+      await docClient.send(new PutCommand({
+        TableName: ROOMS_TABLE,
+        Item: {
+          roomId: dmRoomId,
+          channelId,
+          name: `dm-${callerId.slice(-6)}-${targetUserId.slice(-6)}`,
+          type: 'dm',
+          ownerId: callerId,
+          dmPeerUserId: targetUserId,
+          createdAt: now,
+          updatedAt: now,
+        } as RoomItem,
+        ConditionExpression: 'attribute_not_exists(roomId)',
+      }));
+    } catch (err: unknown) {
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'name' in err &&
+        (err as { name: string }).name === 'ConditionalCheckFailedException'
+      ) {
+        res.status(409).json({ error: 'A DM room already exists between these two users', roomId: dmRoomId });
+        return;
+      }
+      throw err;
+    }
 
     // Auto-enroll BOTH users: caller as 'owner', peer as 'member'
     await docClient.send(new PutCommand({
       TableName: ROOM_MEMBERS_TABLE,
-      Item: { roomId, userId: callerId, role: 'owner', joinedAt: now } as RoomMemberItem,
+      Item: { roomId: dmRoomId, userId: callerId, role: 'owner', joinedAt: now } as RoomMemberItem,
     }));
     await docClient.send(new PutCommand({
       TableName: ROOM_MEMBERS_TABLE,
-      Item: { roomId, userId: targetUserId, role: 'member', joinedAt: now } as RoomMemberItem,
+      Item: { roomId: dmRoomId, userId: targetUserId, role: 'member', joinedAt: now } as RoomMemberItem,
     }));
 
-    res.status(201).json({ roomId, channelId, type: 'dm', dmPeerUserId: targetUserId, createdAt: now });
+    res.status(201).json({ roomId: dmRoomId, channelId, type: 'dm', dmPeerUserId: targetUserId, createdAt: now });
   } catch (err) {
     console.error('[rooms] POST /dm error:', err);
     res.status(500).json({ error: 'Internal server error' });

@@ -35,7 +35,8 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const { content, parentCommentId } = req.body as { content?: string; parentCommentId?: string };
     const authorId = req.user!.sub;
 
-    if (!content || content.trim().length === 0 || content.length > 10000) {
+    const trimmedContent = (content ?? '').trim();
+    if (!trimmedContent || trimmedContent.length > 10000) {
       res.status(400).json({ error: 'content is required (max 10000 chars)' });
       return;
     }
@@ -79,7 +80,7 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       postId,
       commentId,
       authorId,
-      content: content.trim(),
+      content: trimmedContent,
       createdAt: now,
       ...(parentCommentId ? { parentCommentId } : {}),
     };
@@ -96,7 +97,7 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }));
     if (roomForBroadcast.Item) {
       void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:comment', {
-        roomId, postId, commentId, authorId, content: content.trim(),
+        roomId, postId, commentId, authorId, content: trimmedContent,
         ...(parentCommentId ? { parentCommentId } : {}),
         createdAt: now,
       });
