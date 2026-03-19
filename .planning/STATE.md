@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 39-01-PLAN.md
-last_updated: "2026-03-19T16:34:39.689Z"
+stopped_at: Completed 40-01-PLAN.md
+last_updated: "2026-03-19T16:39:35.913Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 16
-  completed_phases: 15
-  total_plans: 34
-  completed_plans: 34
+  completed_phases: 16
+  total_plans: 35
+  completed_plans: 35
   percent: 29
 ---
 
@@ -56,6 +56,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 38 P03 | 102 | 2 tasks | 4 files |
 | Phase 38-crdt-durability P01 | 132 | 2 tasks | 5 files |
 | Phase 39-crdt-integration-fix P01 | 4 | 2 tasks | 3 files |
+| Phase 40-activity-log-pipeline-wiring P01 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ Key decisions affecting v3.0 work:
 - [Phase 39-crdt-integration-fix]: MISS-2: crdt-service.js snapshot messages changed from {type:'crdt',action:'snapshot'} to {type:'crdt:snapshot'} — no action field, matches useCRDT.ts client check
 - [Phase 39-crdt-integration-fix]: MISS-4: crdt-snapshot Lambda writes timestamp as Date.now() Number (not String) so DynamoDBDocumentClient marshalls {N:...} matching gateway parseInt(item.timestamp.N,10) reader
 - [Phase 39-crdt-integration-fix]: EVENT_BUS_NAME=social-events made explicit in websocket-gateway docker-compose environment block rather than relying on code default
+- [Phase 40-01]: MISS-3 (v3.0 audit): 3 missing SQS-to-Lambda event-source-mappings added for social-rooms, social-posts, social-reactions
 
 ### Pending Todos
 
@@ -105,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T16:32:22.733Z
-Stopped at: Completed 39-01-PLAN.md
+Last session: 2026-03-19T16:39:35.910Z
+Stopped at: Completed 40-01-PLAN.md
 Resume file: None
