@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 43-01-PLAN.md
-last_updated: "2026-03-19T20:01:07.334Z"
+stopped_at: Completed 43-02-PLAN.md
+last_updated: "2026-03-19T20:04:46.394Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 23
-  completed_phases: 18
+  completed_phases: 19
   total_plans: 39
-  completed_plans: 38
+  completed_plans: 39
   percent: 29
 ---
 
@@ -60,6 +60,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 41-crdt-live-update-relay-fix P01 | 56 | 2 tasks | 2 files |
 | Phase 42 P01 | 125 | 2 tasks | 5 files |
 | Phase 43 P01 | 3 | 2 tasks | 5 files |
+| Phase 43 P02 | 113 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,7 @@ Key decisions affecting v3.0 work:
 - [Phase 42]: Trim-before-validate pattern: trimmedContent declared once before validation so whitespace-only strings fail validation and stored content is always trimmed (posts and comments)
 - [Phase 43]: Transactional outbox: every social write atomically creates social-outbox record (status=UNPROCESSED, eventType, queueName, payload JSON) via TransactWriteCommand — eliminates event loss on process crash between DynamoDB write and EventBridge publish
 - [Phase 43]: social-outbox status-index GSI (PK: status, SK: createdAt) enables relay processor to query UNPROCESSED items in arrival order; queueName field encodes SQS routing so relay needs no re-derivation logic
+- [Phase 43]: outbox-relay marks PROCESSED only after successful SQS publish; polls social-outbox GSI directly (no event-source-mapping); 60s timeout; container-internal queue URLs
 
 ### Pending Todos
 
@@ -118,6 +120,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T20:01:07.331Z
-Stopped at: Completed 43-01-PLAN.md
+Last session: 2026-03-19T20:04:46.391Z
+Stopped at: Completed 43-02-PLAN.md
 Resume file: None

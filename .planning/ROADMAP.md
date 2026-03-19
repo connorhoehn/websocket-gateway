@@ -127,7 +127,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 **Milestone Goal:** Make the platform demonstrable end-to-end — scripts simulate authentic multi-user activity through real APIs, the UI updates in real-time as those events arrive, and every event is durably captured in the activity log with no losses. Backend socket and event architecture is clean enough to swap the React frontend for an iOS client.
 
 - [x] **Phase 42: Social Data Integrity** — Fix critical social bugs: duplicate-follow condition expression, atomic group+owner creation via TransactWrite, DM race condition, post content validation order (completed 2026-03-19)
-- [ ] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss
+- [x] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss (completed 2026-03-19)
 - [ ] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients
 - [ ] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs
 - [ ] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time
