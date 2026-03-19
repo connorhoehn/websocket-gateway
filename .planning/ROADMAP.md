@@ -531,4 +531,4 @@ Plans:
 | 38. CRDT Durability | 3/3 | Complete    | 2026-03-18 | — |
 | 39. CRDT Integration Fix | 1/1 | Complete    | 2026-03-19 | — |
 | 40. Activity Log Full Pipeline Wiring | 1/1 | Complete    | 2026-03-19 | — |
-| 41. CRDT Live Update Relay Fix | 1/1 | Complete   | 2026-03-19 | — |
+| 41. CRDT Live Update Relay Fix | 1/1 | Complete    | 2026-03-19 | — |
