@@ -300,6 +300,36 @@ awslocal lambda create-event-source-mapping \
   --batch-size 1 \
   --enabled 2>/dev/null || true
 
+ROOMS_ESM_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-rooms \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal lambda create-event-source-mapping \
+  --function-name activity-log \
+  --event-source-arn "$ROOMS_ESM_ARN" \
+  --batch-size 1 \
+  --enabled 2>/dev/null || true
+
+POSTS_ESM_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-posts \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal lambda create-event-source-mapping \
+  --function-name activity-log \
+  --event-source-arn "$POSTS_ESM_ARN" \
+  --batch-size 1 \
+  --enabled 2>/dev/null || true
+
+REACTIONS_ESM_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-reactions \
+  --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+
+awslocal lambda create-event-source-mapping \
+  --function-name activity-log \
+  --event-source-arn "$REACTIONS_ESM_ARN" \
+  --batch-size 1 \
+  --enabled 2>/dev/null || true
+
 echo "==> Lambda event-source-mappings:"
 awslocal lambda list-event-source-mappings --function-name activity-log
 
