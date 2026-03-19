@@ -5,11 +5,15 @@ import {
   QueryCommand,
   BatchGetCommand,
   ScanCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
+import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const REL_TABLE = 'social-relationships';
 const PROF_TABLE = 'social-profiles';
+const OUTBOX_TABLE = 'social-outbox';
 
 export const socialRouter = Router();
 
@@ -54,37 +58,47 @@ socialRouter.post('/follow/:userId', async (req: Request, res: Response): Promis
       return;
     }
 
+    const outboxId = ulid();
+    const now = new Date().toISOString();
+
     try {
-      await docClient.send(
-        new PutCommand({
-          TableName: REL_TABLE,
-          Item: {
-            followerId,
-            followeeId,
-            createdAt: new Date().toISOString(),
+      await docClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: REL_TABLE,
+              Item: { followerId, followeeId, createdAt: now },
+              ConditionExpression: 'attribute_not_exists(followeeId)',
+            },
           },
-          ConditionExpression: 'attribute_not_exists(followeeId)',
-        }),
-      );
-    } catch (err: unknown) {
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'name' in err &&
-        (err as { name: string }).name === 'ConditionalCheckFailedException'
-      ) {
-        res.status(409).json({ error: 'Already following this user' });
-        return;
+          {
+            Put: {
+              TableName: OUTBOX_TABLE,
+              Item: {
+                outboxId,
+                status: 'UNPROCESSED',
+                eventType: 'social.follow',
+                queueName: 'social-follows',
+                payload: JSON.stringify({ followerId, followeeId, timestamp: now }),
+                createdAt: now,
+              },
+            },
+          },
+        ],
+      }));
+    } catch (err) {
+      if (err instanceof TransactionCanceledException) {
+        const reasons = err.CancellationReasons ?? [];
+        if (reasons[0]?.Code === 'ConditionalCheckFailed') {
+          res.status(409).json({ error: 'Already following this user' });
+          return;
+        }
       }
       throw err;
     }
 
     res.status(201).json({ followerId, followeeId });
-    // Publish social.follow event to EventBridge (log-and-continue)
-    void publishSocialEvent('social.follow', {
-      followerId,
-      followeeId,
-    });
+    // No publishSocialEvent — outbox record handles delivery
   } catch (err) {
     console.error('POST /social/follow/:userId error:', err);
     res.status(500).json({ error: 'Internal server error' });

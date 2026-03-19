@@ -63,6 +63,23 @@ awslocal dynamodb create-table --table-name user-activity \
   --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+# ---- Outbox table (Phase 43 Transactional Outbox) ----
+awslocal dynamodb create-table --table-name social-outbox \
+  --attribute-definitions \
+    AttributeName=outboxId,AttributeType=S \
+    AttributeName=status,AttributeType=S \
+    AttributeName=createdAt,AttributeType=S \
+  --key-schema AttributeName=outboxId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes '[{
+    "IndexName":"status-index",
+    "KeySchema":[
+      {"AttributeName":"status","KeyType":"HASH"},
+      {"AttributeName":"createdAt","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  }]' || true
+
 # ---- DLQ sibling queues (Phase 35) ----
 awslocal sqs create-queue --queue-name social-follows-dlq || true
 awslocal sqs create-queue --queue-name social-rooms-dlq || true
