@@ -53,7 +53,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=development
       - LOG_LEVEL=debug
-      - ENABLED_SERVICES=chat,presence,cursor,reaction
+      - ENABLED_SERVICES=chat,presence,cursor,reaction,crdt
       - PORT=8080
       - COGNITO_REGION=us-east-1
       - COGNITO_USER_POOL_ID=us-east-1_localdev000
@@ -61,6 +61,7 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_REGION=us-east-1
+      - EVENT_BUS_NAME=social-events
     volumes:
       - ./src:/app/src:ro
     command: node src/server.js
