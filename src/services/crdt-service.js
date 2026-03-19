@@ -8,6 +8,7 @@ const { checkChannelPermission, AuthzError } = require('../middleware/authz-midd
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { DynamoDBClient, PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
 const { EventBridgeClient, PutEventsCommand } = require('@aws-sdk/client-eventbridge');
+const { mergeUpdates } = require('yjs');
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
@@ -348,12 +349,17 @@ class CRDTService {
         }
 
         try {
+            // Decode each base64 operation update into a Uint8Array buffer
+            const buffers = batch.operations.map(op => new Uint8Array(Buffer.from(op.update, 'base64')));
+
+            // Merge all operation buffers into a single Y.js update
+            const merged = buffers.length === 1 ? buffers[0] : mergeUpdates(buffers);
+            const mergedBase64 = Buffer.from(merged).toString('base64');
+
             const message = {
-                type: 'crdt',
-                action: 'operations',
+                type: 'crdt:update',
                 channel,
-                operations: batch.operations,
-                timestamp: new Date().toISOString()
+                update: mergedBase64
             };
 
             // Broadcast to channel, excluding the sender to prevent echo
