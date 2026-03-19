@@ -6,13 +6,15 @@ import {
   DeleteCommand,
   QueryCommand,
   ScanCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { docClient } from '../lib/aws-clients';
 const POSTS_TABLE = 'social-posts';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
+const OUTBOX_TABLE = 'social-outbox';
 
 // postsRouter is mounted at /rooms/:roomId — mergeParams:true exposes :roomId
 export const postsRouter = Router({ mergeParams: true });
@@ -52,16 +54,36 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const postId = ulid();
     const now = new Date().toISOString();
 
-    await docClient.send(new PutCommand({
-      TableName: POSTS_TABLE,
-      Item: {
-        roomId,
-        postId,
-        authorId,
-        content: trimmedContent,
-        createdAt: now,
-        updatedAt: now,
-      } as PostItem,
+    const outboxId = ulid();
+    await docClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: POSTS_TABLE,
+            Item: {
+              roomId,
+              postId,
+              authorId,
+              content: trimmedContent,
+              createdAt: now,
+              updatedAt: now,
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: OUTBOX_TABLE,
+            Item: {
+              outboxId,
+              status: 'UNPROCESSED',
+              eventType: 'social.post.created',
+              queueName: 'social-posts',
+              payload: JSON.stringify({ roomId, postId, authorId, timestamp: now }),
+              createdAt: now,
+            },
+          },
+        },
+      ],
     }));
 
     // Broadcast social:post to room channel (non-fatal if Redis unavailable)
@@ -76,13 +98,7 @@ postsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 
     res.status(201).json({ roomId, postId, authorId, content: trimmedContent, createdAt: now });
-
-    // Publish social.post.created event to EventBridge (log-and-continue)
-    void publishSocialEvent('social.post.created', {
-      roomId,
-      postId,
-      authorId,
-    });
+    // No publishSocialEvent — outbox record handles delivery
   } catch (err) {
     console.error('[posts] POST / error:', err);
     res.status(500).json({ error: 'Internal server error' });

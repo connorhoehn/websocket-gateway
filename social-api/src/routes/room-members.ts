@@ -5,12 +5,15 @@ import {
   ScanCommand,
   BatchGetCommand,
   DeleteCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
+const OUTBOX_TABLE = 'social-outbox';
 
 export const roomMembersRouter = Router({ mergeParams: true });
 
@@ -56,16 +59,37 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // Write member record to social-room-members
+    // Write member record + outbox record atomically
+    const outboxId = ulid();
     const now = new Date().toISOString();
-    await docClient.send(new PutCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Item: {
-        roomId: req.params.roomId,
-        userId: req.user!.sub,
-        role: 'member',
-        joinedAt: now,
-      } as RoomMemberItem,
+
+    await docClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: ROOM_MEMBERS_TABLE,
+            Item: {
+              roomId: req.params.roomId,
+              userId: req.user!.sub,
+              role: 'member',
+              joinedAt: now,
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: OUTBOX_TABLE,
+            Item: {
+              outboxId,
+              status: 'UNPROCESSED',
+              eventType: 'social.room.join',
+              queueName: 'social-rooms',
+              payload: JSON.stringify({ roomId: req.params.roomId, userId: req.user!.sub, timestamp: now }),
+              createdAt: now,
+            },
+          },
+        },
+      ],
     }));
 
     res.status(201).json({ roomId: req.params.roomId, userId: req.user!.sub, role: 'member', joinedAt: now });
@@ -76,11 +100,7 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
         roomId: req.params.roomId, userId: req.user!.sub, joinedAt: now,
       });
     }
-    // Publish social.room.join event to EventBridge (log-and-continue)
-    void publishSocialEvent('social.room.join', {
-      roomId: req.params.roomId,
-      userId: req.user!.sub,
-    });
+    // No publishSocialEvent — outbox record handles delivery
   } catch (err) {
     console.error('[room-members] POST /join error:', err);
     res.status(500).json({ error: 'Internal server error' });

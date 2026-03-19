@@ -1,15 +1,18 @@
 import {
   GetCommand,
-  PutCommand,
   DeleteCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
+import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { docClient } from '../lib/aws-clients';
 const LIKES_TABLE = 'social-likes';
 const POSTS_TABLE = 'social-posts';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
+const OUTBOX_TABLE = 'social-outbox';
 
 const VALID_EMOJI = new Set(['❤️', '😂', '👍', '👎', '😮', '😢', '😡', '🎉', '🔥', '⚡', '💯', '🚀']);
 
@@ -52,13 +55,44 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
 
     const targetId = `post:${postId}:reaction`;
     const createdAt = new Date().toISOString();
+    const outboxId = ulid();
 
-    await docClient.send(new PutCommand({
-      TableName: LIKES_TABLE,
-      Item: { targetId, userId, type: 'reaction', emoji, createdAt },
-      ConditionExpression: 'attribute_not_exists(#uid)',
-      ExpressionAttributeNames: { '#uid': 'userId' },
-    }));
+    try {
+      await docClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: LIKES_TABLE,
+              Item: { targetId, userId, type: 'reaction', emoji, createdAt },
+              ConditionExpression: 'attribute_not_exists(#uid)',
+              ExpressionAttributeNames: { '#uid': 'userId' },
+            },
+          },
+          {
+            Put: {
+              TableName: OUTBOX_TABLE,
+              Item: {
+                outboxId,
+                status: 'UNPROCESSED',
+                eventType: 'social.reaction',
+                queueName: 'social-reactions',
+                payload: JSON.stringify({ targetId, userId, roomId, postId, emoji, timestamp: createdAt }),
+                createdAt,
+              },
+            },
+          },
+        ],
+      }));
+    } catch (err) {
+      if (err instanceof TransactionCanceledException) {
+        const reasons = err.CancellationReasons ?? [];
+        if (reasons[0]?.Code === 'ConditionalCheckFailed') {
+          res.status(409).json({ error: 'Already reacted. Delete your existing reaction first.' });
+          return;
+        }
+      }
+      throw err;
+    }
 
     // Broadcast social:like (reaction) to room channel (non-fatal if Redis unavailable)
     const roomForBroadcast = await docClient.send(new GetCommand({
@@ -72,20 +106,8 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
     }
 
     res.status(201).json({ targetId, userId, type: 'reaction', emoji, createdAt });
-
-    // Publish social.reaction event to EventBridge (log-and-continue)
-    void publishSocialEvent('social.reaction', {
-      targetId,
-      userId,
-      roomId,
-      postId,
-      emoji,
-    });
+    // No publishSocialEvent — outbox record handles delivery
   } catch (err) {
-    if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
-      res.status(409).json({ error: 'Already reacted. Delete your existing reaction first.' });
-      return;
-    }
     console.error('[reactions] handler error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
