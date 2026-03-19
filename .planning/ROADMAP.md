@@ -114,6 +114,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI (completed 2026-03-18)
 - [x] **Phase 39: CRDT Integration Fix** — Fix CRDT service ENABLED_SERVICES, message type protocol mismatch, and DynamoDB timestamp type — closes CRDT-01, CRDT-02, CRDT-03 gaps from v3.0 audit (completed 2026-03-19)
 - [x] **Phase 40: Activity Log Full Pipeline Wiring** — Add missing event-source-mappings for social-rooms, social-posts, social-reactions queues to activity-log Lambda — closes ALOG-01 gap from v3.0 audit (completed 2026-03-19)
+- [ ] **Phase 41: CRDT Live Update Relay Fix** — Fix `broadcastBatch()` protocol mismatch so live collaborative edits reach all connected clients; add `EVENT_BUS_NAME` to social-api docker-compose — closes CRDT-02, CRDT-03, MISS-A, MISS-B gaps from v3.0 audit
 
 **Execution order:**
 - Phase 34 first (foundational — all others depend on LocalStack)

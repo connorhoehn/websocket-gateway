@@ -186,13 +186,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALOG-02 | Phase 37 | Complete |
 | ALOG-03 | Phase 37 | Complete |
 | CRDT-01 | Phase 39 | Complete |
-| CRDT-02 | Phase 39 | Complete |
-| CRDT-03 | Phase 39 | Complete |
+| CRDT-02 | Phase 41 | Pending |
+| CRDT-03 | Phase 41 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 38 total (phases 25-32, all complete)
 - v2.1 requirements: 4 total (phase 33, all complete)
-- v3.0 requirements: 13 total (phases 34-40, 9 complete, 4 pending gap closure)
+- v3.0 requirements: 13 total (phases 34-41, 11 complete, 2 pending gap closure)
 - Unmapped: 0 ✓
 
 ---
@@ -227,8 +227,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 ### CRDT Durability (CRDT)
 
 - [x] **CRDT-01**: CRDT checkpoint writes are routed through EventBridge → SQS → Lambda instead of direct synchronous DynamoDB writes
-- [x] **CRDT-02**: Client reconnect loads the latest CRDT snapshot from DynamoDB and replays ops delta since that checkpoint
-- [x] **CRDT-03**: UI surfaces a dismissible indicator when Y.js resolves a merge conflict
+- [ ] **CRDT-02**: Client reconnect loads the latest CRDT snapshot from DynamoDB and replays ops delta since that checkpoint
+- [ ] **CRDT-03**: UI surfaces a dismissible indicator when Y.js resolves a merge conflict
 
 ## Out of Scope (v3.0)
 
@@ -241,4 +241,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-16*
-*Last updated: 2026-03-19 — Gap closure phases 39-40 added; CRDT-01/02/03 and ALOG-01 reset to Pending*
+*Last updated: 2026-03-19 — Gap closure phase 41 added; CRDT-02/03 reset to Pending (live relay mismatch)*
