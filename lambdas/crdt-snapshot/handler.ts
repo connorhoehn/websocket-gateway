@@ -55,9 +55,9 @@ async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void>
     TableName: TABLE,
     Item: {
       documentId: channelId,
-      timestamp: String(Date.now()),
+      timestamp: Date.now(),
       snapshot: snapshotBuffer,
-      ttl: String(ttl),
+      ttl,
     },
   }));
 

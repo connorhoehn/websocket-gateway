@@ -120,8 +120,7 @@ class CRDTService {
                 const snapshot = await this.retrieveLatestSnapshot(channel);
                 if (snapshot.data) {
                     this.sendToClient(clientId, {
-                        type: 'crdt',
-                        action: 'snapshot',
+                        type: 'crdt:snapshot',
                         channel,
                         snapshot: snapshot.data,
                         timestamp: snapshot.timestamp,
@@ -255,8 +254,7 @@ class CRDTService {
 
             // Send response
             this.sendToClient(clientId, {
-                type: 'crdt',
-                action: 'snapshot',
+                type: 'crdt:snapshot',
                 channel,
                 snapshot: snapshot.data, // base64 string or null
                 timestamp: snapshot.timestamp, // epoch milliseconds or null
