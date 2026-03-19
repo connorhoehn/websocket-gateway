@@ -10,7 +10,7 @@
 - 🔧 **v1.5 Production Hardening** — Phases 20-24 (Deferred — skipped in favor of v2.0)
 - ✅ **v2.0 Social Platform** — Phases 25-32 (shipped 2026-03-17)
 - ✅ **v2.1 Social UX Integration** — Phase 33 (shipped 2026-03-18)
-- 🚧 **v3.0 Durable Event Architecture** — Phases 34-38 (in progress)
+- 🚧 **v3.0 Durable Event Architecture** — Phases 34-40 (in progress)
 
 ## Phases
 
@@ -112,6 +112,8 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 36: Social Event Publishing** — Room join/leave, follow/unfollow, reaction, and post/comment events published to EventBridge from social-api (completed 2026-03-18)
 - [x] **Phase 37: Activity Log** — Lambda consumer persists all social events to user-activity DynamoDB table; REST endpoint and React UI for viewing activity feed (completed 2026-03-18)
 - [x] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI (completed 2026-03-18)
+- [ ] **Phase 39: CRDT Integration Fix** — Fix CRDT service ENABLED_SERVICES, message type protocol mismatch, and DynamoDB timestamp type — closes CRDT-01, CRDT-02, CRDT-03 gaps from v3.0 audit
+- [ ] **Phase 40: Activity Log Full Pipeline Wiring** — Add missing event-source-mappings for social-rooms, social-posts, social-reactions queues to activity-log Lambda — closes ALOG-01 gap from v3.0 audit
 
 **Execution order:**
 - Phase 34 first (foundational — all others depend on LocalStack)
@@ -337,6 +339,32 @@ Plans:
 - [ ] 38-01-PLAN.md — Route CRDT checkpoint writes through EventBridge — Lambda consumer persists snapshot to DynamoDB (CRDT-01)
 - [ ] 38-02-PLAN.md — Client reconnect snapshot recovery — load latest snapshot + ops delta replay on reconnect (CRDT-02)
 - [ ] 38-03-PLAN.md — Y.js conflict indicator in SharedTextEditor UI (CRDT-03)
+### Phase 39: CRDT Integration Fix
+**Goal**: The CRDT service runs in the LocalStack dev environment, the gateway and client use a consistent snapshot message protocol, and the DynamoDB timestamp attribute type matches between writer and reader — enabling CRDT-01, CRDT-02, and CRDT-03 to work end-to-end
+**Depends on**: Phase 38
+**Requirements**: CRDT-01, CRDT-02, CRDT-03
+**Gap Closure**: Closes MISS-1, MISS-2, MISS-4 from v3.0 audit
+**Success Criteria** (what must be TRUE):
+  1. `ENABLED_SERVICES` in `docker-compose.localstack.yml` includes `crdt`; the CRDT service initializes on startup
+  2. When a CRDT snapshot trigger fires, the gateway publishes to EventBridge and the crdt-snapshot Lambda persists the snapshot — no type mismatch on the client's snapshot handler
+  3. `retrieveLatestSnapshot` returns a valid numeric timestamp (not NaN) when reading a snapshot written by the Lambda
+**Plans**: 1 plan
+
+Plans:
+- [ ] 39-01: Fix ENABLED_SERVICES, protocol type, DynamoDB timestamp type, and EVENT_BUS_NAME env var
+
+### Phase 40: Activity Log Full Pipeline Wiring
+**Goal**: All four social event categories (follows, room joins, posts, reactions) reach the activity-log Lambda and are persisted to the user-activity DynamoDB table
+**Depends on**: Phase 37
+**Requirements**: ALOG-01
+**Gap Closure**: Closes MISS-3 from v3.0 audit
+**Success Criteria** (what must be TRUE):
+  1. After a room join event, a reaction, and a post event are published, each corresponding record appears in the user-activity DynamoDB table (not just follow events)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 40-01: Add event-source-mappings for social-rooms, social-posts, social-reactions → activity-log Lambda in bootstrap.sh
+
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
@@ -378,3 +406,5 @@ Plans:
 | 36. Social Event Publishing | 2/2 | Complete    | 2026-03-18 | — |
 | 37. Activity Log | 2/2 | Complete    | 2026-03-18 | — |
 | 38. CRDT Durability | 3/3 | Complete    | 2026-03-18 | — |
+| 39. CRDT Integration Fix | v3.0 | 0/1 | Pending | — |
+| 40. Activity Log Full Pipeline Wiring | v3.0 | 0/1 | Pending | — |
