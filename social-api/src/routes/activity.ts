@@ -13,9 +13,15 @@ activityRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const lastKey = req.query.lastKey as string | undefined;
 
-    const exclusiveStartKey = lastKey
-      ? JSON.parse(Buffer.from(lastKey, 'base64').toString('utf-8'))
-      : undefined;
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    if (lastKey) {
+      try {
+        exclusiveStartKey = JSON.parse(Buffer.from(lastKey, 'base64').toString('utf-8'));
+      } catch {
+        res.status(400).json({ error: 'Invalid lastKey' });
+        return;
+      }
+    }
 
     const result = await docClient.send(new QueryCommand({
       TableName: TABLE,

@@ -29,7 +29,7 @@ export async function publishSocialEvent(
   detail: Record<string, unknown>,
 ): Promise<void> {
   try {
-    await eventBridgeClient.send(
+    const response = await eventBridgeClient.send(
       new PutEventsCommand({
         Entries: [
           {
@@ -41,6 +41,10 @@ export async function publishSocialEvent(
         ],
       }),
     );
+    if (response.FailedEntryCount && response.FailedEntryCount > 0) {
+      const failed = response.Entries?.filter(e => e.ErrorCode);
+      console.error(`[event-publish] EventBridge rejected ${detailType}:`, JSON.stringify(failed));
+    }
   } catch (err) {
     console.error(`[event-publish] Failed to publish ${detailType}:`, err);
   }

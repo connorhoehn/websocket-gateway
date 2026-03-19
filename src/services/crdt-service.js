@@ -382,7 +382,7 @@ class CRDTService {
             const compressed = await gzip(state.currentSnapshot);
             const snapshotBase64 = compressed.toString('base64');
 
-            await this.eventBridgeClient.send(new PutEventsCommand({
+            const response = await this.eventBridgeClient.send(new PutEventsCommand({
                 Entries: [{
                     Source: 'crdt-service',
                     DetailType: 'crdt.checkpoint',
@@ -394,6 +394,11 @@ class CRDTService {
                     EventBusName: this.eventBusName,
                 }]
             }));
+
+            if (response.FailedEntryCount && response.FailedEntryCount > 0) {
+                const failed = (response.Entries || []).filter(e => e.ErrorCode);
+                this.logger.error(`EventBridge rejected crdt.checkpoint for channel ${channelId}:`, failed);
+            }
 
             // Reset operation counter
             state.operationsSinceSnapshot = 0;

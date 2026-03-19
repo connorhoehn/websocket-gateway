@@ -49,7 +49,7 @@ async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void>
   const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2, 10);
   const sk = `${timestamp}#${eventId}`;
 
-  console.log(`Processing ${detailType} for user ${userId}`);
+  console.log(`[activity-log] Processing ${detailType} for user ${userId}`);
 
   await docClient.send(new PutCommand({
     TableName: TABLE,
@@ -61,13 +61,13 @@ async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void>
     },
   }));
 
-  console.log(`Wrote activity record: userId=${userId}, timestamp=${sk}, type=${detailType}`);
+  console.log(`[activity-log] Wrote activity record: userId=${userId}, timestamp=${sk}, type=${detailType}`);
 }
 
 export async function handler(event: SQSEvent | EventBridgeEvent) {
   if (isSQSEvent(event)) {
     // SQS trigger: each record body is a JSON-encoded EventBridge event
-    console.log(`Processing ${event.Records.length} SQS record(s)`);
+    console.log(`[activity-log] Processing ${event.Records.length} SQS record(s)`);
     for (const record of event.Records) {
       try {
         const ebEvent: EventBridgeEvent = JSON.parse(record.body);
