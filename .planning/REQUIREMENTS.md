@@ -186,8 +186,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALOG-02 | Phase 37 | Complete |
 | ALOG-03 | Phase 37 | Complete |
 | CRDT-01 | Phase 39 | Complete |
-| CRDT-02 | Phase 41 | Pending |
-| CRDT-03 | Phase 41 | Pending |
+| CRDT-02 | Phase 41 | Complete |
+| CRDT-03 | Phase 41 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 38 total (phases 25-32, all complete)
@@ -227,8 +227,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 ### CRDT Durability (CRDT)
 
 - [x] **CRDT-01**: CRDT checkpoint writes are routed through EventBridge → SQS → Lambda instead of direct synchronous DynamoDB writes
-- [ ] **CRDT-02**: Client reconnect loads the latest CRDT snapshot from DynamoDB and replays ops delta since that checkpoint
-- [ ] **CRDT-03**: UI surfaces a dismissible indicator when Y.js resolves a merge conflict
+- [x] **CRDT-02**: Client reconnect loads the latest CRDT snapshot from DynamoDB and replays ops delta since that checkpoint
+- [x] **CRDT-03**: UI surfaces a dismissible indicator when Y.js resolves a merge conflict
 
 ## Out of Scope (v3.0)
 
