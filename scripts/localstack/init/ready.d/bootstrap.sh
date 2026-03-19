@@ -389,6 +389,31 @@ awslocal lambda create-event-source-mapping \
 echo "==> crdt-snapshot Lambda event-source-mappings:"
 awslocal lambda list-event-source-mappings --function-name crdt-snapshot
 
+# ---- outbox-relay Lambda deployment (Phase 43 - Transactional Outbox) ----
+echo "==> Deploying outbox-relay Lambda..."
+LAMBDA_DIR_OUTBOX="/tmp/lambda-build-outbox"
+mkdir -p "$LAMBDA_DIR_OUTBOX"
+
+cat > "$LAMBDA_DIR_OUTBOX/handler.js" << 'HANDLER_EOF'
+exports.handler = async function(event) {
+  console.log("outbox-relay stub handler:", JSON.stringify(event));
+  return { statusCode: 200, body: "ok" };
+};
+HANDLER_EOF
+
+cd "$LAMBDA_DIR_OUTBOX"
+zip -r /tmp/outbox-relay-stub.zip handler.js > /dev/null
+cd /
+
+awslocal lambda create-function \
+  --function-name outbox-relay \
+  --runtime nodejs20.x \
+  --zip-file fileb:///tmp/outbox-relay-stub.zip \
+  --handler handler.handler \
+  --timeout 60 \
+  --environment "Variables={AWS_REGION=us-east-1,LOCALSTACK_ENDPOINT=http://localstack:4566,SQS_FOLLOWS_URL=http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-follows,SQS_ROOMS_URL=http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-rooms,SQS_POSTS_URL=http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-posts,SQS_REACTIONS_URL=http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/social-reactions}" \
+  --role arn:aws:iam::000000000000:role/lambda-role 2>/dev/null || true
+
 echo "==> Bootstrap complete. Tables:"
 awslocal dynamodb list-tables
 echo "==> EventBridge buses:"
