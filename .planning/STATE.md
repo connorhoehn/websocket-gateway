@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 40-01-PLAN.md
-last_updated: "2026-03-19T16:54:11.441Z"
+stopped_at: Completed 41-01-PLAN.md
+last_updated: "2026-03-19T18:02:53.523Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
-  total_phases: 16
-  completed_phases: 16
-  total_plans: 35
-  completed_plans: 35
+  total_phases: 17
+  completed_phases: 17
+  total_plans: 36
+  completed_plans: 36
   percent: 29
 ---
 
@@ -57,6 +57,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 38-crdt-durability P01 | 132 | 2 tasks | 5 files |
 | Phase 39-crdt-integration-fix P01 | 4 | 2 tasks | 3 files |
 | Phase 40-activity-log-pipeline-wiring P01 | 2 | 1 tasks | 1 files |
+| Phase 41-crdt-live-update-relay-fix P01 | 56 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Key decisions affecting v3.0 work:
 - [Phase 39-crdt-integration-fix]: MISS-4: crdt-snapshot Lambda writes timestamp as Date.now() Number (not String) so DynamoDBDocumentClient marshalls {N:...} matching gateway parseInt(item.timestamp.N,10) reader
 - [Phase 39-crdt-integration-fix]: EVENT_BUS_NAME=social-events made explicit in websocket-gateway docker-compose environment block rather than relying on code default
 - [Phase 40-01]: MISS-3 (v3.0 audit): 3 missing SQS-to-Lambda event-source-mappings added for social-rooms, social-posts, social-reactions
+- [Phase 41-01]: broadcastBatch() sends {type:'crdt:update', channel, update:'<base64>'} merging batched operations via Y.mergeUpdates() — matches useCRDT.ts consumer contract
+- [Phase 41-01]: EVENT_BUS_NAME=social-events made explicit in social-api docker-compose environment block, eliminating implicit reliance on aws-clients.ts code fallback
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T16:39:35.910Z
-Stopped at: Completed 40-01-PLAN.md
+Last session: 2026-03-19T18:02:53.520Z
+Stopped at: Completed 41-01-PLAN.md
 Resume file: None

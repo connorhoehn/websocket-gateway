@@ -114,13 +114,32 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 38: CRDT Durability** — CRDT checkpoint writes routed through EventBridge pipeline; snapshot recovery on reconnect; Y.js conflict indicator in UI (completed 2026-03-18)
 - [x] **Phase 39: CRDT Integration Fix** — Fix CRDT service ENABLED_SERVICES, message type protocol mismatch, and DynamoDB timestamp type — closes CRDT-01, CRDT-02, CRDT-03 gaps from v3.0 audit (completed 2026-03-19)
 - [x] **Phase 40: Activity Log Full Pipeline Wiring** — Add missing event-source-mappings for social-rooms, social-posts, social-reactions queues to activity-log Lambda — closes ALOG-01 gap from v3.0 audit (completed 2026-03-19)
-- [ ] **Phase 41: CRDT Live Update Relay Fix** — Fix `broadcastBatch()` protocol mismatch so live collaborative edits reach all connected clients; add `EVENT_BUS_NAME` to social-api docker-compose — closes CRDT-02, CRDT-03, MISS-A, MISS-B gaps from v3.0 audit
+- [x] **Phase 41: CRDT Live Update Relay Fix** — Fix `broadcastBatch()` protocol mismatch so live collaborative edits reach all connected clients; add `EVENT_BUS_NAME` to social-api docker-compose — closes CRDT-02, CRDT-03, MISS-A, MISS-B gaps from v3.0 audit (completed 2026-03-19)
 
 **Execution order:**
 - Phase 34 first (foundational — all others depend on LocalStack)
 - Phase 35 second (event bus required before publishing or consuming)
 - Phase 36 after Phase 35 (publishing requires the bus)
 - Phases 37 and 38 after Phase 35; can execute in parallel (independent consumers)
+
+### 🔜 v4.0 Simulation-Ready Platform (Phases 42-47)
+
+**Milestone Goal:** Make the platform demonstrable end-to-end — scripts simulate authentic multi-user activity through real APIs, the UI updates in real-time as those events arrive, and every event is durably captured in the activity log with no losses. Backend socket and event architecture is clean enough to swap the React frontend for an iOS client.
+
+- [ ] **Phase 42: Social Data Integrity** — Fix critical social bugs: duplicate-follow condition expression, atomic group+owner creation via TransactWrite, DM race condition, post content validation order
+- [ ] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss
+- [ ] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients
+- [ ] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs
+- [ ] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time
+- [ ] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members; migrate existing routes to QueryCommand
+
+**Execution order:**
+- Phase 42 first (data integrity is foundational — simulation produces corrupt state without it)
+- Phase 43 after 42 (outbox depends on correct social writes)
+- Phase 44 after 43 (real-time push requires durable events already landing in activity log)
+- Phase 45 after 44 (simulation is only meaningful once UI updates in real-time)
+- Phase 46 after 45 (polish the "big brother" view once simulation is wired)
+- Phase 47 parallel with 45-46 (GSI migrations are independent of simulation/UI work)
 ## Phase Details
 
 ### Phase 25: Social Infrastructure
@@ -379,6 +398,96 @@ Plans:
 Plans:
 - [ ] 41-01-PLAN.md — Fix broadcastBatch() protocol mismatch + add EVENT_BUS_NAME to social-api docker-compose (CRDT-02, CRDT-03, MISS-A, MISS-B)
 
+### Phase 42: Social Data Integrity
+**Goal**: All social write operations are correct and safe — no duplicate relationships, no orphaned groups, no empty posts — so simulation scripts produce valid, consistent state
+**Depends on**: Phase 41
+**Requirements**: Data integrity for SOCL-01, GRUP-01, ROOM-03, CONT-01
+**Success Criteria** (what must be TRUE):
+  1. Two concurrent follow requests from the same user to the same target produce exactly one follow record (ConditionExpression on followeeId)
+  2. Group creation is atomic — if owner membership write fails, the group record is also rolled back (TransactWriteCommand)
+  3. Creating a DM room concurrently from both sides produces exactly one room (ConditionExpression on PutCommand)
+  4. Posting content with only whitespace returns 400 (trim before validate)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 42-01: Fix follow condition expression, atomic group+owner TransactWrite, DM ConditionExpression, post/comment trim-before-validate
+
+### Phase 43: Transactional Outbox
+**Goal**: Every social event is durably captured — the event intent is written atomically with the social data to a DynamoDB outbox table, ensuring zero event loss even if the process crashes before publishing
+**Depends on**: Phase 42
+**Requirements**: ALOG-01, event durability
+**Success Criteria** (what must be TRUE):
+  1. A social write (follow, room join, post, reaction) atomically creates both the social record and an outbox record in a single TransactWriteCommand
+  2. A relay Lambda reads unprocessed outbox records and writes them to SQS (social-follows, social-rooms, social-posts, social-reactions queues)
+  3. If the relay Lambda fails, the outbox record remains unprocessed and is retried on next invocation (at-least-once)
+  4. After relay, outbox record is marked processed (or deleted) — no double-delivery to SQS
+  5. The existing SQS → activity-log Lambda pipeline is unchanged
+**Plans**: 2 plans
+
+Plans:
+- [ ] 43-01: DynamoDB outbox table + TransactWrite in social write routes (follow, room-join, post, reaction)
+- [ ] 43-02: Outbox relay Lambda (polls unprocessed outbox records → SQS publish → mark processed)
+
+### Phase 44: Real-time Activity Push
+**Goal**: The activity feed updates live in the UI as events arrive — no polling, no refresh required — so the "big brother" view shows simulation activity in real-time
+**Depends on**: Phase 43
+**Requirements**: ALOG-02, real-time UX
+**Success Criteria** (what must be TRUE):
+  1. When a simulation script triggers a social event, the activity feed in the UI appends the new item within 2 seconds without any user interaction
+  2. The gateway delivers `activity:event` WebSocket messages to clients subscribed to their own activity channel
+  3. The activity-log Lambda (or a new fan-out Lambda) publishes completed events back to the gateway via Redis pub/sub for delivery
+  4. The ActivityPanel React component subscribes on mount and handles live appends correctly (no duplicates, no missed events)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 44-01: Gateway activity subscription channel + Lambda→Redis→gateway fan-out
+- [ ] 44-02: ActivityPanel real-time subscription hook (useActivityFeed) + live append in UI
+
+### Phase 45: Simulation Scripts
+**Goal**: A single command can simulate N users performing authentic social activity — joining rooms, posting, reacting, following — through real APIs, with structured stdout logs suitable for piping to monitoring tools
+**Depends on**: Phase 44
+**Requirements**: Simulation, headless demo
+**Success Criteria** (what must be TRUE):
+  1. `scripts/simulate-activity.sh --users 5 --duration 60` creates 5 test users, has them join rooms, post content, and react over 60 seconds using real API calls
+  2. Each script action logs a structured line: timestamp, actor, action, resource, result
+  3. Scripts are headless — no browser required; runs in CI
+  4. A separate `scripts/create-scenario.sh` pre-seeds a specific scenario (e.g., 3 friends, 2 rooms, a conversation thread) for deterministic demo walkthroughs
+**Plans**: 2 plans
+
+Plans:
+- [ ] 45-01: simulate-activity.sh — random activity generator (create users, join rooms, post, react, follow)
+- [ ] 45-02: create-scenario.sh — deterministic scenario seeder for controlled demo walkthroughs
+
+### Phase 46: UI Polish & Big Brother View
+**Goal**: The UI is demo-quality — errors are displayed, forms behave correctly on failure, and a dedicated "Big Brother" panel shows live room activity, member counts, and the activity feed updating in real-time as simulation runs
+**Depends on**: Phase 45
+**Requirements**: UX polish, demo readiness
+**Success Criteria** (what must be TRUE):
+  1. All form submissions display error messages on failure (create room, create DM, join group) — forms do not silently close on error
+  2. A "Live Activity" dashboard panel shows: active rooms with member counts, recent events feed, online user count — all updating in real-time
+  3. Running simulate-activity.sh while viewing the dashboard shows visible real-time updates within 2 seconds of each script action
+  4. No "type channel name" or other dev-only rough UX patterns remain
+**Plans**: 2 plans
+
+Plans:
+- [ ] 46-01: Error display and form state fixes across all social UI components
+- [ ] 46-02: Live Activity dashboard panel — room activity, member counts, real-time event feed
+
+### Phase 47: DynamoDB GSIs
+**Goal**: All hot-path routes use QueryCommand instead of ScanCommand — the platform handles realistic data volumes without degradation
+**Depends on**: Phase 42 (clean data before adding indexes)
+**Requirements**: Performance
+**Success Criteria** (what must be TRUE):
+  1. `GET /api/social/followers` uses QueryCommand on a (followeeId) GSI — no scan
+  2. `GET /api/social/friends` uses QueryCommand for both directions — no scan
+  3. `GET /api/posts?userId=` uses QueryCommand on an (authorId, postId) GSI — no scan
+  4. `GET /api/rooms` (my rooms) uses QueryCommand on a (userId) GSI on social-room-members — no scan
+  5. DM dedup check uses QueryCommand on a composite GSI — no scan
+**Plans**: 1 plan
+
+Plans:
+- [ ] 47-01: Add GSIs to social-relationships, social-posts, social-room-members, social-rooms; migrate routes
+
 ## Progress
 
 **Execution Order:** Phases execute in numeric order: 1 → 2 → ... → 19 → [20-24 deferred] → 25 → 26 → 27 → 28 → 29 → 30 → 31 → 32 → 33 → 34 → 35 → 36 → 37/38 (parallel)
@@ -422,4 +531,4 @@ Plans:
 | 38. CRDT Durability | 3/3 | Complete    | 2026-03-18 | — |
 | 39. CRDT Integration Fix | 1/1 | Complete    | 2026-03-19 | — |
 | 40. Activity Log Full Pipeline Wiring | 1/1 | Complete    | 2026-03-19 | — |
-| 41. CRDT Live Update Relay Fix | v3.0 | 0/1 | Planned | — |
+| 41. CRDT Live Update Relay Fix | 1/1 | Complete   | 2026-03-19 | — |
