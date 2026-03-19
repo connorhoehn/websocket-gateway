@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: Completed 42-01-PLAN.md
-last_updated: "2026-03-19T19:25:03.458Z"
+stopped_at: Completed 43-01-PLAN.md
+last_updated: "2026-03-19T20:01:07.334Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 23
   completed_phases: 18
-  total_plans: 37
-  completed_plans: 37
+  total_plans: 39
+  completed_plans: 38
   percent: 29
 ---
 
@@ -59,6 +59,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 40-activity-log-pipeline-wiring P01 | 2 | 1 tasks | 1 files |
 | Phase 41-crdt-live-update-relay-fix P01 | 56 | 2 tasks | 2 files |
 | Phase 42 P01 | 125 | 2 tasks | 5 files |
+| Phase 43 P01 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Key decisions affecting v3.0 work:
 - [Phase 42]: Group creation uses TransactWriteCommand — atomic write ensures group + owner membership are either both created or both rolled back; ConditionExpression on groupId prevents duplicate groups
 - [Phase 42]: DM rooms use deterministic key dm#userA#userB (sorted) + ConditionExpression attribute_not_exists(roomId) — eliminates TOCTOU race, no table scan needed; 409 response includes roomId for idempotent retry
 - [Phase 42]: Trim-before-validate pattern: trimmedContent declared once before validation so whitespace-only strings fail validation and stored content is always trimmed (posts and comments)
+- [Phase 43]: Transactional outbox: every social write atomically creates social-outbox record (status=UNPROCESSED, eventType, queueName, payload JSON) via TransactWriteCommand — eliminates event loss on process crash between DynamoDB write and EventBridge publish
+- [Phase 43]: social-outbox status-index GSI (PK: status, SK: createdAt) enables relay processor to query UNPROCESSED items in arrival order; queueName field encodes SQS routing so relay needs no re-derivation logic
 
 ### Pending Todos
 
@@ -115,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T19:22:43.397Z
-Stopped at: Completed 42-01-PLAN.md
+Last session: 2026-03-19T20:01:07.331Z
+Stopped at: Completed 43-01-PLAN.md
 Resume file: None
