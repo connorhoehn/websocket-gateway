@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: planning
-stopped_at: v4.0 milestone scoped — ready to plan Phase 42 (Social Data Integrity)
-last_updated: "2026-03-19T18:05:33.540Z"
+stopped_at: Completed 42-01-PLAN.md
+last_updated: "2026-03-19T19:22:43.400Z"
 last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
 progress:
   total_phases: 23
-  completed_phases: 17
-  total_plans: 36
-  completed_plans: 36
+  completed_phases: 18
+  total_plans: 37
+  completed_plans: 37
   percent: 29
 ---
 
@@ -58,6 +58,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 39-crdt-integration-fix P01 | 4 | 2 tasks | 3 files |
 | Phase 40-activity-log-pipeline-wiring P01 | 2 | 1 tasks | 1 files |
 | Phase 41-crdt-live-update-relay-fix P01 | 56 | 2 tasks | 2 files |
+| Phase 42 P01 | 125 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,10 @@ Key decisions affecting v3.0 work:
 - [Phase 40-01]: MISS-3 (v3.0 audit): 3 missing SQS-to-Lambda event-source-mappings added for social-rooms, social-posts, social-reactions
 - [Phase 41-01]: broadcastBatch() sends {type:'crdt:update', channel, update:'<base64>'} merging batched operations via Y.mergeUpdates() — matches useCRDT.ts consumer contract
 - [Phase 41-01]: EVENT_BUS_NAME=social-events made explicit in social-api docker-compose environment block, eliminating implicit reliance on aws-clients.ts code fallback
+- [Phase 42]: Follow dedup checks attribute_not_exists(followeeId) (sort key) — checking PK would always pass since any item by that user has followerId; SK uniqueness check correctly prevents duplicate follow relationships
+- [Phase 42]: Group creation uses TransactWriteCommand — atomic write ensures group + owner membership are either both created or both rolled back; ConditionExpression on groupId prevents duplicate groups
+- [Phase 42]: DM rooms use deterministic key dm#userA#userB (sorted) + ConditionExpression attribute_not_exists(roomId) — eliminates TOCTOU race, no table scan needed; 409 response includes roomId for idempotent retry
+- [Phase 42]: Trim-before-validate pattern: trimmedContent declared once before validation so whitespace-only strings fail validation and stored content is always trimmed (posts and comments)
 
 ### Pending Todos
 
@@ -110,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T17:50:00.000Z
-Stopped at: v4.0 milestone scoped — ready to plan Phase 42 (Social Data Integrity)
+Last session: 2026-03-19T19:22:43.397Z
+Stopped at: Completed 42-01-PLAN.md
 Resume file: None
