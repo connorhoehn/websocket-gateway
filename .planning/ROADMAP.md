@@ -129,7 +129,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 42: Social Data Integrity** — Fix critical social bugs: duplicate-follow condition expression, atomic group+owner creation via TransactWrite, DM race condition, post content validation order (completed 2026-03-19)
 - [x] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss (completed 2026-03-19)
 - [x] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients (completed 2026-03-27)
-- [ ] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs
+- [x] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs (completed 2026-03-27)
 - [ ] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time
 - [ ] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members; migrate existing routes to QueryCommand
 
@@ -456,7 +456,7 @@ Plans:
 
 Plans:
 - [x] 45-01: simulate-activity.sh — random activity generator (create users, join rooms, post, react, follow)
-- [ ] 45-02: create-scenario.sh — deterministic scenario seeder for controlled demo walkthroughs
+- [x] 45-02: create-scenario.sh — deterministic scenario seeder for controlled demo walkthroughs
 
 ### Phase 46: UI Polish & Big Brother View
 **Goal**: The UI is demo-quality — errors are displayed, forms behave correctly on failure, and a dedicated "Big Brother" panel shows live room activity, member counts, and the activity feed updating in real-time as simulation runs
