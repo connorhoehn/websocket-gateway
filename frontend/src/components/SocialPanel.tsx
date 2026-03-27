@@ -96,7 +96,7 @@ interface FollowButtonProps {
   targetUser: UserProfile;
   followState: FollowState;
   compact?: boolean;
-  onFollowChange: (userId: string, newState: FollowState) => void;
+  onFollowChange: (userId: string, newState: FollowState) => void | Promise<void>;
 }
 
 function FollowButton({ targetUser, followState, compact = false, onFollowChange }: FollowButtonProps) {
@@ -120,14 +120,14 @@ function FollowButton({ targetUser, followState, compact = false, onFollowChange
   };
 
   const handleFollow = () => {
-    onFollowChange(targetUser.id, 'pending');
+    void onFollowChange(targetUser.id, 'pending');
   };
 
   const handleUnfollowClick = () => setShowConfirm(true);
   const handleKeepFollowing = () => setShowConfirm(false);
   const handleConfirmUnfollow = () => {
     setShowConfirm(false);
-    onFollowChange(targetUser.id, 'not-following');
+    void onFollowChange(targetUser.id, 'not-following');
   };
 
   if (followState === 'not-following') {
@@ -365,7 +365,7 @@ interface SocialGraphPanelProps {
   following: UserProfile[];
   friends: UserProfile[];
   followStates: Record<string, FollowState>;
-  onFollowChange: (userId: string, newState: FollowState) => void;
+  onFollowChange: (userId: string, newState: FollowState) => void | Promise<void>;
 }
 
 function SocialGraphPanel({ followers, following, friends, followStates, onFollowChange }: SocialGraphPanelProps) {
@@ -480,11 +480,18 @@ export function SocialPanel({ idToken, onMessage }: { idToken: string | null; on
     followStates[u.userId] = followingIds.has(u.userId) ? 'following' : 'not-following';
   });
 
-  const handleFollowChange = (userId: string, newState: FollowState) => {
-    if (newState === 'following' || newState === 'pending') {
-      void follow(userId);
-    } else {
-      void unfollow(userId);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const handleFollowChange = async (userId: string, newState: FollowState) => {
+    setFormError(null);
+    try {
+      if (newState === 'following' || newState === 'pending') {
+        await follow(userId);
+      } else {
+        await unfollow(userId);
+      }
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Follow action failed');
     }
   };
 
@@ -542,6 +549,11 @@ export function SocialPanel({ idToken, onMessage }: { idToken: string | null; on
           />
         </>
       ) : null}
+      {formError && (
+        <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {formError}
+        </div>
+      )}
     </div>
   );
 }

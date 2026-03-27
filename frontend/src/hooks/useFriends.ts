@@ -98,6 +98,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       await refreshFollowing();
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     }
   }, [idToken, baseUrl, refreshFollowing]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,6 +116,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       await refreshFollowing();
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     }
   }, [idToken, baseUrl, refreshFollowing]); // eslint-disable-line react-hooks/exhaustive-deps
 

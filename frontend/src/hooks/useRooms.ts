@@ -167,6 +167,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
       setRooms((prev) => [room, ...prev]);
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -192,6 +193,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
       setRooms((prev) => [room, ...prev]);
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -250,6 +252,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
       setRooms((prev) => [room, ...prev]);
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     } finally {
       setLoading(false);
     }

@@ -155,6 +155,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
       setPosts((prev) => [post, ...prev]);
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     } finally {
       setLoading(false);
     }

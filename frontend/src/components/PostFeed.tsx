@@ -60,16 +60,22 @@ interface CreatePostFormProps {
 
 function CreatePostForm({ onCreate, loading }: CreatePostFormProps) {
   const [content, setContent] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
-    void onCreate(content.trim());
-    setContent('');
+    setFormError(null);
+    try {
+      await onCreate(content.trim());
+      setContent('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create post');
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={(e) => { void handleSubmit(e); }}>
       <textarea
         value={content}
         onChange={e => setContent(e.target.value)}
@@ -110,6 +116,11 @@ function CreatePostForm({ onCreate, loading }: CreatePostFormProps) {
           {loading ? 'Posting…' : 'Post'}
         </button>
       </div>
+      {formError && (
+        <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {formError}
+        </div>
+      )}
     </form>
   );
 }

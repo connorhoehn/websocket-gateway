@@ -1,12 +1,10 @@
 // frontend/src/components/RoomList.tsx
 //
 // Room list section card — all sub-components co-located as unexported internals.
-// Only RoomList is exported. Forwards onMessage to useRooms for RTIM-04.
+// Only RoomList is exported. Rooms state is owned by AppLayout (single useRooms instance).
 
 import { useState } from 'react';
-import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
-import type { GatewayMessage } from '../types/gateway';
 import { useFriends } from '../hooks/useFriends';
 import type { PublicProfile } from '../hooks/useFriends';
 
@@ -14,11 +12,12 @@ import type { PublicProfile } from '../hooks/useFriends';
 // Types
 // ---------------------------------------------------------------------------
 
-type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
-
 interface RoomListProps {
   idToken: string | null;
-  onMessage: OnMessageFn;
+  rooms: RoomItem[];
+  createRoom: (name: string) => Promise<void>;
+  createDM: (peerId: string) => Promise<void>;
+  loading: boolean;
   onRoomSelect: (room: RoomItem) => void;
   activeRoomId?: string | null;
 }
@@ -35,16 +34,22 @@ interface CreateRoomFormProps {
 
 function CreateRoomForm({ onCreate, onDiscard, loading }: CreateRoomFormProps) {
   const [name, setName] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    void onCreate(name.trim());
-    setName('');
+    setFormError(null);
+    try {
+      await onCreate(name.trim());
+      setName('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create room');
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ marginBottom: 8, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+    <form onSubmit={(e) => { void handleSubmit(e); }} style={{ marginBottom: 8, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           value={name}
@@ -89,6 +94,11 @@ function CreateRoomForm({ onCreate, onDiscard, loading }: CreateRoomFormProps) {
           Cancel
         </button>
       </div>
+      {formError && (
+        <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {formError}
+        </div>
+      )}
     </form>
   );
 }
@@ -106,13 +116,19 @@ interface DMRoomButtonProps {
 function DMRoomButton({ onCreateDM, loading, friends }: DMRoomButtonProps) {
   const [peerId, setPeerId] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!peerId.trim()) return;
-    void onCreateDM(peerId.trim());
-    setPeerId('');
-    setShowForm(false);
+    setFormError(null);
+    try {
+      await onCreateDM(peerId.trim());
+      setPeerId('');
+      setShowForm(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to open DM');
+    }
   };
 
   if (!showForm) {
@@ -138,7 +154,7 @@ function DMRoomButton({ onCreateDM, loading, friends }: DMRoomButtonProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+    <form onSubmit={(e) => { void handleSubmit(e); }} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <select
           value={peerId}
@@ -185,6 +201,11 @@ function DMRoomButton({ onCreateDM, loading, friends }: DMRoomButtonProps) {
           Cancel
         </button>
       </div>
+      {formError && (
+        <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {formError}
+        </div>
+      )}
     </form>
   );
 }
@@ -233,14 +254,7 @@ function RoomRow({ room, isActive, onClick }: RoomRowProps) {
 // RoomList (exported)
 // ---------------------------------------------------------------------------
 
-export function RoomList({ idToken, onMessage, onRoomSelect, activeRoomId }: RoomListProps) {
-  const {
-    rooms,
-    createRoom,
-    createDM,
-    loading,
-  } = useRooms({ idToken, onMessage });
-
+export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoomSelect, activeRoomId }: RoomListProps) {
   const { friends } = useFriends({ idToken });
 
   const [showCreateForm, setShowCreateForm] = useState(false);

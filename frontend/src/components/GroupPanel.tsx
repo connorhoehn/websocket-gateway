@@ -22,6 +22,7 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -35,14 +36,19 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
     color: '#0f172a',
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    void onCreate(name.trim(), description.trim() || undefined, visibility);
+    setFormError(null);
+    try {
+      await onCreate(name.trim(), description.trim() || undefined, visibility);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create group');
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+    <form onSubmit={(e) => { void handleSubmit(e); }} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
       <div style={{ marginBottom: 8 }}>
         <label style={{ fontSize: 14, color: '#374151', display: 'block', marginBottom: 4 }}>Group name</label>
         <input
@@ -117,6 +123,11 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
           Discard Changes
         </button>
       </div>
+      {formError && (
+        <div style={{ color: '#dc2626', fontSize: 13, marginTop: 6, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          {formError}
+        </div>
+      )}
     </form>
   );
 }

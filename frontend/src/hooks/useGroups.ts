@@ -83,6 +83,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
       setGroups((prev) => [group, ...prev]);
     } catch (err) {
       setError((err as Error).message);
+      throw err;
     } finally {
       setLoading(false);
     }
