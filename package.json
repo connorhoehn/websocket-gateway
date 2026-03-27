@@ -33,6 +33,7 @@
     "@aws-cdk/aws-logs": "^1.203.0",
     "@aws-cdk/aws-s3": "^1.203.0",
     "@aws-sdk/client-cloudwatch": "^3.1000.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1019.0",
     "@aws-sdk/client-dynamodb": "^3.1000.0",
     "@aws-sdk/client-ivschat": "^3.1000.0",
     "amazon-ivs-chat-messaging": "latest",
