@@ -62,7 +62,7 @@ function pickWeightedAction(): string {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const EMOJIS = ['fire', 'heart', 'thumbsup', 'laugh', 'wow', 'sad'];
+const EMOJIS = ['❤️', '😂', '👍', '😮', '😢', '🔥', '🎉', '🚀'];
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
