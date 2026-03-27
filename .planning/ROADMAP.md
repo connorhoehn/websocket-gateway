@@ -130,7 +130,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss (completed 2026-03-19)
 - [x] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients (completed 2026-03-27)
 - [x] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs (completed 2026-03-27)
-- [ ] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time
+- [x] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time (completed 2026-03-27)
 - [ ] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members; migrate existing routes to QueryCommand
 
 **Execution order:**
@@ -471,7 +471,7 @@ Plans:
 
 Plans:
 - [x] 46-01: Error display and form state fixes across all social UI components
-- [ ] 46-02: Live Activity dashboard panel — room activity, member counts, real-time event feed
+- [x] 46-02: Live Activity dashboard panel — room activity, member counts, real-time event feed
 
 ### Phase 47: DynamoDB GSIs
 **Goal**: All hot-path routes use QueryCommand instead of ScanCommand — the platform handles realistic data volumes without degradation

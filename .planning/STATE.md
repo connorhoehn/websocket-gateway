@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: completed
-stopped_at: Completed 46-01-PLAN.md
-last_updated: "2026-03-27T23:26:29.547Z"
-last_activity: "2026-03-27 — Phase 45 P02 complete: deterministic scenario seeder with 3 users, 2 rooms, conversation threads"
+stopped_at: Completed 46-02-PLAN.md
+last_updated: "2026-03-27T23:30:08.858Z"
+last_activity: "2026-03-27 — Phase 46 P01 complete: inline error messages, loading spinners, ChannelSelector removed"
 progress:
   total_phases: 38
-  completed_phases: 32
+  completed_phases: 33
   total_plans: 74
-  completed_plans: 68
-  percent: 93
+  completed_plans: 69
+  percent: 92
 ---
 
 # Project State
@@ -67,6 +67,7 @@ Progress: [█████████░] 92% (v4.0 phases — 68 of 74 plans c
 | Phase 45 P01 | 161 | 2 tasks | 6 files |
 | Phase 45 P02 | 131 | 1 tasks | 2 files |
 | Phase 46 P01 | 290 | 2 tasks | 11 files |
+| Phase 46 P02 | 127 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,7 @@ Key decisions affecting v3.0 work:
 - [Phase 45]: Used @aws-sdk/client-cognito-identity-provider for typed Cognito admin operations in simulation scripts
 - [Phase 45]: Used actual emoji characters for reactions instead of text names — API validates against VALID_EMOJI set of unicode characters
 - [Phase 46]: Re-throw errors in hooks after setError so component try/catch receives them
+- [Phase 46]: BigBrotherPanel uses inline useActivityFeed hook (duplicated from ActivityPanel) with MAX_ITEMS=100; tab switcher in AppLayout toggles panels vs dashboard view
 
 ### Pending Todos
 
@@ -131,6 +133,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T23:26:29.543Z
-Stopped at: Completed 46-01-PLAN.md
+Last session: 2026-03-27T23:30:08.855Z
+Stopped at: Completed 46-02-PLAN.md
 Resume file: None
