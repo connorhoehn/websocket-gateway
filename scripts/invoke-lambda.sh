@@ -32,7 +32,7 @@ awslocal lambda create-function \
   --zip-file "fileb:///tmp/$FUNCTION_NAME.zip" \
   --handler handler.handler \
   --timeout 30 \
-  --environment "Variables={AWS_REGION=us-east-1,LOCALSTACK_ENDPOINT=http://localstack:4566}" \
+  --environment "Variables={AWS_REGION=us-east-1,LOCALSTACK_ENDPOINT=http://localstack:4566,REDIS_ENDPOINT=localstack-redis,REDIS_PORT=6379}" \
   --role arn:aws:iam::000000000000:role/lambda-role 2>/dev/null || \
 awslocal lambda update-function-code \
   --function-name "$FUNCTION_NAME" \

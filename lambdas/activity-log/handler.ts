@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { createClient, RedisClientType } from 'redis';
 
 const endpoint = process.env.LOCALSTACK_ENDPOINT || process.env.AWS_ENDPOINT_URL;
 const localstackConfig = endpoint
@@ -11,6 +12,68 @@ const ddb = new DynamoDBClient({ region, ...localstackConfig });
 const docClient = DynamoDBDocumentClient.from(ddb);
 
 const TABLE = 'user-activity';
+
+const REDIS_URL = `redis://${process.env.REDIS_ENDPOINT ?? 'redis'}:${process.env.REDIS_PORT ?? '6379'}`;
+let redisClient: RedisClientType | null = null;
+
+async function getRedisClient(): Promise<RedisClientType | null> {
+  if (redisClient?.isReady) return redisClient;
+  try {
+    const c = createClient({ url: REDIS_URL }) as RedisClientType;
+    c.on('error', (err: Error) => {
+      console.warn('[activity-log] Redis error:', err.message);
+      redisClient = null;
+    });
+    await c.connect();
+    redisClient = c;
+    return c;
+  } catch (err) {
+    console.warn('[activity-log] Redis connect failed:', (err as Error).message);
+    return null;
+  }
+}
+
+async function publishActivityEvent(
+  userId: string,
+  eventType: string,
+  detail: Record<string, unknown>,
+  timestamp: string
+): Promise<void> {
+  const redis = await getRedisClient();
+  if (!redis) return;
+
+  try {
+    const channelId = `activity:${userId}`;
+    const nodesKey = `websocket:channel:${channelId}:nodes`;
+    const targetNodes = await redis.sMembers(nodesKey);
+
+    if (targetNodes.length === 0) {
+      console.log(`[activity-log] No subscribers for ${channelId}, skipping publish`);
+      return;
+    }
+
+    const envelope = {
+      type: 'channel_message',
+      channel: channelId,
+      message: {
+        type: 'activity:event',
+        channel: channelId,
+        payload: { eventType, detail, timestamp },
+        timestamp: new Date().toISOString(),
+      },
+      excludeClientId: null,
+      fromNode: 'activity-log-lambda',
+      seq: 0,
+      timestamp: new Date().toISOString(),
+      targetNodes,
+    };
+
+    await redis.publish(`websocket:route:${channelId}`, JSON.stringify(envelope));
+    console.log(`[activity-log] Published activity:event to ${channelId} (${targetNodes.length} node(s))`);
+  } catch (err) {
+    console.warn(`[activity-log] Redis publish failed:`, (err as Error).message);
+  }
+}
 
 interface EventBridgeEvent {
   source: string;
@@ -62,6 +125,9 @@ async function processEventBridgeEvent(ebEvent: EventBridgeEvent): Promise<void>
   }));
 
   console.log(`[activity-log] Wrote activity record: userId=${userId}, timestamp=${sk}, type=${detailType}`);
+
+  // Publish to Redis for real-time delivery to connected clients
+  await publishActivityEvent(userId, detailType, detail as Record<string, unknown>, timestamp);
 }
 
 export async function handler(event: SQSEvent | EventBridgeEvent) {
