@@ -34,6 +34,7 @@ import { GroupPanel } from './GroupPanel';
 import { RoomList } from './RoomList';
 import { PostFeed } from './PostFeed';
 import { ActivityPanel } from './ActivityPanel';
+import { BigBrotherPanel } from './BigBrotherPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,6 +222,7 @@ export function AppLayout({
   sendMessage,
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'panels' | 'dashboard'>('panels');
 
   const {
     rooms,
@@ -431,6 +433,47 @@ export function AppLayout({
           }}
         >
 
+          {/* View switcher tabs */}
+          <div style={{
+            display: 'flex',
+            gap: 0,
+            borderBottom: '1px solid #e2e8f0',
+            marginBottom: '0.5rem',
+          }}>
+            <button
+              onClick={() => setActiveView('panels')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                borderBottom: activeView === 'panels' ? '2px solid #646cff' : '2px solid transparent',
+                background: 'none',
+                color: activeView === 'panels' ? '#0f172a' : '#64748b',
+                fontWeight: activeView === 'panels' ? 600 : 400,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Panels
+            </button>
+            <button
+              onClick={() => setActiveView('dashboard')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                borderBottom: activeView === 'dashboard' ? '2px solid #646cff' : '2px solid transparent',
+                background: 'none',
+                color: activeView === 'dashboard' ? '#0f172a' : '#64748b',
+                fontWeight: activeView === 'dashboard' ? 600 : 400,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Live Activity
+            </button>
+          </div>
+
+          {activeView === 'panels' && (
+          <>
           {/* Chat section */}
           <div style={sectionCardStyle}>
             <p style={sectionHeaderStyle}>Chat</p>
@@ -533,6 +576,19 @@ export function AppLayout({
               clientId: {clientId ?? '—'} | sessionToken: {sessionToken ? sessionToken.slice(0, 8) + '…' : '—'}
             </div>
           </div>
+          </>
+          )}
+
+          {activeView === 'dashboard' && (
+            <BigBrotherPanel
+              idToken={idToken}
+              rooms={rooms}
+              presenceUsers={presenceUsers}
+              sendMessage={sendMessage}
+              onMessage={onMessage}
+              connectionState={connectionState}
+            />
+          )}
 
         </div>
       </div>
