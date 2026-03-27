@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
-status: planning
-stopped_at: Completed 43-02-PLAN.md
-last_updated: "2026-03-19T20:07:42.648Z"
-last_activity: "2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config"
+status: completed
+stopped_at: Completed 44-01-PLAN.md
+last_updated: "2026-03-27T21:59:13.304Z"
+last_activity: "2026-03-27 — Phase 44 P01 complete: ActivityService in gateway, Redis publish in activity-log Lambda"
 progress:
-  total_phases: 23
-  completed_phases: 19
-  total_plans: 39
-  completed_plans: 39
-  percent: 29
+  total_phases: 36
+  completed_phases: 30
+  total_plans: 70
+  completed_plans: 64
+  percent: 91
 ---
 
 # Project State
@@ -25,16 +25,17 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 42 of 47 (Social Data Integrity) — ready to plan
-Plan: — / 1
-Status: Ready to plan Phase 42
-Last activity: 2026-03-18 — Phase 34 P02 complete: Lambda handler, invoke script, debug compose, VS Code launch config
+Phase: 44 of 47 (Real-time Activity Push) — executing
+Plan: 1 / 2
+Status: Completed 44-01, ready for 44-02
+Last activity: 2026-03-27 — Phase 44 P01 complete: ActivityService in gateway, Redis publish in activity-log Lambda
 
-Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 phases — 2 of 7 plans complete)
+Progress: [█████████░] 91% (v4.0 phases — 64 of 70 plans complete)
 
 ## Performance Metrics
 
 **Velocity (prior milestones):**
+
 - Total plans completed: 37 (across v1.0–v2.1)
 - Average duration: ~5 min
 - Total execution time: ~3 hours
@@ -61,6 +62,7 @@ Progress: [####░░░░░░░░░░░░░░░░░] 29% (v3.0 ph
 | Phase 42 P01 | 125 | 2 tasks | 5 files |
 | Phase 43 P01 | 3 | 2 tasks | 5 files |
 | Phase 43 P02 | 113 | 2 tasks | 5 files |
+| Phase 44 P01 | 136 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -109,6 +111,7 @@ Key decisions affecting v3.0 work:
 - [Phase 43]: Transactional outbox: every social write atomically creates social-outbox record (status=UNPROCESSED, eventType, queueName, payload JSON) via TransactWriteCommand — eliminates event loss on process crash between DynamoDB write and EventBridge publish
 - [Phase 43]: social-outbox status-index GSI (PK: status, SK: createdAt) enables relay processor to query UNPROCESSED items in arrival order; queueName field encodes SQS routing so relay needs no re-derivation logic
 - [Phase 43]: outbox-relay marks PROCESSED only after successful SQS publish; polls social-outbox GSI directly (no event-source-mapping); 60s timeout; container-internal queue URLs
+- [Phase 44]: ActivityService mirrors SocialService exactly; module-level Redis singleton in Lambda; sMembers check before publish; REDIS_ENDPOINT=localstack-redis for Docker network
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T20:04:46.391Z
-Stopped at: Completed 43-02-PLAN.md
+Last session: 2026-03-27T21:59:13.300Z
+Stopped at: Completed 44-01-PLAN.md
 Resume file: None

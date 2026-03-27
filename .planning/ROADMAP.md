@@ -440,7 +440,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 44-01: Gateway activity subscription channel + Lambda→Redis→gateway fan-out
+- [x] 44-01: Gateway activity subscription channel + Lambda→Redis→gateway fan-out
 - [ ] 44-02: ActivityPanel real-time subscription hook (useActivityFeed) + live append in UI
 
 ### Phase 45: Simulation Scripts
