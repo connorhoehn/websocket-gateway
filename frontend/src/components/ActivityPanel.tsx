@@ -217,8 +217,9 @@ export function ActivityPanel({ idToken, sendMessage, onMessage, connectionState
         )}
       </h2>
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
-          Loading activity...
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1rem', justifyContent: 'center', color: '#64748b' }}>
+          <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #e2e8f0', borderTopColor: '#646cff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          Loading...
         </div>
       ) : items.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>

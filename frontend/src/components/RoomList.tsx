@@ -310,7 +310,12 @@ export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoom
       )}
       <DMRoomButton onCreateDM={createDM} loading={loading} friends={friends} />
       <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-        {rooms.length === 0 ? (
+        {loading && rooms.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1rem', justifyContent: 'center', color: '#64748b' }}>
+            <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #e2e8f0', borderTopColor: '#646cff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            Loading...
+          </div>
+        ) : rooms.length === 0 ? (
           <div style={{ padding: '24px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>
               No rooms yet
