@@ -128,7 +128,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 - [x] **Phase 42: Social Data Integrity** — Fix critical social bugs: duplicate-follow condition expression, atomic group+owner creation via TransactWrite, DM race condition, post content validation order (completed 2026-03-19)
 - [x] **Phase 43: Transactional Outbox** — Replace fire-and-forget EventBridge publish with DynamoDB outbox written atomically alongside social data; relay Lambda publishes durably to SQS; zero event loss (completed 2026-03-19)
-- [ ] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients
+- [x] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients (completed 2026-03-27)
 - [ ] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs
 - [ ] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time
 - [ ] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members; migrate existing routes to QueryCommand
@@ -441,7 +441,7 @@ Plans:
 
 Plans:
 - [x] 44-01: Gateway activity subscription channel + Lambda→Redis→gateway fan-out
-- [ ] 44-02: ActivityPanel real-time subscription hook (useActivityFeed) + live append in UI
+- [x] 44-02: ActivityPanel real-time subscription hook (useActivityFeed) + live append in UI
 
 ### Phase 45: Simulation Scripts
 **Goal**: A single command can simulate N users performing authentic social activity — joining rooms, posting, reacting, following — through real APIs, with structured stdout logs suitable for piping to monitoring tools

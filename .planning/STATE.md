@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: completed
-stopped_at: Completed 44-01-PLAN.md
-last_updated: "2026-03-27T21:59:13.304Z"
+stopped_at: Completed 44-02-PLAN.md
+last_updated: "2026-03-27T22:02:34.055Z"
 last_activity: "2026-03-27 — Phase 44 P01 complete: ActivityService in gateway, Redis publish in activity-log Lambda"
 progress:
   total_phases: 36
-  completed_phases: 30
+  completed_phases: 31
   total_plans: 70
-  completed_plans: 64
+  completed_plans: 65
   percent: 91
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 44 of 47 (Real-time Activity Push) — executing
-Plan: 1 / 2
-Status: Completed 44-01, ready for 44-02
-Last activity: 2026-03-27 — Phase 44 P01 complete: ActivityService in gateway, Redis publish in activity-log Lambda
+Phase: 44 of 47 (Real-time Activity Push) — completed
+Plan: 2 / 2
+Status: Phase 44 complete
+Last activity: 2026-03-27 — Phase 44 P02 complete: useActivityFeed hook with live WS append in ActivityPanel
 
-Progress: [█████████░] 91% (v4.0 phases — 64 of 70 plans complete)
+Progress: [█████████░] 93% (v4.0 phases — 65 of 70 plans complete)
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 91% (v4.0 phases — 64 of 70 plans c
 | Phase 43 P01 | 3 | 2 tasks | 5 files |
 | Phase 43 P02 | 113 | 2 tasks | 5 files |
 | Phase 44 P01 | 136 | 2 tasks | 7 files |
+| Phase 44 P02 | 97 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,7 @@ Key decisions affecting v3.0 work:
 - [Phase 43]: social-outbox status-index GSI (PK: status, SK: createdAt) enables relay processor to query UNPROCESSED items in arrival order; queueName field encodes SQS routing so relay needs no re-derivation logic
 - [Phase 43]: outbox-relay marks PROCESSED only after successful SQS publish; polls social-outbox GSI directly (no event-source-mapping); 60s timeout; container-internal queue URLs
 - [Phase 44]: ActivityService mirrors SocialService exactly; module-level Redis singleton in Lambda; sMembers check before publish; REDIS_ENDPOINT=localstack-redis for Docker network
+- [Phase 44]: useActivityFeed hook kept inline in ActivityPanel.tsx with REST-hydrate + WS-live-append pattern; dedup by timestamp+eventType; 50-item cap
 
 ### Pending Todos
 
@@ -123,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T21:59:13.300Z
-Stopped at: Completed 44-01-PLAN.md
+Last session: 2026-03-27T22:02:34.052Z
+Stopped at: Completed 44-02-PLAN.md
 Resume file: None
