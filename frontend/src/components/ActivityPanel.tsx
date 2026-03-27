@@ -1,10 +1,11 @@
 // frontend/src/components/ActivityPanel.tsx
 //
-// Activity feed section card — shows the user's recent social events.
-// All sub-components co-located as unexported internals.
+// Activity feed section card -- shows the user's recent social events.
+// Hydrates from REST on mount, then subscribes to live WebSocket events
+// and prepends them in real-time with dedup and a 50-item cap.
 // Only ActivityPanel is exported.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,11 +22,23 @@ interface ActivityResponse {
   nextKey: string | null;
 }
 
+type ConnectionState = 'connected' | 'connecting' | 'disconnected';
+type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
+
+interface GatewayMessage {
+  type: string;
+  channel?: string;
+  payload?: unknown;
+  [key: string]: unknown;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const SOCIAL_API_URL = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? 'http://localhost:3001';
+
+const MAX_ITEMS = 50;
 
 // ---------------------------------------------------------------------------
 // Event type display mapping
@@ -68,13 +81,42 @@ function relativeTime(ts: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// useActivityLog hook
+// extractUserId helper
 // ---------------------------------------------------------------------------
 
-function useActivityLog(idToken: string | null): { items: ActivityItem[]; loading: boolean } {
+function extractUserId(idToken: string | null): string | null {
+  if (!idToken) return null;
+  try {
+    return (JSON.parse(atob(idToken.split('.')[1])) as { sub: string }).sub;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// useActivityFeed hook
+// ---------------------------------------------------------------------------
+
+function useActivityFeed({
+  idToken,
+  sendMessage,
+  onMessage,
+  connectionState,
+}: {
+  idToken: string | null;
+  sendMessage: (msg: Record<string, unknown>) => void;
+  onMessage: OnMessageFn;
+  connectionState: ConnectionState;
+}): { items: ActivityItem[]; loading: boolean; isLive: boolean } {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
 
+  const userId = extractUserId(idToken);
+
+  // 1. Hydrate from REST on mount
   useEffect(() => {
     if (!idToken) return;
     setLoading(true);
@@ -87,7 +129,42 @@ function useActivityLog(idToken: string | null): { items: ActivityItem[]; loadin
       .finally(() => setLoading(false));
   }, [idToken]);
 
-  return { items, loading };
+  // 2. Subscribe to WebSocket channel when connected
+  useEffect(() => {
+    if (connectionState !== 'connected' || !userId) {
+      setIsLive(false);
+      return;
+    }
+    const channelId = `activity:${userId}`;
+    sendMessageRef.current({ service: 'activity', action: 'subscribe', channelId });
+    setIsLive(true);
+    return () => {
+      sendMessageRef.current({ service: 'activity', action: 'unsubscribe', channelId });
+      setIsLive(false);
+    };
+  }, [connectionState, userId]);
+
+  // 3. Append live events with dedup
+  useEffect(() => {
+    const unregister = onMessage((msg: GatewayMessage) => {
+      if (msg.type !== 'activity:event') return;
+      const payload = msg.payload as { eventType: string; detail: Record<string, unknown>; timestamp: string } | undefined;
+      if (!payload) return;
+      setItems(prev => {
+        // Dedup: skip if first item already has same timestamp+eventType
+        if (prev.length > 0 && prev[0].timestamp === payload.timestamp && prev[0].eventType === payload.eventType) {
+          return prev;
+        }
+        return [
+          { eventType: payload.eventType, timestamp: payload.timestamp, detail: payload.detail },
+          ...prev,
+        ].slice(0, MAX_ITEMS);
+      });
+    });
+    return unregister;
+  }, [onMessage]);
+
+  return { items, loading, isLive };
 }
 
 // ---------------------------------------------------------------------------
@@ -110,12 +187,35 @@ const sectionHeaderStyle: React.CSSProperties = {
   margin: '0 0 0.75rem 0',
 };
 
-export function ActivityPanel({ idToken }: { idToken: string | null }) {
-  const { items, loading } = useActivityLog(idToken);
+interface ActivityPanelProps {
+  idToken: string | null;
+  sendMessage: (msg: Record<string, unknown>) => void;
+  onMessage: OnMessageFn;
+  connectionState: ConnectionState;
+}
+
+export function ActivityPanel({ idToken, sendMessage, onMessage, connectionState }: ActivityPanelProps) {
+  const { items, loading, isLive } = useActivityFeed({ idToken, sendMessage, onMessage, connectionState });
 
   return (
     <div style={sectionCardStyle}>
-      <h2 style={sectionHeaderStyle}>Activity</h2>
+      <h2 style={sectionHeaderStyle}>
+        Activity
+        {isLive && (
+          <span
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              backgroundColor: '#22c55e',
+              marginLeft: 8,
+              verticalAlign: 'middle',
+            }}
+            title="Live"
+          />
+        )}
+      </h2>
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
           Loading activity...

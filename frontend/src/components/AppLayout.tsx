@@ -509,7 +509,12 @@ export function AppLayout({
           <PostFeed idToken={idToken} roomId={activeRoomId} onMessage={onMessage} />
 
           {/* Activity section */}
-          <ActivityPanel idToken={idToken} />
+          <ActivityPanel
+            idToken={idToken}
+            sendMessage={sendMessage}
+            onMessage={onMessage}
+            connectionState={connectionState}
+          />
 
           {/* Dev Tools section */}
           <div style={sectionCardStyle}>
