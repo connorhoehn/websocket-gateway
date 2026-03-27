@@ -455,7 +455,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 45-01: simulate-activity.sh — random activity generator (create users, join rooms, post, react, follow)
+- [x] 45-01: simulate-activity.sh — random activity generator (create users, join rooms, post, react, follow)
 - [ ] 45-02: create-scenario.sh — deterministic scenario seeder for controlled demo walkthroughs
 
 ### Phase 46: UI Polish & Big Brother View
