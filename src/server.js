@@ -19,6 +19,7 @@ const ReactionService = require("./services/reaction-service");
 const CRDTService = require("./services/crdt-service");
 const SessionService = require("./services/session-service");
 const SocialService = require("./services/social-service");
+const ActivityService = require("./services/activity-service");
 
 // Middleware
 const { handleReconnection } = require("./middleware/reconnection-handler");
@@ -229,6 +230,11 @@ class DistributedWebSocketServer {
         const socialService = new SocialService(this.messageRouter, this.logger, this.metricsCollector);
         this.services.set('social', socialService);
         this.logger.info('✅ Social service initialized');
+
+        // Activity service is always enabled — required for real-time activity feed
+        const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector);
+        this.services.set('activity', activityService);
+        this.logger.info('✅ Activity service initialized');
     }
 
     setupHttpServer() {
