@@ -470,7 +470,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 46-01: Error display and form state fixes across all social UI components
+- [x] 46-01: Error display and form state fixes across all social UI components
 - [ ] 46-02: Live Activity dashboard panel — room activity, member counts, real-time event feed
 
 ### Phase 47: DynamoDB GSIs

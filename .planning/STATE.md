@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Durable Event Architecture
 status: completed
-stopped_at: Completed 45-02-PLAN.md
-last_updated: "2026-03-27T22:28:13.668Z"
-last_activity: "2026-03-27 — Phase 45 P01 complete: sim-helpers library and random activity simulation script"
+stopped_at: Completed 46-01-PLAN.md
+last_updated: "2026-03-27T23:26:29.547Z"
+last_activity: "2026-03-27 — Phase 45 P02 complete: deterministic scenario seeder with 3 users, 2 rooms, conversation threads"
 progress:
-  total_phases: 37
+  total_phases: 38
   completed_phases: 32
-  total_plans: 72
-  completed_plans: 67
-  percent: 92
+  total_plans: 74
+  completed_plans: 68
+  percent: 93
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 45 of 47 (Simulation Scripts) — in progress
-Plan: 2 / 2
-Status: Phase 45 complete
-Last activity: 2026-03-27 — Phase 45 P02 complete: deterministic scenario seeder with 3 users, 2 rooms, conversation threads
+Phase: 46 of 47 (UI Polish & Big Brother View) — in progress
+Plan: 1 / 2
+Status: Phase 46 P01 complete
+Last activity: 2026-03-27 — Phase 46 P01 complete: inline error messages, loading spinners, ChannelSelector removed
 
-Progress: [█████████░] 93% (v4.0 phases — 67 of 72 plans complete)
+Progress: [█████████░] 92% (v4.0 phases — 68 of 74 plans complete)
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [█████████░] 93% (v4.0 phases — 67 of 72 plans c
 | Phase 44 P02 | 97 | 1 tasks | 2 files |
 | Phase 45 P01 | 161 | 2 tasks | 6 files |
 | Phase 45 P02 | 131 | 1 tasks | 2 files |
+| Phase 46 P01 | 290 | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,7 @@ Key decisions affecting v3.0 work:
 - [Phase 44]: useActivityFeed hook kept inline in ActivityPanel.tsx with REST-hydrate + WS-live-append pattern; dedup by timestamp+eventType; 50-item cap
 - [Phase 45]: Used @aws-sdk/client-cognito-identity-provider for typed Cognito admin operations in simulation scripts
 - [Phase 45]: Used actual emoji characters for reactions instead of text names — API validates against VALID_EMOJI set of unicode characters
+- [Phase 46]: Re-throw errors in hooks after setError so component try/catch receives them
 
 ### Pending Todos
 
@@ -129,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T22:28:13.665Z
-Stopped at: Completed 45-02-PLAN.md
+Last session: 2026-03-27T23:26:29.543Z
+Stopped at: Completed 46-01-PLAN.md
 Resume file: None
