@@ -613,10 +613,12 @@ class DistributedWebSocketServer {
         }
 
         // Notify services about disconnect
+        // Services may define handleDisconnect() or onClientDisconnect() — check both
         for (const [serviceName, service] of this.services) {
-            if (service.handleDisconnect) {
+            const handler = service.handleDisconnect || service.onClientDisconnect;
+            if (handler) {
                 try {
-                    await service.handleDisconnect(clientId);
+                    await handler.call(service, clientId);
                 } catch (error) {
                     this.logger.error(`Error in ${serviceName} disconnect handler:`, error);
                 }
@@ -637,8 +639,9 @@ class DistributedWebSocketServer {
     }
 
     async handleHealthCheck(req, res) {
+        const isHealthy = this.redisConnected;
         const health = {
-            status: 'healthy',
+            status: isHealthy ? 'healthy' : 'degraded',
             timestamp: new Date().toISOString(),
             nodeId: this.nodeManager?.nodeId,
             redis: this.redisConnected ? 'connected' : 'disconnected',
@@ -649,7 +652,8 @@ class DistributedWebSocketServer {
             memoryUsage: process.memoryUsage()
         };
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        const statusCode = isHealthy ? 200 : 503;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(health, null, 2));
     }
 

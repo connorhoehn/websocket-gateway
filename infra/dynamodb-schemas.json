@@ -1,0 +1,87 @@
+{
+  "_comment": "Single source of truth for all DynamoDB table schemas. Key names derived from application code (crdt-service.js, social-api routes, lambda handlers). Consumed by Tiltfile, LocalStack bootstrap, and CDK stacks.",
+  "tables": [
+    {
+      "tableName": "crdt-snapshots",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "rangeKey": { "name": "timestamp", "type": "N" },
+      "billing": "PAY_PER_REQUEST",
+      "_note": "Hash key is documentId per _ensureTable(), retrieveLatestSnapshot(), and crdt-snapshot Lambda. NOTE: writeSnapshot direct-write path incorrectly uses 'channelId' attribute — that is a code bug to fix separately."
+    },
+    {
+      "tableName": "crdt-documents",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-profiles",
+      "hashKey": { "name": "userId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-relationships",
+      "hashKey": { "name": "followerId", "type": "S" },
+      "rangeKey": { "name": "followeeId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-groups",
+      "hashKey": { "name": "groupId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-group-members",
+      "hashKey": { "name": "groupId", "type": "S" },
+      "rangeKey": { "name": "userId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-rooms",
+      "hashKey": { "name": "roomId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-room-members",
+      "hashKey": { "name": "roomId", "type": "S" },
+      "rangeKey": { "name": "userId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-posts",
+      "hashKey": { "name": "roomId", "type": "S" },
+      "rangeKey": { "name": "postId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-comments",
+      "hashKey": { "name": "postId", "type": "S" },
+      "rangeKey": { "name": "commentId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-likes",
+      "hashKey": { "name": "targetId", "type": "S" },
+      "rangeKey": { "name": "userId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "user-activity",
+      "hashKey": { "name": "userId", "type": "S" },
+      "rangeKey": { "name": "timestamp", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "social-outbox",
+      "hashKey": { "name": "outboxId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "status-index",
+          "hashKey": { "name": "status", "type": "S" },
+          "rangeKey": { "name": "createdAt", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
+    }
+  ]
+}

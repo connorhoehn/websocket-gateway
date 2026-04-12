@@ -90,14 +90,14 @@ local_resource(
         sleep 5
         ENDPOINT="--endpoint-url http://localhost:8000 --region us-east-1"
 
-        # Gateway CRDT table
+        # Gateway CRDT table (key names must match crdt-service.js _ensureTable / retrieveLatestSnapshot)
         aws dynamodb create-table \
             --table-name crdt-snapshots \
             --attribute-definitions \
-                AttributeName=channelId,AttributeType=S \
+                AttributeName=documentId,AttributeType=S \
                 AttributeName=timestamp,AttributeType=N \
             --key-schema \
-                AttributeName=channelId,KeyType=HASH \
+                AttributeName=documentId,KeyType=HASH \
                 AttributeName=timestamp,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             $ENDPOINT 2>/dev/null || echo "crdt-snapshots exists"
@@ -107,7 +107,12 @@ local_resource(
 
         $CT --table-name social-profiles --attribute-definitions AttributeName=userId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH 2>/dev/null || echo "social-profiles exists"
         $CT --table-name social-relationships --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE 2>/dev/null || echo "social-relationships exists"
-        $CT --table-name social-outbox --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "social-outbox exists"
+        aws dynamodb create-table --table-name social-outbox \
+            --attribute-definitions AttributeName=outboxId,AttributeType=S AttributeName=status,AttributeType=S AttributeName=createdAt,AttributeType=S \
+            --key-schema AttributeName=outboxId,KeyType=HASH \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"status-index","KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "social-outbox exists"
         $CT --table-name social-rooms --attribute-definitions AttributeName=roomId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH 2>/dev/null || echo "social-rooms exists"
         $CT --table-name social-room-members --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-room-members exists"
         $CT --table-name social-groups --attribute-definitions AttributeName=groupId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH 2>/dev/null || echo "social-groups exists"

@@ -161,6 +161,10 @@ class MessageRouter {
 
             if (!stillNeeded) {
                 await this.unsubscribeFromRedisChannel(channel);
+                // Also clean up channelSequences even if Redis unsubscribe was skipped
+                // (e.g. when redisSubscriber is null). unsubscribeFromRedisChannel
+                // handles its own delete, so this is a no-op when it already ran.
+                this.channelSequences.delete(channel);
             }
 
             // Update session subscriptions if session service is available

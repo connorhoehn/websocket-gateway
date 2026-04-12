@@ -39,6 +39,7 @@ import DocumentEditorPage from './doc-editor/DocumentEditorPage';
 import DocumentListPage from './doc-editor/DocumentListPage';
 import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
+import { ErrorBoundary } from './ErrorBoundary';
 import type { UseWebSocketReturn } from '../hooks/useWebSocket';
 
 // ---------------------------------------------------------------------------
@@ -661,16 +662,19 @@ export function AppLayout({
           </div>
 
           {/* Activity section */}
-          <ActivityPanel
-            idToken={idToken}
-            sendMessage={sendMessage}
-            onMessage={onMessage}
-            connectionState={connectionState}
-          />
+          <ErrorBoundary name="ActivityPanel">
+            <ActivityPanel
+              idToken={idToken}
+              sendMessage={sendMessage}
+              onMessage={onMessage}
+              connectionState={connectionState}
+            />
+          </ErrorBoundary>
           </>
           )}
 
           {activeView === 'social' && (
+          <ErrorBoundary name="SocialPanels">
           <>
           {/* Social section card */}
           <SocialPanel idToken={idToken} onMessage={onMessage} />
@@ -698,6 +702,7 @@ export function AppLayout({
           {/* Posts section */}
           <PostFeed idToken={idToken} roomId={activeRoomId} onMessage={onMessage} />
           </>
+          </ErrorBoundary>
           )}
 
           {activeView === 'dashboard' && (
@@ -730,19 +735,21 @@ export function AppLayout({
           )}
 
           {activeView === 'doc-editor' && activeDocumentId && (
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <DocumentEditorPage
-                documentId={activeDocumentId}
-                documentType={activeDocumentType}
-                ws={ws}
-                userId={userId}
-                displayName={displayName}
-                onMessage={onMessage}
-                activityPublish={activityPublish}
-                activityEvents={activityEvents}
-                onBack={() => { setActiveDocumentId(null); setActiveDocumentType(undefined); }}
-              />
-            </div>
+            <ErrorBoundary name="DocumentEditor">
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <DocumentEditorPage
+                  documentId={activeDocumentId}
+                  documentType={activeDocumentType}
+                  ws={ws}
+                  userId={userId}
+                  displayName={displayName}
+                  onMessage={onMessage}
+                  activityPublish={activityPublish}
+                  activityEvents={activityEvents}
+                  onBack={() => { setActiveDocumentId(null); setActiveDocumentType(undefined); }}
+                />
+              </div>
+            </ErrorBoundary>
           )}
 
         </div>

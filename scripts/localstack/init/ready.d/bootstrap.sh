@@ -233,8 +233,9 @@ awslocal cloudwatch put-metric-alarm \
   --treat-missing-data notBreaching || true
 
 # ---- crdt-snapshots DynamoDB table (Phase 38) ----
+# timestamp is N (number) — crdt-service.js writes Date.now() and reads item.timestamp.N
 awslocal dynamodb create-table --table-name crdt-snapshots \
-  --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=timestamp,AttributeType=S \
+  --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=timestamp,AttributeType=N \
   --key-schema AttributeName=documentId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 

@@ -1,245 +1,230 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-03-02
+**Analysis Date:** 2026-04-12
 
 ## Directory Layout
 
 ```
 websocker_gateway/
 ├── .planning/                    # GSD planning and codebase documentation
+│   └── codebase/                # Auto-generated architecture docs
 ├── assets/                       # Demo GIFs and documentation images
 ├── bin/                          # CLI entry point for AWS CDK
 │   └── websocker_gateway.js     # CDK app instantiation
 ├── config/                       # Configuration files
+├── frontend/                     # React SPA (built output served by gateway)
+│   └── src/
+│       ├── components/          # React components
+│       │   └── doc-editor/      # Collaborative document editor UI
+│       ├── hooks/               # Custom React hooks (useCollaborativeDoc, etc.)
+│       ├── types/               # TypeScript type definitions
+│       └── utils/               # Frontend utilities
+├── helm/                         # Helm charts for K8s deployment
 ├── lib/                          # AWS CDK infrastructure definitions
 │   ├── cluster.ts               # ECS cluster configuration
-│   ├── redis.ts                 # ElastiCache Redis setup
+│   ├── redis.ts                 # Redis setup
 │   ├── fargate-service.ts       # Fargate task definition
 │   ├── task-definition.ts       # ECS task configuration
 │   ├── vpc.ts                   # VPC and networking
 │   └── websocket-gateway-stack.ts # Main CDK stack
-├── src/                          # Application source code
+├── src/                          # Backend application source code
 │   ├── core/                    # Core distributed system components
-│   │   ├── node-manager.js      # Node registration, discovery, heartbeat
-│   │   ├── message-router.js    # Intelligent pub/sub message routing
-│   │   └── websocket-manager.js # Legacy WebSocket connection tracking
-│   ├── services/                # Domain-specific business logic services
-│   │   ├── chat-service.js      # Chat messaging and history
-│   │   ├── presence-service.js  # User presence tracking
-│   │   ├── cursor-service.js    # Cursor position synchronization
-│   │   └── reaction-service.js  # Reaction/emoji tracking
-│   ├── utils/                   # Utility functions
-│   │   └── logger.js            # Structured logging utility
-│   ├── server.js                # Main WebSocket server and HTTP endpoints
-│   └── package.json             # Local src dependencies
-├── test/                         # Test files and test clients
+│   │   ├── message-router.js    # Intelligent pub/sub message routing (781 lines)
+│   │   ├── node-manager.js      # Node registration, discovery, heartbeat (498 lines)
+│   │   └── websocket-manager.js # LEGACY - unused simple WS manager (218 lines)
+│   ├── lambda/                  # AWS Lambda handlers
+│   │   └── message-review-handler.js  # CRDT snapshot persistence via EventBridge
+│   ├── middleware/              # Cross-cutting middleware
+│   │   ├── auth-middleware.js   # Cognito JWT validation
+│   │   ├── authz-middleware.js  # Channel permission checks
+│   │   ├── rate-limiter.js      # Per-client rate limiting
+│   │   └── reconnection-handler.js # Session token recovery
+│   ├── services/                # Domain-specific business logic
+│   │   ├── activity-service.js  # Real-time activity feed (297 lines)
+│   │   ├── chat-service.js      # Chat messaging and history (407 lines)
+│   │   ├── crdt-service.js      # Y.js CRDT collaborative editing (1943 lines)
+│   │   ├── cursor-service.js    # Multi-mode cursor tracking (607 lines)
+│   │   ├── ivs-chat-service.js  # IVS chat integration
+│   │   ├── presence-service.js  # User presence tracking (533 lines)
+│   │   ├── reaction-service.js  # Emoji reactions (285 lines)
+│   │   ├── session-service.js   # Session tokens for reconnection (144 lines)
+│   │   └── social-service.js    # Real-time social events (127 lines)
+│   ├── utils/                   # Shared utility functions
+│   │   ├── error-codes.js       # Standardized error codes and response factory
+│   │   ├── logger.js            # Structured logging with correlation IDs
+│   │   └── metrics-collector.js # CloudWatch metrics emission
+│   ├── validators/              # Input validation
+│   │   └── message-validator.js # Message structure/size validation
+│   ├── server.js                # Main WebSocket server (855 lines)
+│   ├── package.json             # Backend-specific dependencies
+│   └── package-lock.json
+├── test/                         # Test files
 │   ├── clients/                 # WebSocket test client implementations
 │   └── websocker_gateway.test.ts # Infrastructure tests
-├── templates/                    # CloudFormation templates (legacy)
-├── cdk.json                      # CDK configuration
-├── docker-compose.yml            # Local development environment
 ├── Dockerfile                    # Container image definition
-├── jest.config.js                # Jest testing configuration
+├── Tiltfile                      # Tilt local dev configuration
 ├── Makefile                      # Development and deployment automation
+├── docker-compose.yml            # Local development environment
+├── cdk.json                      # CDK configuration
+├── jest.config.js                # Jest testing configuration
 ├── package.json                  # Root project dependencies
-├── tsconfig.json                 # TypeScript configuration
-├── DISTRIBUTED_ARCHITECTURE.md   # Detailed distributed system design
-└── README.md                      # Project overview
+└── tsconfig.json                 # TypeScript configuration
 ```
 
 ## Directory Purposes
 
-**`.planning/codebase/`:**
-- Purpose: GSD-generated codebase analysis and documentation
-- Contains: ARCHITECTURE.md, STRUCTURE.md, and other analysis docs
-- Committed: Yes
-- Generated: Yes (by GSD)
-
-**`bin/`:**
-- Purpose: Entry point for AWS CDK infrastructure-as-code
-- Contains: TypeScript CDK app that defines and synthesizes CloudFormation templates
-- Key files: `bin/websocker_gateway.js` - entry point when running `npm run cdk`
-
-**`lib/`:**
-- Purpose: AWS CDK infrastructure definitions using TypeScript
-- Contains: Modular CDK constructs for VPC, Redis, ECS Fargate, load balancing
-- Key files:
-  - `lib/websocket-gateway-stack.ts` - Main stack composition
-  - `lib/fargate-service.ts` - Fargate task configuration
-  - `lib/redis.ts` - ElastiCache Redis setup
-
 **`src/core/`:**
-- Purpose: Core distributed system and routing components
-- Contains: Abstractions for multi-node communication, client/node discovery
+- Purpose: Core distributed system and routing infrastructure
+- Contains: Message routing (Redis pub/sub), node management, client tracking
 - Key files:
-  - `src/core/message-router.js` - Pub/Sub routing that selects target nodes
-  - `src/core/node-manager.js` - Node registration, heartbeat, channel tracking in Redis
-  - `src/core/websocket-manager.js` - Legacy connection management (used for reference)
+  - `src/core/message-router.js` - Central mediator for all WebSocket communication
+  - `src/core/node-manager.js` - Cluster membership and client-to-node registry
+  - `src/core/websocket-manager.js` - **LEGACY, not imported by server.js** - can be deleted
 
 **`src/services/`:**
-- Purpose: Domain-specific WebSocket service implementations
-- Contains: Chat, Presence, Cursor, Reaction services
+- Purpose: Domain-specific real-time feature implementations
+- Contains: 9 service files, each implementing the `handleAction()` contract
 - Key files:
-  - `src/services/chat-service.js` - Chat messaging, join/leave, history
-  - `src/services/presence-service.js` - Online status, presence subscriptions
-  - `src/services/cursor-service.js` - Multi-user cursor position tracking
-  - `src/services/reaction-service.js` - Emoji/reaction broadcasting
-- Pattern: Each service implements handleAction(clientId, action, data) and optional handleDisconnect(clientId)
+  - `src/services/crdt-service.js` - Largest service (1943 lines), handles Y.js CRDT, document metadata CRUD, presence, snapshots, DynamoDB access
+  - `src/services/chat-service.js` - Chat messaging with LRU message history
+  - `src/services/presence-service.js` - Online/away/busy status with heartbeat cleanup
+  - `src/services/session-service.js` - Session token management (not routed via handleAction)
+
+**`src/middleware/`:**
+- Purpose: Authentication, authorization, rate limiting, reconnection
+- Contains: 4 middleware modules, called inline by services or server.js (not Express-style pipeline)
+- Key files:
+  - `src/middleware/auth-middleware.js` - Called once at WS upgrade, validates Cognito JWT
+  - `src/middleware/authz-middleware.js` - `checkChannelPermission()` called by services before channel ops
 
 **`src/utils/`:**
-- Purpose: Shared utility functions
-- Contains: Logger and helper utilities
-- Key files: `src/utils/logger.js` - Configurable structured logging
+- Purpose: Shared utility functions used by all layers
+- Key files:
+  - `src/utils/error-codes.js` - Error code constants and `createErrorResponse()` factory
+  - `src/utils/logger.js` - `Logger` class with `withCorrelation()` for request tracing
+  - `src/utils/metrics-collector.js` - CloudWatch metric buffering and emission
 
-**`src/server.js`:**
-- Purpose: Main application server
-- Contains: HTTP server setup, WebSocket server, service initialization, message routing
-- Key responsibilities: Redis connection, node registration, client lifecycle, service orchestration
+**`src/validators/`:**
+- Purpose: Message validation logic extracted from router
+- Key files: `src/validators/message-validator.js` - Validates service name whitelist, action presence, 64KB payload limit, channel name format
 
-**`test/`:**
-- Purpose: Test suite and test clients
-- Contains: Jest tests and WebSocket client implementations for manual testing
-- Key files: `test/websocker_gateway.test.ts` - Infrastructure tests
+**`src/lambda/`:**
+- Purpose: AWS Lambda function handlers (deployed separately from gateway)
+- Key files: `src/lambda/message-review-handler.js` - EventBridge consumer for CRDT snapshot persistence
 
-**`config/`:**
-- Purpose: Configuration files (likely environment-specific)
-- Contains: Unknown (directory exists but not fully explored)
+**`frontend/`:**
+- Purpose: React SPA served by the gateway's static file handler
+- Key subdirectories:
+  - `frontend/src/components/doc-editor/` - Collaborative document editor components
+  - `frontend/src/hooks/` - Custom hooks including `useCollaborativeDoc.ts` for Y.js WebSocket sync
 
 ## Key File Locations
 
 **Entry Points:**
+- `src/server.js`: Application server entry point (`DistributedWebSocketServer` class)
 - `bin/websocker_gateway.js`: CDK app entry point for infrastructure deployment
-- `src/server.js`: Application server entry point (DistributedWebSocketServer class)
 
 **Configuration:**
+- `src/server.js` lines 30-40: Runtime config object (Redis URL, port, enabled services)
 - `cdk.json`: CDK context and configuration
-- `tsconfig.json`: TypeScript compilation settings
-- `jest.config.js`: Test runner configuration
 - `Dockerfile`: Container image definition
-- `docker-compose.yml`: Local development environment
+- `docker-compose.yml`: Local development (Redis + gateway)
+- `Tiltfile`: Tilt + Helm local K8s dev
 
 **Core Logic:**
-- `src/core/node-manager.js`: Node discovery and registration (Redis-backed)
-- `src/core/message-router.js`: Intelligent message routing and pub/sub
-- `src/services/chat-service.js`: Chat service implementation
-- `src/services/presence-service.js`: Presence service implementation
-- `src/services/cursor-service.js`: Cursor synchronization service
-- `src/services/reaction-service.js`: Reaction service
+- `src/core/message-router.js`: All inter-service and inter-node communication
+- `src/core/node-manager.js`: Distributed cluster coordination
+- `src/services/crdt-service.js`: Collaborative editing, document CRUD, snapshot persistence
 
 **Testing:**
-- `test/websocker_gateway.test.ts`: Main test file
-- `test/clients/`: WebSocket client implementations for manual testing
+- `test/websocker_gateway.test.ts`: Infrastructure tests
+- `test/clients/`: Manual WebSocket test clients
 
 ## Naming Conventions
 
 **Files:**
-- Service files: `{service-name}-service.js` (e.g., `chat-service.js`)
-- Core modules: `{function}-{type}.js` (e.g., `node-manager.js`, `message-router.js`)
-- Infrastructure: `{component}.ts` in lib/ (e.g., `redis.ts`, `fargate-service.ts`)
-- Tests: `{module}.test.ts` (e.g., `websocker_gateway.test.ts`)
+- Services: `{domain}-service.js` (e.g., `chat-service.js`, `crdt-service.js`)
+- Core: `{function}-{type}.js` (e.g., `node-manager.js`, `message-router.js`)
+- Middleware: `{concern}-middleware.js` or `{concern}-handler.js`
+- Utils: `{purpose}.js` (e.g., `error-codes.js`, `logger.js`)
+- Infrastructure (CDK): `{component}.ts` (e.g., `redis.ts`, `vpc.ts`)
 
 **Directories:**
-- Services: plural `src/services/`
-- Core utilities: `src/core/`
-- Infrastructure: `lib/`
-- Tests: `test/`
+- Lowercase, hyphen-separated where needed
+- `src/services/`, `src/core/`, `src/middleware/`, `src/utils/`, `src/validators/`
 
-**Classes/Functions:**
-- Service classes: PascalCase (e.g., ChatService, PresenceService)
-- Manager classes: PascalCase (e.g., NodeManager, MessageRouter)
-- Logger class: PascalCase (Logger)
-- Server class: PascalCase (DistributedWebSocketServer)
+**Classes:**
+- PascalCase: `ChatService`, `MessageRouter`, `NodeManager`, `DistributedWebSocketServer`
 
-**Variables & Constants:**
-- In MessageRouter: camelCase with descriptive purpose (e.g., localClients, subscribedChannels, messageTypes)
-- Redis keys: snake_case with colons for hierarchy (e.g., `websocket:node:${nodeId}:info`, `websocket:client:${clientId}:node`)
-- Environment variables: UPPER_SNAKE_CASE (e.g., REDIS_ENDPOINT, PORT, ENABLED_SERVICES, LOG_LEVEL)
+**Redis Keys:**
+- Colon-separated hierarchy: `websocket:node:{nodeId}:info`, `websocket:channel:{channel}:nodes`
+- CRDT-specific: `crdt:snapshot:{channel}`, `doc:meta:{id}`, `doc:list`
+- Activity: `activity:history:{channel}`
+- Session: `session:{token}`
+
+**Environment Variables:**
+- UPPER_SNAKE_CASE: `REDIS_ENDPOINT`, `COGNITO_USER_POOL_ID`, `DYNAMODB_CRDT_TABLE`, `ENABLED_SERVICES`, `LOG_LEVEL`
 
 ## Where to Add New Code
 
-**New Feature (Service):**
-- Create service file: `src/services/{feature-name}-service.js`
-- Implement class with: constructor(messageRouter, logger), handleAction(clientId, action, data), getStats()
-- Register in: `src/server.js` - initializeServices() method (line 145-171)
-- Add to enabled services: environment variable ENABLED_SERVICES or config.server.enabledServices
-- Tests: create `test/{feature-name}-service.test.ts`
+**New Real-Time Service:**
+1. Create: `src/services/{feature}-service.js`
+2. Implement class with:
+   - `constructor(messageRouter, logger, metricsCollector)` - standard args
+   - `handleAction(clientId, action, data)` - switch on action name
+   - `handleDisconnect(clientId)` - cleanup on disconnect
+   - `sendToClient(clientId, message)` - wrapper: `this.messageRouter.sendToClient()`
+   - `sendError(clientId, message, errorCode)` - wrapper using `createErrorResponse()`
+   - `getStats()` - for `/stats` endpoint
+   - `shutdown()` - clear timers, flush state
+3. Register in `src/server.js` `initializeServices()` (line 201-243)
+4. Add service name to `ENABLED_SERVICES` env var or config
 
-**New Core Component:**
-- Create file: `src/core/{component-name}.js`
-- Example: routing logic, client management abstractions
-- Update imports in: `src/server.js` (line 7-10)
-- Use in: DistributedWebSocketServer or existing services
+**New Service Action:**
+1. Add case to existing service's `handleAction()` switch statement
+2. Implement `handle{ActionName}(clientId, data)` method
+3. Use `this.messageRouter.sendToChannel()` for broadcast or `this.sendToClient()` for direct response
 
-**Utility Functions:**
-- Add to: `src/utils/logger.js` or create `src/utils/{utility-name}.js`
-- Export as module: `module.exports = ClassName or functionName`
-- Import where needed with: `const Thing = require('./utils/logger')`
+**New Middleware:**
+1. Create: `src/middleware/{concern}-middleware.js`
+2. Export function or class
+3. Wire into `src/server.js` or call from services as needed
+4. Note: Middleware is called inline, not Express-style pipeline
 
-**Infrastructure Changes:**
-- Add CDK construct: `lib/{component}.ts`
-- Compose in: `lib/websocket-gateway-stack.ts`
-- Redeploy with: `cdk deploy --all`
+**New Utility:**
+1. Create: `src/utils/{utility-name}.js`
+2. Export via `module.exports`
+3. Import where needed: `const X = require('./utils/{utility-name}')`
 
-**Tests:**
-- Co-located with source: `test/{module}.test.ts` or alongside source file
-- Use Jest as runner: `npm test`
-- Patterns: async/await for promises, mock Redis/WebSocket dependencies
+**New DynamoDB Table Access:**
+1. Add DynamoDB commands in the service that needs them (currently only `src/services/crdt-service.js`)
+2. Add table name as env var: `DYNAMODB_{TABLE}_TABLE`
+3. Add `_ensureTable()` method for local dev (LocalStack)
+4. No shared data access layer exists -- DynamoDB access is inline in services
+
+**New Frontend Component:**
+1. Create: `frontend/src/components/{feature}/{ComponentName}.tsx`
+2. Types: `frontend/src/types/{feature}.ts`
+3. Hooks: `frontend/src/hooks/use{Feature}.ts`
 
 ## Special Directories
 
-**`config/`:**
-- Purpose: Configuration files
-- Generated: Unknown
-- Committed: Yes
+**`src/core/websocket-manager.js`:**
+- Purpose: Legacy simple WebSocket manager
+- Status: **Not imported or used** by `server.js` or any service
+- Note: Superseded by `MessageRouter` which handles the same functionality plus distributed routing
+- Action: Safe to delete
 
-**`cdk.out/`:**
-- Purpose: CDK synthesis output (CloudFormation templates)
-- Generated: Yes (by CDK)
-- Committed: No (in .gitignore)
+**`src/lambda/`:**
+- Purpose: Lambda function handlers deployed separately via CDK
+- Contains: EventBridge consumer for CRDT snapshot persistence
+- Note: Production path writes snapshots via EventBridge -> Lambda -> DynamoDB. Local dev uses `DIRECT_DYNAMO_WRITE=true` to bypass.
 
-**`templates/`:**
-- Purpose: CloudFormation templates (legacy, superceded by CDK)
+**`helm/`:**
+- Purpose: Helm charts for Kubernetes deployment via Tilt
 - Generated: No
 - Committed: Yes
-
-**`assets/`:**
-- Purpose: Demo GIFs and documentation images
-- Generated: No
-- Committed: Yes
-
-**`node_modules/`:**
-- Purpose: Installed dependencies
-- Generated: Yes (by npm install)
-- Committed: No (in .gitignore)
-
-## Message Flow by Example: Chat Message
-
-```
-User sends: { service: 'chat', action: 'send', channel: 'lobby', message: 'Hello!' }
-    ↓
-src/server.js: DistributedWebSocketServer.handleMessage()
-    ↓
-Routes to: this.services.get('chat').handleAction(clientId, 'send', data)
-    ↓
-src/services/chat-service.js: ChatService.handleSendMessage()
-    - Validates message length
-    - Creates messageData object with timestamp/ID
-    - Adds to local history: this.addToChannelHistory()
-    - Calls: this.messageRouter.sendToChannel(channel, broadcastMessage)
-    ↓
-src/core/message-router.js: MessageRouter.sendToChannel()
-    - Gets target nodes: this.nodeManager.getNodesForChannel(channel)
-    - Publishes to Redis: websocket:route:lobby
-    ↓
-All nodes receive Redis message and call: MessageRouter.handleChannelMessage()
-    - Check if this node is in targetNodes list
-    - Call: this.broadcastToLocalChannel(channel, message)
-    ↓
-src/core/message-router.js: MessageRouter.broadcastToLocalChannel()
-    - For each local client on this channel:
-        - Call sendToLocalClient() to send message via WebSocket
-```
 
 ---
 
-*Structure analysis: 2026-03-02*
+*Structure analysis: 2026-04-12*

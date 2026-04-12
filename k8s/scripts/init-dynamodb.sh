@@ -7,14 +7,14 @@ REGION="${2:-us-east-1}"
 
 echo "Initializing DynamoDB tables at $ENDPOINT..."
 
-# Create CRDT snapshots table
+# Create CRDT snapshots table (key names match crdt-service.js _ensureTable)
 aws dynamodb create-table \
     --table-name crdt-snapshots \
     --attribute-definitions \
-        AttributeName=channelId,AttributeType=S \
+        AttributeName=documentId,AttributeType=S \
         AttributeName=timestamp,AttributeType=N \
     --key-schema \
-        AttributeName=channelId,KeyType=HASH \
+        AttributeName=documentId,KeyType=HASH \
         AttributeName=timestamp,KeyType=RANGE \
     --billing-mode PAY_PER_REQUEST \
     --endpoint-url "$ENDPOINT" \

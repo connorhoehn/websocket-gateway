@@ -116,7 +116,9 @@ function GatewayDemo({
   const wsReturn = useWebSocket({
     config,
     onMessage: (msg) => {
-      featureHandlers.current.forEach((h) => h(msg));
+      featureHandlers.current.forEach((h) => {
+        try { h(msg); } catch (err) { console.error('[message-bus] Handler error:', err); }
+      });
 
       // Log received message to EventLog
       const entry: LogEntry = {
@@ -170,12 +172,12 @@ function GatewayDemo({
 
   // Stable onMessage registrar passed to feature hooks.
   // Push handler on register; filter it out on unregister.
-  const onMessage = (handler: (msg: GatewayMessage) => void) => {
+  const onMessage = useCallback((handler: (msg: GatewayMessage) => void) => {
     featureHandlers.current.push(handler);
     return () => {
       featureHandlers.current = featureHandlers.current.filter((h) => h !== handler);
     };
-  };
+  }, []);
 
   // AUTH-09: When cognitoToken changes (silent refresh), reconnect so the
   // gateway receives the updated JWT. prevTokenRef skips the initial mount.

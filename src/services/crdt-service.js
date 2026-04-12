@@ -930,7 +930,7 @@ class CRDTService {
             // Direct DynamoDB write path (bypasses EventBridge + Lambda)
             if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
                 const item = {
-                    channelId: { S: channelId },
+                    documentId: { S: channelId },
                     timestamp: { N: String(Date.now()) },
                     snapshot: { B: compressed },
                     versionType: { S: versionType },
@@ -1021,7 +1021,7 @@ class CRDTService {
                 },
                 ScanIndexForward: false, // Newest first
                 Limit: limit,
-                ProjectionExpression: 'documentId, #ts, versionType, author, versionName, sizeBytes',
+                ProjectionExpression: 'channelId, #ts, versionType, author, versionName, sizeBytes',
                 ExpressionAttributeNames: {
                     '#ts': 'timestamp'
                 }
@@ -1768,9 +1768,9 @@ class CRDTService {
             timestamp: new Date().toISOString(),
         };
 
-        // Broadcast to all connected local clients
+        // Broadcast to all connected clients across all nodes
         if (this.messageRouter) {
-            this.messageRouter.broadcastToLocalClients(message);
+            this.messageRouter.broadcastToAll(message);
         }
     }
 
@@ -1877,6 +1877,35 @@ class CRDTService {
     }
 
     async onClientDisconnect(clientId) {
+        // Decrement subscriberCount for every CRDT channel this client was in.
+        // The messageRouter still holds the client's channel set at this point
+        // because unregisterLocalClient runs AFTER service disconnect handlers.
+        const clientData = this.messageRouter?.getClientData(clientId);
+        if (clientData && clientData.channels) {
+            for (const channel of clientData.channels) {
+                const state = this.channelStates.get(channel);
+                if (state) {
+                    state.subscriberCount--;
+
+                    if (state.subscriberCount <= 0) {
+                        state.subscriberCount = 0; // clamp
+
+                        // Write final snapshot if there are pending operations
+                        if (state.operationsSinceSnapshot > 0) {
+                            try {
+                                await this.writeSnapshot(channel);
+                            } catch (err) {
+                                this.logger.error(`Error writing snapshot on disconnect for channel ${channel}:`, err.message);
+                            }
+                        }
+
+                        // Start idle eviction timer
+                        this._startIdleEviction(channel);
+                    }
+                }
+            }
+        }
+
         // Remove from all document presence maps and broadcast update
         this._removeClientFromAllDocPresence(clientId);
         this.logger.debug(`Client ${clientId} disconnected from CRDT service`);

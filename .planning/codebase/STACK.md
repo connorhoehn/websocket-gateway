@@ -1,112 +1,123 @@
 # Technology Stack
 
-**Analysis Date:** 2026-03-02
+**Analysis Date:** 2026-04-12
 
 ## Languages
 
 **Primary:**
-- TypeScript 5.6.3 - Infrastructure as Code via AWS CDK in `lib/` directory
-- JavaScript (Node.js) - Runtime application code in `src/` directory
+- JavaScript (Node.js) - Backend WebSocket gateway (`src/`)
+- TypeScript - CDK infrastructure (`lib/`, `bin/`) and frontend (`frontend/`)
 
 **Secondary:**
-- Shell - Deployment scripts (`deploy.sh`)
+- Shell scripts - Deployment and local dev (`deploy.sh`, `scripts/`)
 
 ## Runtime
 
 **Environment:**
-- Node.js 20 (Alpine Linux) - Specified in `Dockerfile`
-- Node.js >=18.0.0 - Minimum requirement in `src/package.json`
+- Node.js >= 18.0.0 (specified in `src/package.json` engines field)
+- No `.nvmrc` or `.node-version` detected
 
 **Package Manager:**
-- npm - Primary package manager
-- Lockfile: `package-lock.json` present
+- npm (lockfile present at `src/package-lock.json` and root `package-lock.json`)
+- Two separate package.json files:
+  - Root `package.json`: CDK infrastructure + dev tooling
+  - `src/package.json`: Runtime gateway application
 
 ## Frameworks
 
 **Core:**
-- AWS CDK 2.195.0 - Infrastructure provisioning in `lib/`
-- aws-cdk-lib 2.195.0 - AWS construct library for CDK definitions
-- constructs ^10.0.0 - CDK construct base classes
+- `ws` ^8.14.0 - Raw WebSocket server (no Socket.IO or higher-level framework)
+- Node.js `http` module - HTTP server for health checks + SPA static serving
+- No Express, Fastify, or other HTTP framework
 
-**WebSocket:**
-- ws 8.14.0 - WebSocket server implementation (`src/server.js`, `src/core/websocket-manager.js`)
+**CRDT/Collaboration:**
+- `yjs` ^13.6.30 - CRDT data structure library for collaborative editing
+- `y-protocols` ^1.0.7 - Y.js protocol utilities (awareness, sync)
+- `lib0` ^0.2.117 - Y.js utility library
 
-**Data:**
-- redis 4.6.0 - Redis pub/sub client for distributed messaging (`src/server.js`)
+**Testing:**
+- `jest` ^29.7.0 - Test runner (root package.json)
+- `ts-jest` ^29.2.5 - TypeScript support for Jest
+
+**Build/Dev:**
+- `typescript` ~5.6.3 - TypeScript compiler (CDK infrastructure only)
+- `aws-cdk` 2.1016.0 - CDK CLI
+- `aws-cdk-lib` 2.195.0 - CDK constructs library
+- Docker (`Dockerfile` present)
+- Tilt + Helm for local K8s dev (`k8s/` directory)
 
 ## Key Dependencies
 
-**Critical:**
-- aws-cdk 2.1016.0 - CLI tool for CDK deployment
-- aws-cdk-lib 2.195.0 - AWS service constructs (EC2, ECS, ElastiCache, LoadBalancing, IAM, Logs, S3)
-- redis 4.6.0 - Redis client for pub/sub messaging across WebSocket nodes
-- ws 8.14.0 - WebSocket protocol implementation for real-time connections
-- constructs ^10.0.0 - Base library for CDK construct implementation
+**Critical (runtime):**
+- `ws` ^8.14.0 - WebSocket server; the entire gateway is built on this
+- `redis` ^4.6.0 - Redis pub/sub for distributed message routing and state caching
+- `yjs` ^13.6.30 - CRDT engine for collaborative document editing
+- `jsonwebtoken` ^9.0.3 - JWT validation for Cognito tokens
+- `jwks-rsa` ^3.2.2 - JWKS key fetching for Cognito JWT verification
+- `lru-cache` ^10.4.3 - In-memory caching (session store, chat history)
 
-**AWS Service Modules:**
-- @aws-cdk/aws-ec2 ^1.203.0 - VPC, Security Groups, Subnets
-- @aws-cdk/aws-ecs ^1.203.0 - ECS Cluster, Fargate Service, Task Definitions
-- @aws-cdk/aws-elasticloadbalancingv2 ^1.203.0 - Network Load Balancer
-- @aws-cdk/aws-elasticache - Redis cluster provisioning (imported in `lib/redis.ts`)
-- @aws-cdk/aws-iam ^1.203.0 - IAM Roles and Policies
-- @aws-cdk/aws-logs ^1.203.0 - CloudWatch Logs
-- @aws-cdk/aws-s3 ^1.203.0 - S3 bucket support
-- @aws-cdk/aws-apigateway ^1.203.0 - API Gateway (included but not actively used in current stack)
-- @aws-cdk/aws-dynamodb ^1.203.0 - DynamoDB (included but not actively used)
-- @aws-cdk/aws-lambda ^1.203.0 - Lambda functions (included but not actively used)
+**AWS SDK (runtime):**
+- `@aws-sdk/client-dynamodb` ^3.1000.0 - DynamoDB for CRDT snapshots and document metadata
+- `@aws-sdk/client-cloudwatch` ^3.1000.0 - CloudWatch metrics emission
+- `@aws-sdk/client-eventbridge` ^3.1029.0 - EventBridge for decoupled snapshot persistence
+- `@aws-sdk/client-ivschat` ^3.1000.0 - IVS Chat integration (optional, disabled if no room ARN)
+- `@aws-sdk/client-cognito-identity-provider` ^3.1019.0 - Cognito (root package only)
 
-**Development:**
-- TypeScript ~5.6.3 - TypeScript compiler
-- ts-node ^10.9.2 - Execute TypeScript directly
-- ts-jest ^29.2.5 - Jest transformer for TypeScript
-- jest ^29.7.0 - Unit test framework
-- @types/jest ^29.5.14 - Jest type definitions
-- @types/node 22.7.9 - Node.js type definitions
+**Infrastructure (CDK, not runtime):**
+- `@aws-cdk/*` v1 packages (legacy) in root package.json alongside `aws-cdk-lib` v2
+- `constructs` ^10.0.0
 
 ## Configuration
 
-**Environment:**
-- Configuration managed via environment variables:
-  - `REDIS_ENDPOINT` - Redis host (default: 'redis')
-  - `REDIS_PORT` - Redis port (default: 6379)
-  - `PORT` - WebSocket server port (default: 8080)
-  - `ENABLED_SERVICES` - Comma-separated list of services to enable (default: 'chat,presence,cursor,reaction')
-  - `LOG_LEVEL` - Logging verbosity (default: 'info')
-  - `NODE_ENV` - Environment (development/production)
-  - `ENABLE_REDIS` - Toggle Redis support (default: 'false') in CDK stack
+**Environment Variables (required):**
+- `COGNITO_REGION` - AWS region for Cognito (server exits if missing)
+- `COGNITO_USER_POOL_ID` - Cognito User Pool ID (server exits if missing)
 
-- Configuration files:
-  - `config/full-service.env` - All services enabled
-  - `config/chat-only.env` - Chat service only
-  - `config/presence-only.env` - Presence service only
-  - `config/cursor-only.env` - Cursor service only
-  - `config/local-dev.env` - Local development configuration
+**Environment Variables (optional with defaults):**
+- `REDIS_ENDPOINT` - Redis host (default: `redis`)
+- `REDIS_PORT` - Redis port (default: `6379`)
+- `PORT` - Server HTTP port (default: `8080`)
+- `ENABLED_SERVICES` - Comma-separated list (default: `chat,presence,cursor,reaction,crdt`)
+- `LOG_LEVEL` - Logger level (default: `info`)
+- `SKIP_AUTH` - Set `true` to bypass Cognito JWT validation (local dev)
+- `AWS_REGION` - AWS region for DynamoDB/CloudWatch (default: `us-east-1`)
+- `LOCALSTACK_ENDPOINT` - LocalStack URL for local AWS service emulation
+- `DIRECT_DYNAMO_WRITE` - Set `true` to write snapshots directly to DynamoDB (bypasses EventBridge)
+- `DYNAMODB_CRDT_TABLE` - DynamoDB table for CRDT snapshots (default: `crdt-snapshots`)
+- `DYNAMODB_DOCUMENTS_TABLE` - DynamoDB table for document metadata (default: `crdt-documents`)
+- `EVENT_BUS_NAME` - EventBridge bus name (default: `social-events`)
+- `SNAPSHOT_DEBOUNCE_MS` - Debounce window for snapshot writes (default: `5000`)
+- `SNAPSHOT_INTERVAL_MS` - Periodic snapshot interval (default: `300000`)
+- `IDLE_EVICTION_MS` - Y.Doc idle eviction timeout (default: `600000`)
+- `MAX_CONNECTIONS_PER_IP` - Per-IP connection limit (default: `100`)
+- `MAX_TOTAL_CONNECTIONS` - Global connection limit (default: `10000`)
+- `ALLOWED_ORIGINS` - Comma-separated CORS origins (default: `*`)
+- `IVS_CHAT_ROOM_ARN` - IVS Chat room ARN (optional, feature disabled if unset)
 
-**Build:**
-- `tsconfig.json` - TypeScript compiler configuration targeting ES2022, NodeNext modules
-- `jest.config.js` - Jest test runner configuration (Node environment, `test/` directory, ts-jest transform)
-- `cdk.json` - CDK application entry point and context configuration
-- `Dockerfile` - Container image definition (Node 20 Alpine, non-root user)
+**Build Configuration:**
+- `tsconfig.json` - TypeScript config (CDK infrastructure)
+- `jest.config.js` - Jest test configuration
+- `cdk.json` - CDK app entry point
+- `Dockerfile` - Container build for gateway
+- `k8s/` - Helm charts for Kubernetes deployment
 
 ## Platform Requirements
 
 **Development:**
-- Node.js 18+ or 20+
-- npm for dependency management
-- AWS CLI credentials configured for CDK deployments
-- Docker (for containerized development)
+- Docker + Docker Compose (or Colima K8s + Tilt + Helm)
+- LocalStack for AWS service emulation
+- Redis (containerized via Docker Compose or Helm)
+- Node.js >= 18
 
 **Production:**
-- AWS Account with permissions for:
-  - EC2 (VPC, Security Groups, Subnets)
-  - ECS (Fargate clusters, task definitions, services)
-  - ElastiCache (Redis clusters)
-  - Elastic Load Balancing (Network Load Balancer)
-  - CloudWatch (Logs)
-  - IAM (Roles and policies)
-- Docker container runtime (ECS Fargate)
-- Redis cluster (AWS ElastiCache or external)
+- AWS ECS (containerized deployment)
+- Redis running in ECS (NOT ElastiCache - see project rules)
+- DynamoDB for persistent CRDT snapshots and document metadata
+- Cognito for authentication
+- CloudWatch for metrics and monitoring
+- EventBridge for decoupled event processing
+- Lambda for snapshot persistence and message review
 
 ---
 
-*Stack analysis: 2026-03-02*
+*Stack analysis: 2026-04-12*

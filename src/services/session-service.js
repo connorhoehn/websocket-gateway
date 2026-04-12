@@ -16,12 +16,12 @@ class SessionService {
     this.redis = redisClient;
     this.logger = logger;
     this.messageRouter = messageRouter; // For redisAvailable check
+    this.sessionTTL = 24 * 60 * 60; // 24 hours in seconds
     this.localSessionStore = new LRUCache({
       max: 10000, // Max 10K sessions in memory
       ttl: this.sessionTTL * 1000, // Auto-expire after 24hrs (same as Redis TTL)
       updateAgeOnGet: true, // Accessing a session refreshes its TTL
     });
-    this.sessionTTL = 24 * 60 * 60; // 24 hours in seconds
   }
 
   /**
