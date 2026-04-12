@@ -36,6 +36,8 @@ import { PostFeed } from './PostFeed';
 import { ActivityPanel } from './ActivityPanel';
 import { BigBrotherPanel } from './BigBrotherPanel';
 import DocumentEditorPage from './doc-editor/DocumentEditorPage';
+import DocumentListPage from './doc-editor/DocumentListPage';
+import { useDocuments } from '../hooks/useDocuments';
 import type { UseWebSocketReturn } from '../hooks/useWebSocket';
 
 // ---------------------------------------------------------------------------
@@ -247,6 +249,7 @@ export function AppLayout({
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'panels' | 'social' | 'dashboard' | 'doc-editor'>('panels');
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
 
   const {
@@ -256,6 +259,19 @@ export function AppLayout({
     createGroupRoom,
     loading: roomsLoading,
   } = useRooms({ idToken: idToken!, onMessage });
+
+  const {
+    documents,
+    presence: docPresence,
+    loading: docsLoading,
+    createDocument,
+    deleteDocument,
+    refreshDocuments,
+  } = useDocuments({
+    sendMessage,
+    onMessage,
+    connectionState,
+  });
 
   // Track current social channel subscription so we can unsub on room change
   const activeSocialChannelRef = useRef<string | null>(null);
@@ -431,8 +447,23 @@ export function AppLayout({
           </span>
         </div>
 
-        {/* Right: user email + sign out */}
+        {/* Right: dev tools + user email + sign out */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexShrink: 0 }}>
+          <button
+            onClick={() => setShowDevTools(v => !v)}
+            style={{
+              background: showDevTools ? '#f1f5f9' : 'none',
+              border: '1px solid #e2e8f0',
+              borderRadius: 6,
+              padding: '0.25rem 0.75rem',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              color: showDevTools ? '#0f172a' : '#64748b',
+              fontWeight: showDevTools ? 600 : 400,
+            }}
+          >
+            Dev Tools
+          </button>
           {userEmail && (
             <span style={{ fontSize: '0.875rem', color: '#64748b' }}>
               {userEmail}
@@ -498,51 +529,29 @@ export function AppLayout({
             borderBottom: '1px solid #e2e8f0',
             marginBottom: '0.5rem',
           }}>
-            <button
-              onClick={() => setActiveView('panels')}
-              style={{
-                padding: '0.5rem 1rem',
-                border: 'none',
-                borderBottom: activeView === 'panels' ? '2px solid #646cff' : '2px solid transparent',
-                background: 'none',
-                color: activeView === 'panels' ? '#0f172a' : '#64748b',
-                fontWeight: activeView === 'panels' ? 600 : 400,
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-              }}
-            >
-              Previews
-            </button>
-            <button
-              onClick={() => setActiveView('dashboard')}
-              style={{
-                padding: '0.5rem 1rem',
-                border: 'none',
-                borderBottom: activeView === 'dashboard' ? '2px solid #646cff' : '2px solid transparent',
-                background: 'none',
-                color: activeView === 'dashboard' ? '#0f172a' : '#64748b',
-                fontWeight: activeView === 'dashboard' ? 600 : 400,
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-              }}
-            >
-              Live Activity
-            </button>
-            <button
-              onClick={() => setActiveView('doc-editor')}
-              style={{
-                padding: '0.5rem 1rem',
-                border: 'none',
-                borderBottom: activeView === 'doc-editor' ? '2px solid #646cff' : '2px solid transparent',
-                background: 'none',
-                color: activeView === 'doc-editor' ? '#0f172a' : '#64748b',
-                fontWeight: activeView === 'doc-editor' ? 600 : 400,
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-              }}
-            >
-              Document Editor
-            </button>
+            {([
+              ['panels', 'Previews'],
+              ['social', 'Social'],
+              ['dashboard', 'Live Activity'],
+              ['doc-editor', 'Documents'],
+            ] as const).map(([view, label]) => (
+              <button
+                key={view}
+                onClick={() => setActiveView(view)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: 'none',
+                  borderBottom: activeView === view ? '2px solid #646cff' : '2px solid transparent',
+                  background: 'none',
+                  color: activeView === view ? '#0f172a' : '#64748b',
+                  fontWeight: activeView === view ? 600 : 400,
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           {activeView === 'panels' && (
@@ -598,6 +607,18 @@ export function AppLayout({
             />
           </div>
 
+          {/* Activity section */}
+          <ActivityPanel
+            idToken={idToken}
+            sendMessage={sendMessage}
+            onMessage={onMessage}
+            connectionState={connectionState}
+          />
+          </>
+          )}
+
+          {activeView === 'social' && (
+          <>
           {/* Social section card */}
           <SocialPanel idToken={idToken} onMessage={onMessage} />
 
@@ -623,18 +644,92 @@ export function AppLayout({
 
           {/* Posts section */}
           <PostFeed idToken={idToken} roomId={activeRoomId} onMessage={onMessage} />
+          </>
+          )}
 
-          {/* Activity section */}
-          <ActivityPanel
-            idToken={idToken}
-            sendMessage={sendMessage}
-            onMessage={onMessage}
-            connectionState={connectionState}
-          />
+          {activeView === 'dashboard' && (
+            <BigBrotherPanel
+              rooms={rooms}
+              presenceUsers={presenceUsers}
+              activityEvents={activityEvents}
+              activityIsLive={activityIsLive}
+            />
+          )}
 
-          {/* Dev Tools section */}
-          <div style={sectionCardStyle}>
-            <p style={sectionHeaderStyle}>Dev Tools</p>
+          {activeView === 'doc-editor' && !activeDocumentId && (
+            <DocumentListPage
+              documents={documents}
+              presence={docPresence}
+              onOpenDocument={(id: string) => setActiveDocumentId(id)}
+              onCreateDocument={createDocument}
+              onDeleteDocument={deleteDocument}
+              onJumpToUser={(docId: string, _userId: string) => {
+                setActiveDocumentId(docId);
+                // Jump-to-user logic handled after mount by DocumentEditorPage
+              }}
+            />
+          )}
+
+          {activeView === 'doc-editor' && activeDocumentId && (
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <DocumentEditorPage
+                documentId={activeDocumentId}
+                ws={ws}
+                userId={userId}
+                displayName={displayName}
+                onMessage={onMessage}
+                activityPublish={activityPublish}
+                activityEvents={activityEvents}
+                onBack={() => setActiveDocumentId(null)}
+              />
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Dev Tools slide-out panel */}
+      {showDevTools && (
+        <div style={{
+          position: 'fixed',
+          top: 53,
+          right: 0,
+          bottom: 0,
+          width: 480,
+          background: '#ffffff',
+          borderLeft: '1px solid #e2e8f0',
+          boxShadow: '-4px 0 12px rgba(0,0,0,0.08)',
+          zIndex: 900,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.75rem 1rem',
+            borderBottom: '1px solid #e2e8f0',
+          }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a' }}>
+              Dev Tools
+            </span>
+            <button
+              onClick={() => setShowDevTools(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1.25rem',
+                color: '#94a3b8',
+                lineHeight: 1,
+                padding: '0 4px',
+              }}
+            >
+              x
+            </button>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
             <ErrorDisplay error={lastError} />
             <ErrorPanel errors={errors} />
             <TabbedEventLog entries={logEntries} />
@@ -649,34 +744,8 @@ export function AppLayout({
               clientId: {clientId ?? '—'} | sessionToken: {sessionToken ? sessionToken.slice(0, 8) + '…' : '—'}
             </div>
           </div>
-          </>
-          )}
-
-          {activeView === 'dashboard' && (
-            <BigBrotherPanel
-              rooms={rooms}
-              presenceUsers={presenceUsers}
-              activityEvents={activityEvents}
-              activityIsLive={activityIsLive}
-            />
-          )}
-
-          {activeView === 'doc-editor' && (
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <DocumentEditorPage
-                documentId="demo-q2-sprint"
-                ws={ws}
-                userId={userId}
-                displayName={displayName}
-                onMessage={onMessage}
-                activityPublish={activityPublish}
-                activityEvents={activityEvents}
-              />
-            </div>
-          )}
-
         </div>
-      </div>
+      )}
     </div>
   );
 }

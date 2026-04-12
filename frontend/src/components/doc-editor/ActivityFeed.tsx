@@ -134,21 +134,22 @@ function eventIcon(eventType: string): string {
 
 /** Map event type + detail to human-readable description */
 function eventDescription(eventType: string, detail: Record<string, unknown>): string {
+  const docCtx = detail.documentTitle ? ` in ${detail.documentTitle}` : '';
   switch (eventType) {
     case 'doc.ack':
-      return `acknowledged "${(detail.itemText as string) || 'item'}"`;
+      return `acknowledged "${(detail.itemText as string) || 'item'}"${docCtx}`;
     case 'doc.reject':
-      return `rejected "${(detail.itemText as string) || 'item'}"`;
+      return `rejected "${(detail.itemText as string) || 'item'}"${docCtx}`;
     case 'doc.add_item':
-      return `added task in "${(detail.sectionTitle as string) || 'section'}"`;
+      return `added task in "${(detail.sectionTitle as string) || 'section'}"${docCtx}`;
     case 'doc.add_section':
-      return 'added new section';
+      return `added new section${docCtx}`;
     case 'doc.edit_section':
-      return `edited "${(detail.sectionTitle as string) || 'section'}"`;
+      return `edited "${(detail.sectionTitle as string) || 'section'}"${docCtx}`;
     case 'doc.remove_item':
-      return `removed "${(detail.itemText as string) || 'item'}"`;
+      return `removed "${(detail.itemText as string) || 'item'}"${docCtx}`;
     case 'doc.comment':
-      return `commented: "${(detail.text as string) || '...'}"`;
+      return `commented: "${(detail.text as string) || '...'}"${docCtx}`;
     default:
       // For social.* or unknown events, use detail.description if available
       if (detail.description) return String(detail.description);

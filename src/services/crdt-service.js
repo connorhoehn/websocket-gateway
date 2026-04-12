@@ -4,6 +4,7 @@
  * Provides low-latency (<50ms) operation broadcasting via Redis pub/sub
  */
 
+const crypto = require('crypto');
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { DynamoDBClient, PutItemCommand, QueryCommand, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -65,6 +66,16 @@ class CRDTService {
         if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
             this._ensureTable().catch(err => this.logger.error('Failed to ensure DynamoDB table:', err.message));
         }
+
+        // Document metadata: in-memory fallback when Redis is unavailable
+        this.docMetaFallback = new Map(); // documentId -> meta object
+        this.docListFallback = [];        // sorted array of { id, updatedAt }
+
+        // Default icons by document type
+        this.TYPE_ICONS = {
+            meeting: '\u{1F4DD}', sprint: '\u{1F680}', design: '\u{1F3A8}', project: '\u{1F4CB}',
+            decision: '\u2696\uFE0F', retro: '\u{1F504}', custom: '\u{1F4C4}',
+        };
     }
 
     async _ensureTable() {
@@ -182,6 +193,16 @@ class CRDTService {
                     return await this.handleRestoreSnapshot(clientId, data);
                 case 'clearDocument':
                     return await this.handleClearDocument(clientId, data);
+                case 'listDocuments':
+                    return await this.handleListDocuments(clientId, data);
+                case 'createDocument':
+                    return await this.handleCreateDocument(clientId, data);
+                case 'deleteDocument':
+                    return await this.handleDeleteDocument(clientId, data);
+                case 'updateDocumentMeta':
+                    return await this.handleUpdateDocumentMeta(clientId, data);
+                case 'getDocumentPresence':
+                    return await this.handleGetDocumentPresence(clientId, data);
                 default:
                     this.sendError(clientId, `Unknown CRDT action: ${action}`);
             }
@@ -885,6 +906,294 @@ class CRDTService {
         } catch (error) {
             this.logger.error(`Error clearing document for channel ${channel}:`, error);
             this.sendError(clientId, 'Failed to clear document');
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Document metadata CRUD helpers
+    // -----------------------------------------------------------------
+
+    /**
+     * List all documents, returning metadata for each.
+     */
+    async handleListDocuments(clientId, _data) {
+        try {
+            let documents = [];
+
+            if (this._isRedisAvailable()) {
+                // Read document IDs from sorted set (newest first)
+                const docIds = await this.redisClient.zRange('doc:list', 0, -1, { REV: true });
+                if (docIds && docIds.length > 0) {
+                    const metas = await Promise.all(
+                        docIds.map(id => this.redisClient.get(`doc:meta:${id}`))
+                    );
+                    documents = metas
+                        .filter(Boolean)
+                        .map(raw => JSON.parse(raw));
+                }
+            } else {
+                // In-memory fallback
+                documents = [...this.docMetaFallback.values()]
+                    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            }
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentList',
+                documents,
+            });
+
+            this.logger.info(`Listed ${documents.length} documents for client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error listing documents for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to list documents');
+        }
+    }
+
+    /**
+     * Create a new document with metadata stored in Redis (or in-memory fallback).
+     */
+    async handleCreateDocument(clientId, data) {
+        try {
+            const meta = data.meta || {};
+            if (!meta.title || typeof meta.title !== 'string' || meta.title.trim().length === 0) {
+                this.sendError(clientId, 'Document title is required');
+                return;
+            }
+
+            const documentId = crypto.randomUUID();
+            const now = new Date().toISOString();
+            const docType = meta.type || 'custom';
+
+            // Resolve creator info from client context
+            let createdBy = 'unknown';
+            try {
+                const clientData = this.messageRouter.getClientData(clientId);
+                if (clientData && clientData.userContext) {
+                    createdBy = clientData.userContext.userId || clientData.userContext.sub || 'unknown';
+                }
+            } catch (_) { /* use default */ }
+
+            const document = {
+                id: documentId,
+                title: meta.title.trim(),
+                type: docType,
+                status: 'draft',
+                createdBy,
+                createdAt: now,
+                updatedAt: now,
+                icon: meta.icon || this.TYPE_ICONS[docType] || this.TYPE_ICONS.custom,
+                description: meta.description || '',
+            };
+
+            if (this._isRedisAvailable()) {
+                await this.redisClient.set(`doc:meta:${documentId}`, JSON.stringify(document));
+                await this.redisClient.zAdd('doc:list', { score: Date.now(), value: documentId });
+
+                // Broadcast to activity channel so other users see the new doc
+                try {
+                    await this.redisClient.publish('activity:broadcast', JSON.stringify({
+                        type: 'activity',
+                        event: 'doc.created',
+                        documentId,
+                        title: document.title,
+                        createdBy,
+                        timestamp: now,
+                    }));
+                } catch (pubErr) {
+                    this.logger.error('Failed to publish doc.created activity:', pubErr.message);
+                }
+            } else {
+                // In-memory fallback
+                this.docMetaFallback.set(documentId, document);
+                this.docListFallback.push({ id: documentId, updatedAt: Date.now() });
+                this.docListFallback.sort((a, b) => b.updatedAt - a.updatedAt);
+            }
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentCreated',
+                document,
+            });
+
+            this.logger.info(`Document created: ${documentId} (${document.title}) by client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error creating document for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to create document');
+        }
+    }
+
+    /**
+     * Delete a document and clean up its CRDT channel state.
+     */
+    async handleDeleteDocument(clientId, data) {
+        try {
+            const { documentId } = data;
+            if (!documentId || typeof documentId !== 'string') {
+                this.sendError(clientId, 'documentId is required');
+                return;
+            }
+
+            if (this._isRedisAvailable()) {
+                await this.redisClient.del(`doc:meta:${documentId}`);
+                await this.redisClient.zRem('doc:list', documentId);
+            } else {
+                this.docMetaFallback.delete(documentId);
+                this.docListFallback = this.docListFallback.filter(e => e.id !== documentId);
+            }
+
+            // Clean up in-memory CRDT channel state if it exists
+            const channelKey = `doc:${documentId}`;
+            const state = this.channelStates.get(channelKey);
+            if (state) {
+                if (state.ydoc) {
+                    state.ydoc.destroy();
+                }
+                this.channelStates.delete(channelKey);
+            }
+
+            // Also remove snapshot debounce timer if pending
+            const debounceTimer = this.snapshotDebounceTimers.get(channelKey);
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                this.snapshotDebounceTimers.delete(channelKey);
+            }
+
+            // Remove Redis snapshot cache if available
+            if (this._isRedisAvailable()) {
+                try {
+                    await this.redisClient.del(`crdt:snapshot:${channelKey}`);
+                } catch (_) { /* best effort */ }
+            }
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentDeleted',
+                documentId,
+            });
+
+            this.logger.info(`Document deleted: ${documentId} by client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error deleting document ${data.documentId} for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to delete document');
+        }
+    }
+
+    /**
+     * Update metadata fields on an existing document.
+     */
+    async handleUpdateDocumentMeta(clientId, data) {
+        try {
+            const { documentId, meta } = data;
+            if (!documentId || typeof documentId !== 'string') {
+                this.sendError(clientId, 'documentId is required');
+                return;
+            }
+            if (!meta || typeof meta !== 'object') {
+                this.sendError(clientId, 'meta object is required');
+                return;
+            }
+
+            let existing = null;
+
+            if (this._isRedisAvailable()) {
+                const raw = await this.redisClient.get(`doc:meta:${documentId}`);
+                if (!raw) {
+                    this.sendError(clientId, 'Document not found');
+                    return;
+                }
+                existing = JSON.parse(raw);
+            } else {
+                existing = this.docMetaFallback.get(documentId);
+                if (!existing) {
+                    this.sendError(clientId, 'Document not found');
+                    return;
+                }
+                existing = { ...existing }; // shallow copy for safe merge
+            }
+
+            // Merge only allowed fields
+            const allowedFields = ['title', 'status', 'description', 'icon', 'type'];
+            for (const field of allowedFields) {
+                if (meta[field] !== undefined) {
+                    existing[field] = meta[field];
+                }
+            }
+            existing.updatedAt = new Date().toISOString();
+
+            if (this._isRedisAvailable()) {
+                await this.redisClient.set(`doc:meta:${documentId}`, JSON.stringify(existing));
+                await this.redisClient.zAdd('doc:list', { score: Date.now(), value: documentId });
+            } else {
+                this.docMetaFallback.set(documentId, existing);
+                const entry = this.docListFallback.find(e => e.id === documentId);
+                if (entry) entry.updatedAt = Date.now();
+                this.docListFallback.sort((a, b) => b.updatedAt - a.updatedAt);
+            }
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentMetaUpdated',
+                document: existing,
+            });
+
+            this.logger.info(`Document metadata updated: ${documentId} by client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error updating document meta ${data.documentId} for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to update document metadata');
+        }
+    }
+
+    /**
+     * Return aggregated presence for all document channels.
+     * Iterates channelStates and extracts awareness data for channels starting with 'doc:'.
+     */
+    async handleGetDocumentPresence(clientId, _data) {
+        try {
+            const presence = {};
+
+            for (const [channelId, state] of this.channelStates.entries()) {
+                if (!channelId.startsWith('doc:')) continue;
+
+                // Extract awareness states from the Y.Doc if any awareness data exists
+                const users = [];
+
+                // The message router tracks which clients are subscribed to which channels.
+                // We can pull client metadata to build a presence list.
+                if (this.messageRouter && typeof this.messageRouter.getChannelClients === 'function') {
+                    const clientIds = this.messageRouter.getChannelClients(channelId);
+                    if (clientIds) {
+                        for (const cid of clientIds) {
+                            try {
+                                const cd = this.messageRouter.getClientData(cid);
+                                if (cd && cd.userContext) {
+                                    users.push({
+                                        userId: cd.userContext.userId || cd.userContext.sub || cid,
+                                        displayName: cd.userContext.displayName || cd.userContext.email || 'Anonymous',
+                                        color: cd.userContext.color || null,
+                                        mode: 'editing',
+                                    });
+                                }
+                            } catch (_) { /* skip */ }
+                        }
+                    }
+                }
+
+                if (users.length > 0) {
+                    presence[channelId] = users;
+                }
+            }
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentPresence',
+                presence,
+            });
+
+            this.logger.debug(`Document presence sent to client ${clientId}: ${Object.keys(presence).length} channels`);
+        } catch (error) {
+            this.logger.error(`Error getting document presence for client ${clientId}:`, error);
+            this.sendError(clientId, 'Failed to get document presence');
         }
     }
 

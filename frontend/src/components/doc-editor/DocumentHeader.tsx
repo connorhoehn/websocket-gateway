@@ -17,6 +17,9 @@ interface DocumentHeaderProps {
   onClearDocument: () => void;
   onJumpToUser?: (participant: Participant) => void;
   sections?: { id: string; title: string }[];
+  onToggleMyItems?: () => void;
+  myItemCount?: number;
+  onBack?: () => void;
 }
 
 const headerStyle: React.CSSProperties = {
@@ -149,13 +152,27 @@ export default function DocumentHeader({
   onClearDocument,
   onJumpToUser,
   sections,
+  onToggleMyItems,
+  myItemCount,
+  onBack,
 }: DocumentHeaderProps) {
   const [showExport, setShowExport] = useState(false);
 
   return (
     <header style={headerStyle}>
-      {/* Left: title + status */}
-      <div style={leftStyle}>
+      {/* Left: breadcrumb + title + status */}
+      <div style={{ ...leftStyle, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+        {onBack && (
+          <button onClick={onBack} style={{
+            background: 'none', border: 'none', color: '#3b82f6',
+            cursor: 'pointer', fontSize: 13, padding: '2px 0',
+            display: 'flex', alignItems: 'center', gap: 4,
+            fontFamily: 'inherit',
+          }}>
+            &larr; Documents
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <input
           style={titleInput}
           value={meta.title}
@@ -174,6 +191,7 @@ export default function DocumentHeader({
             Auto-saved
           </span>
         )}
+        </div>
       </div>
 
       {/* Center: mode selector */}
@@ -193,6 +211,13 @@ export default function DocumentHeader({
       {/* Right: participants + export */}
       <div style={rightStyle}>
         <ParticipantAvatars participants={participants} sections={sections} onJumpToUser={onJumpToUser} />
+        <button
+          type="button"
+          style={exportBtnStyle}
+          onClick={onToggleMyItems}
+        >
+          My Items{myItemCount ? ` (${myItemCount})` : ''}
+        </button>
         <button
           type="button"
           style={{

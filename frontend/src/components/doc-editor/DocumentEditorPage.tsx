@@ -13,12 +13,32 @@ import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { parseMarkdownToSections } from '../../utils/markdownParser';
 import { exportToMarkdown } from '../../utils/documentExport';
 import { DEMO_MARKDOWN } from '../../utils/demoDocument';
+import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
 import DocumentHeader from './DocumentHeader';
 import VersionHistoryPanel from './VersionHistoryPanel';
+import MyMentionsPanel from './MyMentionsPanel';
 import AckMode from './AckMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
 import ActivityFeed from './ActivityFeed';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract plain text from a Y.XmlFragment.
+ * XmlFragment.toString() returns XML-like markup (e.g. `<paragraph>text</paragraph>`).
+ * This strips the tags while preserving line breaks between block-level elements.
+ */
+function xmlFragmentToText(frag: { toString(): string }): string {
+  const xml = frag.toString();
+  return xml
+    .replace(/<\/?(paragraph|heading|blockquote|codeBlock|bulletList|orderedList|listItem|taskList|taskItem|horizontalRule|hardBreak|doc)[^>]*>/g, '\n')
+    .replace(/<[^>]+>/g, '')       // strip remaining inline tags (bold, italic, etc.)
+    .replace(/\n{3,}/g, '\n\n')    // collapse excessive newlines
+    .trim();
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -33,6 +53,7 @@ export interface DocumentEditorPageProps {
   onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
   activityPublish: (eventType: string, detail: Record<string, unknown>) => void;
   activityEvents: import('../../hooks/useActivityBus').ActivityEvent[];
+  onBack?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,9 +82,11 @@ export default function DocumentEditorPage({
   onMessage,
   activityPublish,
   activityEvents,
+  onBack,
 }: DocumentEditorPageProps) {
   const [mode, setMode] = useState<ViewMode>(getInitialMode);
   const [showHistory, setShowHistory] = useState(false);
+  const [showMyItems, setShowMyItems] = useState(false);
 
   const {
     meta,
@@ -83,6 +106,8 @@ export default function DocumentEditorPage({
     participants,
     comments,
     addComment: addYjsComment,
+    resolveThread,
+    unresolveThread,
   } = useCollaborativeDoc({
     documentId,
     mode,
@@ -149,22 +174,22 @@ export default function DocumentEditorPage({
     const section = sections.find(s => s.id === sectionId);
     const item = section?.items.find(i => i.id === itemId);
     ackItem(sectionId, itemId, displayName);
-    activityPublish('doc.ack', { itemText: item?.text, sectionId });
-  }, [ackItem, displayName, sections, activityPublish]);
+    activityPublish('doc.ack', { itemText: item?.text, sectionId, documentId, documentTitle: meta?.title });
+  }, [ackItem, displayName, sections, activityPublish, documentId, meta?.title]);
 
   const handleRejectItem = useCallback((sectionId: string, itemId: string) => {
     const section = sections.find(s => s.id === sectionId);
     const item = section?.items.find(i => i.id === itemId);
     rejectItem(sectionId, itemId, displayName);
-    activityPublish('doc.reject', { itemText: item?.text, sectionId });
-  }, [rejectItem, displayName, sections, activityPublish]);
+    activityPublish('doc.reject', { itemText: item?.text, sectionId, documentId, documentTitle: meta?.title });
+  }, [rejectItem, displayName, sections, activityPublish, documentId, meta?.title]);
 
   const handleAddItem = useCallback((sectionId: string, item: Omit<import('../../types/document').TaskItem, 'id'>) => {
     const id = crypto.randomUUID();
     addItem(sectionId, { ...item, id });
     const section = sections.find(s => s.id === sectionId);
-    activityPublish('doc.add_item', { sectionTitle: section?.title });
-  }, [addItem, sections, activityPublish]);
+    activityPublish('doc.add_item', { sectionTitle: section?.title, documentId, documentTitle: meta?.title });
+  }, [addItem, sections, activityPublish, documentId, meta?.title]);
 
   const handleAddSection = useCallback(() => {
     addSection({
@@ -174,8 +199,8 @@ export default function DocumentEditorPage({
       collapsed: false,
       items: [],
     });
-    activityPublish('doc.add_section', {});
-  }, [addSection, activityPublish]);
+    activityPublish('doc.add_section', { documentId, documentTitle: meta?.title });
+  }, [addSection, activityPublish, documentId, meta?.title]);
 
   // ------ Section focus (awareness) ----------------------------------------
 
@@ -203,8 +228,65 @@ export default function DocumentEditorPage({
       color,
       parentCommentId: parentCommentId ?? null,
     });
-    activityPublish('doc.comment', { sectionId, text: text.slice(0, 50) });
-  }, [addYjsComment, userId, displayName, color, activityPublish]);
+    activityPublish('doc.comment', { sectionId, text: text.slice(0, 50), documentId, documentTitle: meta?.title });
+
+    // Extract @mentions and publish targeted mention events
+    const mentionMatches = text.match(/@[A-Z][a-zA-Z]*(?:\s[A-Z][a-zA-Z]*)*/g);
+    if (mentionMatches && mentionMatches.length > 0) {
+      const mentionedNames = mentionMatches.map(m => m.slice(1).trim());
+      const section = sections.find(s => s.id === sectionId);
+      activityPublish('doc.mention', {
+        sectionId,
+        sectionTitle: section?.title ?? '',
+        mentionedNames,
+        commentText: text.slice(0, 80),
+        authorName: displayName,
+        documentId,
+        documentTitle: meta?.title,
+      });
+    }
+  }, [addYjsComment, userId, displayName, color, activityPublish, sections, documentId, meta?.title]);
+
+  const handleResolveThread = useCallback((sectionId: string, commentId: string) => {
+    resolveThread(sectionId, commentId, displayName);
+    activityPublish('doc.resolve_thread', { sectionId, commentId, documentId, documentTitle: meta?.title });
+  }, [resolveThread, displayName, activityPublish, documentId, meta?.title]);
+
+  const handleUnresolveThread = useCallback((sectionId: string, commentId: string) => {
+    unresolveThread(sectionId, commentId);
+    activityPublish('doc.unresolve_thread', { sectionId, commentId, documentId, documentTitle: meta?.title });
+  }, [unresolveThread, activityPublish, documentId, meta?.title]);
+
+  // ------ My mentions & tasks -----------------------------------------------
+
+  const myItems = useMyMentionsAndTasks({ sections, comments, displayName, userId });
+
+  const handleNavigateToSection = useCallback((sectionId: string) => {
+    if (mode === 'ack') {
+      const idx = sections.findIndex(s => s.id === sectionId);
+      if (idx >= 0) setJumpToSectionIndex(idx);
+      return;
+    }
+    setTimeout(() => {
+      const el = document.getElementById(`section-${sectionId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s ease';
+        el.style.boxShadow = '0 0 0 3px #3b82f640';
+        setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+      }
+    }, 150);
+  }, [mode, sections]);
+
+  const handleToggleMyItems = useCallback(() => {
+    setShowMyItems(v => !v);
+    setShowHistory(false);
+  }, []);
+
+  const handleToggleHistory = useCallback(() => {
+    setShowHistory(v => !v);
+    setShowMyItems(false);
+  }, []);
 
   // ------ Version history --------------------------------------------------
 
@@ -275,11 +357,15 @@ export default function DocumentEditorPage({
     const data = exportJSON();
     if (!data) return;
 
-    // Enrich sections with rich-text content from Y.XmlFragment
+    // Enrich sections with rich-text content and comments
     for (const section of data.sections) {
       const frag = getSectionFragment(section.id);
       if (frag) {
-        (section as any).contentText = frag.toString();
+        (section as any).contentText = xmlFragmentToText(frag);
+      }
+      const sectionComments = comments[section.id];
+      if (sectionComments && sectionComments.length > 0) {
+        (section as any).comments = sectionComments;
       }
     }
 
@@ -331,10 +417,13 @@ export default function DocumentEditorPage({
         participants={participants}
         onUpdateMeta={updateMeta}
         onExport={handleExport}
-        onToggleHistory={() => setShowHistory((v) => !v)}
+        onToggleHistory={handleToggleHistory}
         onClearDocument={handleClearDocument}
         onJumpToUser={handleJumpToUser}
         sections={sections.map(s => ({ id: s.id, title: s.title }))}
+        onToggleMyItems={handleToggleMyItems}
+        myItemCount={myItems.length}
+        onBack={onBack}
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
         {/* Show demo loader when document is empty */}
@@ -389,6 +478,8 @@ export default function DocumentEditorPage({
               focusedSectionId={focusedSectionId}
               comments={comments}
               onAddComment={handleAddComment}
+              onResolveThread={handleResolveThread}
+              onUnresolveThread={handleUnresolveThread}
             />
           </div>
         )}
@@ -406,6 +497,10 @@ export default function DocumentEditorPage({
             getSectionFragment={getSectionFragment}
             ydoc={ydoc}
             provider={provider}
+            comments={comments}
+            onAddComment={handleAddComment}
+            onResolveThread={handleResolveThread}
+            onUnresolveThread={handleUnresolveThread}
           />
         )}
 
@@ -418,6 +513,13 @@ export default function DocumentEditorPage({
             commentCounts={Object.fromEntries(
               Object.entries(comments).map(([id, arr]) => [id, arr.length]),
             )}
+            sectionContentTexts={Object.fromEntries(
+              sections.map(s => {
+                const frag = getSectionFragment(s.id);
+                return [s.id, frag ? xmlFragmentToText(frag) : ''];
+              }),
+            )}
+            comments={comments}
           />
         )}
 
@@ -440,6 +542,15 @@ export default function DocumentEditorPage({
           onRestore={versionHistory.restoreVersion}
           onClearPreview={versionHistory.clearPreview}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {/* My mentions & tasks sidebar */}
+      {showMyItems && (
+        <MyMentionsPanel
+          items={myItems}
+          onNavigateToSection={handleNavigateToSection}
+          onClose={() => setShowMyItems(false)}
         />
       )}
     </div>
