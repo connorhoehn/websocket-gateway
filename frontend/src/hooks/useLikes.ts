@@ -86,7 +86,7 @@ export function useLikes({ idToken, roomId, postId, commentId, onMessage }: UseL
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, roomId, postId, commentId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, commentId, baseUrl]);  
 
   // ---- WS handler: social:like --------------------------------------------
 
@@ -99,7 +99,7 @@ export function useLikes({ idToken, roomId, postId, commentId, onMessage }: UseL
     });
 
     return unregister;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ---- toggle --------------------------------------------------------------
 
@@ -136,7 +136,7 @@ export function useLikes({ idToken, roomId, postId, commentId, onMessage }: UseL
     } finally {
       setLoading(false);
     }
-  }, [idToken, roomId, postId, commentId, isLiked, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, commentId, isLiked, baseUrl]);  
 
   // ---- reactWithEmoji ------------------------------------------------------
 
@@ -156,7 +156,7 @@ export function useLikes({ idToken, roomId, postId, commentId, onMessage }: UseL
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, roomId, postId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, baseUrl]);  
 
   return { isLiked, likeCount, whoLiked, toggle, reactWithEmoji, loading, error };
 }

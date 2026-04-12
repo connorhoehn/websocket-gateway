@@ -96,8 +96,12 @@ export default function DocumentEditorPage({
   // ------ Focus tracking + jump-to-user ------------------------------------
 
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
+  // For Review mode: jump to a specific section page
+  const [jumpToSectionIndex, setJumpToSectionIndex] = useState<number | null>(null);
 
   const handleJumpToUser = useCallback((participant: Participant) => {
+    const isActive = participant.lastSeen && (Date.now() - participant.lastSeen) < 30000; // active within 30s
+
     // Switch to the same mode the participant is in
     const targetMode: ViewMode =
       participant.mode === 'reviewer' ? 'ack' :
@@ -112,19 +116,31 @@ export default function DocumentEditorPage({
       }
     }
 
-    // Scroll to their section after a short delay (allow mode switch to render)
-    if (participant.currentSectionId) {
-      setTimeout(() => {
-        const el = document.getElementById(`section-${participant.currentSectionId}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!participant.currentSectionId) return;
+
+    // For Review mode: find section index and navigate to that page
+    if (targetMode === 'ack') {
+      const idx = sections.findIndex(s => s.id === participant.currentSectionId);
+      if (idx >= 0) {
+        setJumpToSectionIndex(idx);
+      }
+      return;
+    }
+
+    // For Editor/Read mode: scroll to section (only if user is active)
+    setTimeout(() => {
+      const el = document.getElementById(`section-${participant.currentSectionId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (isActive) {
+          // Radial flash effect to draw attention
           el.style.transition = 'box-shadow 0.3s ease';
           el.style.boxShadow = `0 0 0 3px ${participant.color}40`;
           setTimeout(() => { el.style.boxShadow = ''; }, 2000);
         }
-      }, 100);
-    }
-  }, [mode]);
+      }
+    }, 150);
+  }, [mode, sections]);
 
   // ------ Activity helpers --------------------------------------------------
 
@@ -385,6 +401,8 @@ export default function DocumentEditorPage({
             onRejectItem={handleRejectItem}
             participants={participants}
             onSectionFocus={handleSectionFocus}
+            jumpToIndex={jumpToSectionIndex}
+            onJumpComplete={() => setJumpToSectionIndex(null)}
           />
         )}
 

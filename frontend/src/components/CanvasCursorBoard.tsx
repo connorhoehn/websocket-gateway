@@ -83,6 +83,7 @@ function addTrail(
 
 interface CanvasCursorBoardProps {
   cursors: Map<string, RemoteCursor>;
+  localCursor?: RemoteCursor | null;
   onMouseMove: (x: number, y: number, tool: CanvasTool, color: string, size: number) => void;
   width?: number;
   height?: number;
@@ -90,6 +91,7 @@ interface CanvasCursorBoardProps {
 
 export function CanvasCursorBoard({
   cursors,
+  localCursor,
   onMouseMove,
   width = 600,
   height = 300,
@@ -218,6 +220,63 @@ export function CanvasCursorBoard({
         >
           Move your mouse here (canvas mode)
         </span>
+
+        {/* Local canvas cursor */}
+        {localCursor && (localCursor.metadata.mode as string) === 'canvas' && (() => {
+          const lx = localCursor.position.x as number;
+          const ly = localCursor.position.y as number;
+          const localTool = (localCursor.metadata.tool as CanvasTool | undefined) ?? 'brush';
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                left: lx,
+                top: ly,
+                transform: 'translate(-50%, -50%)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                zIndex: 11,
+                pointerEvents: 'none',
+                userSelect: 'none',
+                opacity: 0.7,
+              }}
+            >
+              <div
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: '#3b82f6',
+                  border: '2px dashed white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: 9,
+                  fontWeight: 'bold',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                }}
+              >
+                You
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  marginTop: 2,
+                  color: 'white',
+                  background: '#3b82f6',
+                  opacity: 0.85,
+                  borderRadius: 3,
+                  padding: '1px 4px',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                You ({localTool})
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Remote canvas cursors */}
         {canvasCursors.map((cursor) => {

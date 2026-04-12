@@ -13,6 +13,9 @@ interface AckModeProps {
   onRejectItem: (sectionId: string, itemId: string, reason: string) => void;
   participants: Participant[];
   onSectionFocus?: (sectionId: string) => void;
+  /** Jump to a specific section page (set by handleJumpToUser) */
+  jumpToIndex?: number | null;
+  onJumpComplete?: () => void;
 }
 
 const navStyle: React.CSSProperties = {
@@ -41,10 +44,18 @@ const emptyStyle: React.CSSProperties = {
   fontSize: 15,
 };
 
-export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus }: AckModeProps) {
+export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus, jumpToIndex, onJumpComplete }: AckModeProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const section = sections.length > 0 ? sections[currentIndex] : null;
+
+  // Handle jump-to-index from handleJumpToUser
+  useEffect(() => {
+    if (jumpToIndex != null && jumpToIndex >= 0 && jumpToIndex < sections.length) {
+      setCurrentIndex(jumpToIndex);
+      onJumpComplete?.();
+    }
+  }, [jumpToIndex, sections.length, onJumpComplete]);
 
   // Update awareness when the viewed section changes — must be before any early return
   useEffect(() => {

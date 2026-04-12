@@ -85,7 +85,7 @@ export function useComments({ idToken, roomId, postId, onMessage }: UseCommentsO
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, roomId, postId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, baseUrl]);  
 
   // ---- WS handler: social:comment -----------------------------------------
 
@@ -106,7 +106,7 @@ export function useComments({ idToken, roomId, postId, onMessage }: UseCommentsO
     });
 
     return unregister;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ---- createComment -------------------------------------------------------
 
@@ -136,7 +136,7 @@ export function useComments({ idToken, roomId, postId, onMessage }: UseCommentsO
     } finally {
       setLoading(false);
     }
-  }, [idToken, roomId, postId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, baseUrl]);  
 
   // ---- deleteComment -------------------------------------------------------
 
@@ -156,7 +156,7 @@ export function useComments({ idToken, roomId, postId, onMessage }: UseCommentsO
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, roomId, postId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, postId, baseUrl]);  
 
   return { comments, createComment, deleteComment, loading, error };
 }

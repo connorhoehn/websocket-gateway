@@ -25,26 +25,21 @@ const EMOJIS = ['❤️', '😂', '👍', '👎', '😮', '😢', '😡', '🎉'
 
 export function ReactionButtons({ onReact, disabled = false }: Props) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '0.25rem',
-      }}
-    >
+    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
       {EMOJIS.map((emoji) => (
         <button
           key={emoji}
           onClick={() => onReact(emoji)}
           disabled={disabled}
           style={{
-            fontSize: '1.25rem',
+            fontSize: '1.125rem',
             background: 'none',
-            border: 'none',
+            border: '1px solid #e2e8f0',
+            borderRadius: 6,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            padding: '0.25rem 0.5rem',
-            opacity: disabled ? 0.5 : 1,
-            transition: 'opacity 0.2s',
+            padding: '0.2rem 0.4rem',
+            opacity: disabled ? 0.4 : 1,
+            lineHeight: 1,
           }}
           title={emoji}
         >

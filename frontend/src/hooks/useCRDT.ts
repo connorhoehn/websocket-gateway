@@ -13,6 +13,19 @@ import * as Y from 'yjs';
 import { encodeStateAsUpdate, applyUpdate } from 'yjs';
 import type { ConnectionState, GatewayMessage } from '../types/gateway';
 
+// Browser-compatible base64 helpers (no Node.js Buffer)
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function bytesToB64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -44,8 +57,11 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
 
   // ---- Y.Doc refs ----------------------------------------------------------
   // Y.Doc lives in a ref — stable across renders, one doc per hook instance.
-  const ydoc = useRef<Y.Doc>(new Y.Doc());
-  const ytext = useRef<Y.Text>(ydoc.current.getText('content'));
+  // Use a lazy initializer via useState to avoid reading refs during render.
+  const [ydocInstance] = useState(() => new Y.Doc());
+  const ydoc = useRef<Y.Doc>(ydocInstance);
+  const [ytextInstance] = useState(() => ydocInstance.getText('content'));
+  const ytext = useRef<Y.Text>(ytextInstance);
 
   // ---- Stable refs for closures --------------------------------------------
   const sendMessageRef = useRef(sendMessage);
@@ -72,7 +88,7 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
         if (!snapshotB64) return;
 
         try {
-          const bytes = Buffer.from(snapshotB64, 'base64');
+          const bytes = b64ToBytes(snapshotB64);
           applyUpdate(ydoc.current, bytes);
           setContent(ytext.current.toString());
         } catch {
@@ -89,7 +105,7 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
         if (!updateB64) return;
 
         try {
-          const bytes = Buffer.from(updateB64, 'base64');
+          const bytes = b64ToBytes(updateB64);
           applyUpdate(ydoc.current, bytes);
           setContent(ytext.current.toString());
         } catch {
@@ -111,12 +127,12 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
 
     // Reset Y.Doc on each new subscription so stale state from the previous
     // channel or session is cleared. Register a fresh observer on the new doc.
-    setHasConflict(false);
+    setHasConflict(false); // eslint-disable-line react-hooks/set-state-in-effect
     ydoc.current.destroy();
     ydoc.current = new Y.Doc();
     ytext.current = ydoc.current.getText('content');
     ytext.current.observe(() => setContent(ytext.current.toString()));
-    setContent('');
+    setContent('');  
 
     // CRDT-03: Detect merge conflicts via afterTransaction
     // A "conflict" is when a remote transaction modifies a doc that already has local content.
@@ -164,14 +180,14 @@ export function useCRDT(options: UseCRDTOptions): UseCRDTReturn {
       ytext.current.insert(0, newText);
     });
     const update = encodeStateAsUpdate(ydoc.current);
-    const b64 = Buffer.from(update).toString('base64');
+    const b64 = bytesToB64(update);
     sendMessageRef.current({
       service: 'crdt',
       action: 'update',
       channel: currentChannelRef.current,
       update: b64,
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
   // All deps accessed via refs — stable callback that never causes re-renders
 
   return { content, applyLocalEdit, hasConflict, dismissConflict };

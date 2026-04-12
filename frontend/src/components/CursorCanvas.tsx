@@ -16,6 +16,7 @@ import { identityToColor, identityToInitials } from '../utils/identity';
 
 interface CursorCanvasProps {
   cursors: Map<string, RemoteCursor>;
+  localCursor?: RemoteCursor | null;
   onMouseMove: (x: number, y: number) => void;
   width?: number;
   height?: number;
@@ -23,6 +24,7 @@ interface CursorCanvasProps {
 
 export function CursorCanvas({
   cursors,
+  localCursor,
   onMouseMove,
   width = 600,
   height = 300,
@@ -65,6 +67,40 @@ export function CursorCanvas({
       >
         Move your mouse here
       </span>
+
+      {/* Local cursor circle */}
+      {localCursor && (localCursor.metadata.mode as string) === 'freeform' && (() => {
+        const lx = localCursor.position.x as number;
+        const ly = localCursor.position.y as number;
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              left: lx,
+              top: ly,
+              transform: 'translate(-50%, -50%)',
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: '#3b82f6',
+              border: '2px dashed white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              fontSize: 9,
+              fontWeight: 'bold',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+              zIndex: 11,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              opacity: 0.8,
+            }}
+          >
+            You
+          </div>
+        );
+      })()}
 
       {/* Remote cursor circles */}
       {Array.from(cursors.values()).map((cursor) => {

@@ -87,7 +87,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl, authHeaders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, authHeaders]);  
 
   // ---- deleteGroup (GRUP-02) -----------------------------------------------
 
@@ -107,7 +107,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- joinGroup -----------------------------------------------------------
 
@@ -123,7 +123,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- leaveGroup ----------------------------------------------------------
 
@@ -140,7 +140,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- inviteUser ----------------------------------------------------------
 
@@ -157,7 +157,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl, authHeaders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, authHeaders]);  
 
   // ---- acceptInvite --------------------------------------------------------
 
@@ -174,7 +174,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl, authHeaders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, authHeaders]);  
 
   // ---- loadMembers ---------------------------------------------------------
 
@@ -194,7 +194,7 @@ export function useGroups({ idToken }: UseGroupsOptions): UseGroupsReturn {
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   return {
     groups,

@@ -96,15 +96,15 @@ export function useReactions(options: UseReactionsOptions): UseReactionsReturn {
     }
 
     // Subscribe to the channel
-    sendMessage({ service: 'reactions', action: 'subscribe', channel: currentChannel });
+    sendMessage({ service: 'reaction', action: 'subscribe', channel: currentChannel });
 
-    // Clear reactions for the new channel (fresh state on channel join)
-    setActiveReactions([]);
+    // Note: reactions are cleared in the cleanup function of the previous
+    // effect iteration, so no need to clear here.
 
     // Cleanup: unsubscribe when channel changes or unmounts
     return () => {
       sendMessageRef.current({
-        service: 'reactions',
+        service: 'reaction',
         action: 'unsubscribe',
         channel: currentChannel,
       });
@@ -118,12 +118,12 @@ export function useReactions(options: UseReactionsOptions): UseReactionsReturn {
   // Stable callback — accesses current channel and sendMessage via refs
   const react = useCallback((emoji: string) => {
     sendMessageRef.current({
-      service: 'reactions',
+      service: 'reaction',
       action: 'react',
       channel: currentChannelRef.current,
       emoji,
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
   // All deps accessed via refs — stable callback that never causes re-renders
 
   return { activeReactions, react };

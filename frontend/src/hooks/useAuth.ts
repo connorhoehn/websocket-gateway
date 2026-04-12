@@ -75,21 +75,51 @@ function scheduleTokenRefresh(
 // Hook
 // ---------------------------------------------------------------------------
 
+const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
+
+// Each browser tab gets a unique dev identity (persisted in sessionStorage).
+const DEV_NAMES = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Hank'];
+function getDevIdentity(): { token: string; email: string } {
+  const KEY = 'dev_identity';
+  const stored = sessionStorage.getItem(KEY);
+  if (stored) return JSON.parse(stored);
+
+  const idx = Math.floor(Math.random() * DEV_NAMES.length);
+  const name = DEV_NAMES[idx];
+  const suffix = Math.random().toString(36).slice(2, 6);
+  const userId = `dev-${name.toLowerCase()}-${suffix}`;
+  const email = `${name.toLowerCase()}@local.dev`;
+  const payload = btoa(JSON.stringify({
+    sub: userId,
+    email,
+    given_name: name,
+    exp: 9999999999,
+  })).replace(/=/g, '');
+  const token = `eyJhbGciOiJub25lIn0.${payload}.dev`;
+  const identity = { token, email };
+  sessionStorage.setItem(KEY, JSON.stringify(identity));
+  return identity;
+}
+
+const DEV_IDENTITY = DEV_BYPASS ? getDevIdentity() : null;
+
 export function useAuth(): UseAuthReturn {
   const [state, setState] = useState<AuthState>({
-    status: 'loading',
-    idToken: null,
-    email: null,
+    status: DEV_BYPASS ? 'authenticated' : 'loading',
+    idToken: DEV_BYPASS ? DEV_IDENTITY!.token : null,
+    email: DEV_BYPASS ? DEV_IDENTITY!.email : null,
     error: null,
   });
 
   // Create a stable userPool instance for the lifetime of this hook instance
   const userPool = useMemo(
-    () =>
-      new CognitoUserPool({
+    () => {
+      if (DEV_BYPASS) return null as unknown as InstanceType<typeof CognitoUserPool>;
+      return new CognitoUserPool({
         UserPoolId: (import.meta.env as Record<string, string>).VITE_COGNITO_USER_POOL_ID ?? '',
         ClientId: (import.meta.env as Record<string, string>).VITE_COGNITO_CLIENT_ID ?? '',
-      }),
+      });
+    },
     []
   );
 
@@ -105,7 +135,7 @@ export function useAuth(): UseAuthReturn {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    userPool.getCurrentUser()?.signOut();
+    userPool?.getCurrentUser()?.signOut();
     localStorage.removeItem(STORAGE_ID_TOKEN);
     localStorage.removeItem(STORAGE_REFRESH_TOKEN);
     localStorage.removeItem(STORAGE_EMAIL);
@@ -119,6 +149,10 @@ export function useAuth(): UseAuthReturn {
   }, [userPool]);
 
   // ── TOKEN REFRESH ──────────────────────────────────────────────────────
+  // Use a ref so the callback can reference itself (scheduleTokenRefresh
+  // passes doRefresh as a callback) without violating the "accessed before
+  // declaration" rule.
+  const doRefreshRef = useRef<() => void>(() => {});
 
   const doRefresh = useCallback(() => {
     const storedToken = localStorage.getItem(STORAGE_REFRESH_TOKEN);
@@ -161,9 +195,12 @@ export function useAuth(): UseAuthReturn {
       setState((prev) => ({ ...prev, idToken: newIdToken }));
       broadcastChannel.current?.postMessage({ type: 'TOKEN_REFRESHED', idToken: newIdToken });
       // Re-schedule next refresh
-      timerRef.current = scheduleTokenRefresh(newIdToken, doRefresh);
+      timerRef.current = scheduleTokenRefresh(newIdToken, () => doRefreshRef.current());
     });
   }, [userPool, signOut]);
+
+  // Keep doRefreshRef in sync so scheduled callbacks call the latest version.
+  useEffect(() => { doRefreshRef.current = doRefresh; }, [doRefresh]);
 
   // ── BROADCAST CHANNEL ─────────────────────────────────────────────────
 
@@ -193,9 +230,12 @@ export function useAuth(): UseAuthReturn {
   // ── SESSION RESTORE (on mount) ──────────────────────────────────────────
 
   useEffect(() => {
+    if (DEV_BYPASS) return; // Skip session restore in dev bypass mode
+
     const storedUser = userPool.getCurrentUser();
 
     if (!storedUser) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- session restore must set initial auth state synchronously
       setState({
         status: 'unauthenticated',
         idToken: null,
@@ -269,7 +309,7 @@ export function useAuth(): UseAuthReturn {
             }));
             resolve();
           },
-          newPasswordRequired: (_userAttrs: Record<string, unknown>) => {
+          newPasswordRequired: () => {
             setState((prev) => ({
               ...prev,
               status: 'unauthenticated',
@@ -291,7 +331,7 @@ export function useAuth(): UseAuthReturn {
       return new Promise((resolve) => {
         const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email })];
 
-        userPool.signUp(email, password, attributes, [], (err, _result) => {
+        userPool.signUp(email, password, attributes, [], (err) => {
           if (err) {
             setState((prev) => ({
               ...prev,

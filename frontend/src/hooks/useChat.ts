@@ -108,8 +108,8 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     // Subscribe to the channel
     sendMessage({ service: 'chat', action: 'subscribe', channel: currentChannel });
 
-    // Clear messages for the new channel (fresh state on channel join)
-    setMessages([]);
+    // Note: messages are cleared in the cleanup function of the previous
+    // effect iteration, so no need to clear here.
 
     // Cleanup: unsubscribe when channel changes or unmounts
     return () => {
@@ -134,7 +134,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       content,
       data: { displayName: displayNameRef.current },
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
   // All deps accessed via refs — stable callback that never causes re-renders
 
   return { messages, send };

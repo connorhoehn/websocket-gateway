@@ -30,6 +30,7 @@ export interface TextSelectionData {
 
 export interface UseCursorsReturn {
   cursors: Map<string, RemoteCursor>;
+  localCursor: RemoteCursor | null;
   activeMode: CursorMode;
   sendFreeformUpdate: (x: number, y: number) => void;
   sendTableUpdate: (row: number, col: number) => void;
@@ -63,6 +64,9 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
   // trigger a re-render — avoiding a full render on every byte update.
   const cursorsRef = useRef<Map<string, RemoteCursor>>(new Map());
   const [cursors, setCursors] = useState<Map<string, RemoteCursor>>(new Map());
+
+  // Local cursor — tracks the user's own cursor position for local rendering.
+  const [localCursor, setLocalCursor] = useState<RemoteCursor | null>(null);
 
   // Active cursor mode — controls which subscription mode is used.
   const [activeMode, setActiveMode] = useState<CursorMode>('freeform');
@@ -182,12 +186,21 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
       // Throttle: drop calls within a 50ms window (leading-edge throttle).
       if (throttleTimerRef.current !== null) return;
 
+      const position = { x, y };
+      const metadata = { mode: 'freeform', displayName: displayNameRef.current };
+
       sendMessage({
         service: 'cursor',
         action: 'update',
         channel: channelRef.current,
-        position: { x, y },
-        metadata: { mode: 'freeform', displayName: displayNameRef.current },
+        position,
+        metadata,
+      });
+
+      setLocalCursor({
+        clientId: clientIdRef.current ?? 'local',
+        position,
+        metadata,
       });
 
       // Set throttle timer — after 50ms, clear so the next call goes through.
@@ -204,12 +217,21 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
     (row: number, col: number) => {
       if (connectionStateRef.current !== 'connected') return;
 
+      const position = { row, col };
+      const metadata = { mode: 'table', displayName: displayNameRef.current };
+
       sendMessage({
         service: 'cursor',
         action: 'update',
         channel: channelRef.current,
-        position: { row, col },
-        metadata: { mode: 'table', displayName: displayNameRef.current },
+        position,
+        metadata,
+      });
+
+      setLocalCursor({
+        clientId: clientIdRef.current ?? 'local',
+        position,
+        metadata,
       });
     },
     [sendMessage]
@@ -219,18 +241,27 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
 
   const sendTextUpdate = useCallback(
     (
-      position: number,
+      pos: number,
       selectionData: TextSelectionData | null,
       hasSelection: boolean
     ) => {
       if (connectionStateRef.current !== 'connected') return;
 
+      const position = { position: pos };
+      const metadata = { mode: 'text', selection: selectionData, hasSelection, displayName: displayNameRef.current };
+
       sendMessage({
         service: 'cursor',
         action: 'update',
         channel: channelRef.current,
-        position: { position },
-        metadata: { mode: 'text', selection: selectionData, hasSelection, displayName: displayNameRef.current },
+        position,
+        metadata,
+      });
+
+      setLocalCursor({
+        clientId: clientIdRef.current ?? 'local',
+        position,
+        metadata,
       });
     },
     [sendMessage]
@@ -250,12 +281,21 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
     ) => {
       if (connectionStateRef.current !== 'connected' || !channelRef.current) return;
 
+      const position = { x, y };
+      const metadata = { mode: 'canvas', tool, color, size, displayName: displayNameRef.current };
+
       sendMessage({
         service: 'cursor',
         action: 'update',
         channel: channelRef.current,
-        position: { x, y },
-        metadata: { mode: 'canvas', tool, color, size, displayName: displayNameRef.current },
+        position,
+        metadata,
+      });
+
+      setLocalCursor({
+        clientId: clientIdRef.current ?? 'local',
+        position,
+        metadata,
       });
     },
     [sendMessage]
@@ -268,20 +308,19 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
 
   const switchMode = useCallback(
     (newMode: CursorMode) => {
-      if (connectionStateRef.current !== 'connected' || !channelRef.current) return;
+      // Send unsubscribe only when connected (no-op when offline).
+      if (connectionStateRef.current === 'connected' && channelRef.current) {
+        sendMessage({
+          service: 'cursor',
+          action: 'unsubscribe',
+          channel: channelRef.current,
+        });
+      }
 
-      // Unsubscribe from current channel (clears server-side subscription).
-      sendMessage({
-        service: 'cursor',
-        action: 'unsubscribe',
-        channel: channelRef.current,
-      });
-
-      // Clear remote cursors immediately for instant UI feedback.
+      // Always clear cursors and update mode so the UI tab switch works offline.
       cursorsRef.current = new Map();
       setCursors(new Map());
-
-      // Update active mode — the subscribe useEffect will resubscribe.
+      setLocalCursor(null);
       activeModeRef.current = newMode;
       setActiveMode(newMode);
     },
@@ -290,6 +329,7 @@ export function useCursors(options: UseCursorsOptions): UseCursorsReturn {
 
   return {
     cursors,
+    localCursor,
     activeMode,
     sendFreeformUpdate,
     sendTableUpdate,

@@ -92,7 +92,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, roomId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, baseUrl]);  
 
   // ---- WS handler: social:post ---------------------------------------------
 
@@ -111,7 +111,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     });
 
     return unregister;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ---- loadMore ------------------------------------------------------------
 
@@ -133,7 +133,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     } finally {
       setLoading(false);
     }
-  }, [idToken, roomId, lastKey, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, lastKey, baseUrl]);  
 
   // ---- createPost ----------------------------------------------------------
 
@@ -159,7 +159,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     } finally {
       setLoading(false);
     }
-  }, [idToken, roomId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, baseUrl]);  
 
   // ---- editPost ------------------------------------------------------------
 
@@ -181,7 +181,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, roomId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, baseUrl]);  
 
   // ---- deletePost ----------------------------------------------------------
 
@@ -198,7 +198,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, roomId, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, roomId, baseUrl]);  
 
   // ---- getUserPosts (CONT-05) -----------------------------------------------
 
@@ -209,7 +209,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
     });
     if (!res.ok) throw new Error(`Failed to load user posts (${res.status})`);
     return ((await res.json()) as { posts: PostItem[] }).posts;
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   return {
     posts,

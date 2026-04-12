@@ -14,6 +14,7 @@ import { identityToColor, identityToInitials } from '../utils/identity';
 
 interface TableCursorGridProps {
   cursors: Map<string, RemoteCursor>;
+  localCursor?: RemoteCursor | null;
   onCellClick: (row: number, col: number) => void;
 }
 
@@ -28,7 +29,16 @@ const ROW_COUNT = 10;
 // Component
 // ---------------------------------------------------------------------------
 
-export function TableCursorGrid({ cursors, onCellClick }: TableCursorGridProps) {
+export function TableCursorGrid({ cursors, localCursor, onCellClick }: TableCursorGridProps) {
+  // Determine local cursor cell position.
+  let localCursorKey: string | null = null;
+  if (localCursor && (localCursor.metadata as Record<string, unknown>).mode === 'table') {
+    const pos = localCursor.position as { row?: number; col?: number };
+    if (pos.row != null && pos.col != null) {
+      localCursorKey = `${pos.row},${pos.col}`;
+    }
+  }
+
   // Build a lookup: "row,col" -> RemoteCursor[] for efficient cell lookup.
   const cellCursors = new Map<string, RemoteCursor[]>();
   cursors.forEach((cursor) => {
@@ -121,6 +131,42 @@ export function TableCursorGrid({ cursors, onCellClick }: TableCursorGridProps) 
                       background: 'white',
                     }}
                   >
+                    {/* Local cursor cell highlight */}
+                    {localCursorKey === key && (
+                      <div>
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            border: '2px dashed #3b82f6',
+                            borderRadius: 4,
+                            pointerEvents: 'none',
+                            zIndex: 9,
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -10,
+                            right: 0,
+                            fontSize: 10,
+                            background: '#3b82f6',
+                            color: 'white',
+                            padding: '1px 4px',
+                            borderRadius: 3,
+                            pointerEvents: 'none',
+                            zIndex: 19,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          You
+                        </div>
+                      </div>
+                    )}
+
                     {/* Render a colored border overlay for each remote cursor on this cell */}
                     {remoteCursorsOnCell.map((cursor, i) => {
                       const color = identityToColor(
