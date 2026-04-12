@@ -150,6 +150,19 @@ function AvatarStack({ participants }: { participants: Participant[] }) {
           }}
         >
           {getInitials(p.displayName)}
+          {/* Online presence dot */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              right: 0,
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#10b981',
+              border: '2px solid #fff',
+            }}
+          />
         </div>
       ))}
       {overflow > 0 && (
@@ -274,6 +287,7 @@ export default function SectionBlock({
               editable={editable}
               placeholder={`Write ${section.type} content...`}
               sectionId={section.id}
+              participants={participants}
             />
           )}
 
@@ -297,6 +311,7 @@ export default function SectionBlock({
             <SectionComments
               comments={comments ?? []}
               onAddComment={onAddComment}
+              participants={participants}
             />
           )}
         </div>

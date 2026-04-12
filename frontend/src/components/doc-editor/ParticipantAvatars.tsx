@@ -267,7 +267,7 @@ export default function ParticipantAvatars({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
       <div style={rowStyle}>
-        {participants.map((p) => (
+        {participants.filter((p, i, arr) => arr.findIndex(x => (x.userId || x.clientId) === (p.userId || p.clientId)) === i).map((p) => (
           <AvatarItem
             key={p.clientId}
             participant={p}

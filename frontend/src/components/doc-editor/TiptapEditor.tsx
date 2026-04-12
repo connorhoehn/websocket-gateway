@@ -34,6 +34,8 @@ export interface TiptapEditorProps {
   placeholder?: string;
   /** Section ID — used to filter cursor overlay to only show cursors in this section */
   sectionId?: string;
+  /** Participants available for @mention suggestions */
+  participants?: Participant[];
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,13 @@ if (typeof document !== 'undefined' && !document.getElementById(PROSEMIRROR_STYL
       float: left;
       height: 0;
     }
+    .ProseMirror .mention {
+      color: #3b82f6;
+      font-weight: 600;
+      background: #eff6ff;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
     @keyframes cursorBlink {
       0%, 100% { opacity: 0.7; }
       50% { opacity: 0.3; }
@@ -117,6 +126,45 @@ function getCoords(view: any, pos: number, containerEl?: HTMLDivElement | null):
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// @mention suggestion popup helper (vanilla DOM — required by Tiptap API)
+// ---------------------------------------------------------------------------
+
+function updatePopup(popup: HTMLElement, items: any[], selectedIndex: number, command: any) {
+  popup.innerHTML = '';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:8px 12px;color:#94a3b8;font-size:13px;';
+    empty.textContent = 'No users found';
+    popup.appendChild(empty);
+    return;
+  }
+  items.forEach((item: any, index: number) => {
+    const row = document.createElement('div');
+    row.style.cssText = `padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;${index === selectedIndex ? 'background:#eff6ff;' : ''}`;
+    row.onmouseenter = () => {
+      // Highlight on hover
+      Array.from(popup.children).forEach((c) => (c as HTMLElement).style.background = '');
+      row.style.background = '#eff6ff';
+    };
+    row.onclick = () => command(item);
+
+    // Avatar circle
+    const avatar = document.createElement('div');
+    avatar.style.cssText = `width:24px;height:24px;border-radius:50%;background:${item.color || '#3b82f6'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;`;
+    avatar.textContent = (item.label || 'U').slice(0, 2).toUpperCase();
+    row.appendChild(avatar);
+
+    // Name label
+    const name = document.createElement('span');
+    name.style.cssText = 'color:#1e293b;font-weight:500;';
+    name.textContent = item.label;
+    row.appendChild(name);
+
+    popup.appendChild(row);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +315,7 @@ export default function TiptapEditor({
   editable = true,
   placeholder: placeholderText = 'Start typing...',
   sectionId,
+  participants,
 }: TiptapEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const extensions = useMemo(() => [
@@ -275,8 +324,76 @@ export default function TiptapEditor({
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: placeholderText }),
     Collaboration.configure({ document: ydoc, fragment }),
+    Mention.configure({
+      HTMLAttributes: {
+        class: 'mention',
+      },
+      suggestion: {
+        items: ({ query }: { query: string }) => {
+          return (participants || [])
+            .filter(p => p.displayName.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, 6)
+            .map(p => ({ id: p.userId || p.clientId, label: p.displayName, color: p.color }));
+        },
+        render: () => {
+          let popup: HTMLElement | null = null;
+          let selectedIndex = 0;
+
+          return {
+            onStart: (props: any) => {
+              popup = document.createElement('div');
+              popup.style.cssText = 'position:absolute;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);padding:4px 0;z-index:100;min-width:180px;max-height:240px;overflow-y:auto;';
+              selectedIndex = 0;
+              updatePopup(popup, props.items, selectedIndex, props.command);
+              document.body.appendChild(popup);
+              const rect = props.clientRect?.();
+              if (rect && popup) {
+                popup.style.left = `${rect.left}px`;
+                popup.style.top = `${rect.bottom + 4}px`;
+              }
+            },
+            onUpdate: (props: any) => {
+              if (popup) {
+                selectedIndex = 0;
+                updatePopup(popup, props.items, selectedIndex, props.command);
+                const rect = props.clientRect?.();
+                if (rect) {
+                  popup.style.left = `${rect.left}px`;
+                  popup.style.top = `${rect.bottom + 4}px`;
+                }
+              }
+            },
+            onKeyDown: (props: any) => {
+              if (props.event.key === 'ArrowDown') {
+                selectedIndex = Math.min(selectedIndex + 1, (props.items?.length || 1) - 1);
+                if (popup) updatePopup(popup, props.items, selectedIndex, props.command);
+                return true;
+              }
+              if (props.event.key === 'ArrowUp') {
+                selectedIndex = Math.max(selectedIndex - 1, 0);
+                if (popup) updatePopup(popup, props.items, selectedIndex, props.command);
+                return true;
+              }
+              if (props.event.key === 'Enter') {
+                const item = props.items?.[selectedIndex];
+                if (item) props.command(item);
+                return true;
+              }
+              if (props.event.key === 'Escape') {
+                if (popup) { popup.remove(); popup = null; }
+                return true;
+              }
+              return false;
+            },
+            onExit: () => {
+              if (popup) { popup.remove(); popup = null; }
+            },
+          };
+        },
+      },
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [ydoc, fragment]);
+  ], [ydoc, fragment, participants]);
 
   const editor = useEditor({
     extensions,

@@ -3,7 +3,10 @@
 // Sequential chunk review mode. User navigates through sections one at a time.
 
 import { useState, useEffect } from 'react';
+import type { XmlFragment } from 'yjs';
+import * as Y from 'yjs';
 import type { Section, Participant } from '../../types/document';
+import type { CollaborationProvider } from './TiptapEditor';
 import ReviewProgress from './ReviewProgress';
 import ChunkViewer from './ChunkViewer';
 
@@ -16,6 +19,9 @@ interface AckModeProps {
   /** Jump to a specific section page (set by handleJumpToUser) */
   jumpToIndex?: number | null;
   onJumpComplete?: () => void;
+  getSectionFragment: (sectionId: string) => XmlFragment | null;
+  ydoc: Y.Doc;
+  provider: CollaborationProvider | null;
 }
 
 const navStyle: React.CSSProperties = {
@@ -44,7 +50,7 @@ const emptyStyle: React.CSSProperties = {
   fontSize: 15,
 };
 
-export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus, jumpToIndex, onJumpComplete }: AckModeProps) {
+export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus, jumpToIndex, onJumpComplete, getSectionFragment, ydoc, provider }: AckModeProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const section = sections.length > 0 ? sections[currentIndex] : null;
@@ -96,6 +102,9 @@ export default function AckMode({ sections, onAckItem, onRejectItem, participant
         section={section}
         onAckItem={(itemId, notes) => onAckItem(section.id, itemId, notes)}
         onRejectItem={(itemId, reason) => onRejectItem(section.id, itemId, reason)}
+        fragment={getSectionFragment(section.id)}
+        ydoc={ydoc}
+        provider={provider}
       />
 
       <div style={navStyle}>

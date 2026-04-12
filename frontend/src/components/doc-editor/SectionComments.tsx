@@ -2,9 +2,14 @@
 //
 // Threaded comment system with Reddit-style nested replies.
 // Comments are stored in Y.js and broadcast via CRDT sync.
+// Supports @mentions via MentionDropdown.
 
-import { useState, useRef } from 'react';
-import type { CommentThread } from '../../types/document';
+import { useState, useRef, useCallback } from 'react';
+import type { CommentThread, Participant } from '../../types/document';
+import { MentionDropdown } from './MentionDropdown';
+import type { MentionDropdownHandle } from './MentionDropdown';
+import { useMentionUsers } from '../../hooks/useMentionUsers';
+import type { MentionUser } from '../../hooks/useMentionUsers';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -13,6 +18,7 @@ import type { CommentThread } from '../../types/document';
 interface SectionCommentsProps {
   comments: CommentThread[];
   onAddComment: (text: string, parentCommentId?: string | null) => void;
+  participants?: Participant[];
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +58,96 @@ function countAllComments(threads: CommentThread[]): number {
   return total;
 }
 
+/** Render comment text with styled @mention spans. */
+function renderCommentText(text: string): React.ReactNode {
+  const parts = text.split(/(@\w+)/g);
+  return parts.map((part, i) =>
+    part.startsWith('@') ? (
+      <span
+        key={i}
+        style={{
+          color: '#3b82f6',
+          fontWeight: 600,
+          background: '#eff6ff',
+          padding: '0 2px',
+          borderRadius: 2,
+        }}
+      >
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mention helpers — shared logic for any textarea with @mention support
+// ---------------------------------------------------------------------------
+
+interface MentionState {
+  active: boolean;
+  query: string;
+  position: { top: number; left: number };
+  /** Character index in the textarea where the `@` was typed */
+  atIndex: number;
+}
+
+const MENTION_INITIAL: MentionState = {
+  active: false,
+  query: '',
+  position: { top: 0, left: 0 },
+  atIndex: -1,
+};
+
+/**
+ * Given the current textarea value and selectionStart, determine
+ * whether we are in an @mention context.  Returns updated MentionState.
+ */
+function detectMention(
+  value: string,
+  cursorPos: number,
+  textareaEl: HTMLTextAreaElement | null,
+): MentionState {
+  // Walk backwards from cursor to find un-spaced `@`
+  let i = cursorPos - 1;
+  while (i >= 0 && value[i] !== '@' && value[i] !== ' ' && value[i] !== '\n') {
+    i--;
+  }
+  if (i < 0 || value[i] !== '@') {
+    return MENTION_INITIAL;
+  }
+  // `@` must be at start of string or preceded by whitespace / newline
+  if (i > 0 && value[i - 1] !== ' ' && value[i - 1] !== '\n') {
+    return MENTION_INITIAL;
+  }
+  const query = value.slice(i + 1, cursorPos);
+  // Position dropdown below the textarea
+  const rect = textareaEl?.getBoundingClientRect();
+  const position = rect
+    ? { top: rect.height + 4, left: 0 }
+    : { top: 28, left: 0 };
+  return { active: true, query, position, atIndex: i };
+}
+
+/**
+ * Insert a mention into the textarea value, replacing `@query` with
+ * `@DisplayName `.  Returns the new value and new cursor position.
+ */
+function insertMention(
+  value: string,
+  mention: MentionState,
+  user: MentionUser,
+): { newValue: string; newCursor: number } {
+  const before = value.slice(0, mention.atIndex);
+  const after = value.slice(mention.atIndex + 1 + mention.query.length); // skip @+query
+  const insert = `@${user.displayName} `;
+  return {
+    newValue: before + insert + after,
+    newCursor: before.length + insert.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // CommentNode — recursive component for a single comment + replies
 // ---------------------------------------------------------------------------
@@ -60,27 +156,62 @@ function CommentNode({
   comment,
   depth,
   onReply,
+  mentionUsers,
 }: {
   comment: CommentThread;
   depth: number;
   onReply: (parentId: string, text: string) => void;
+  mentionUsers: MentionUser[];
 }) {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [hovered, setHovered] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionRef = useRef<MentionDropdownHandle>(null);
+  const [mention, setMention] = useState<MentionState>(MENTION_INITIAL);
 
   const cappedDepth = Math.min(depth, 5);
 
   const handleSubmitReply = () => {
+    if (mention.active) return; // don't submit while picking a mention
     const trimmed = replyText.trim();
     if (!trimmed) return;
     onReply(comment.id, trimmed);
     setReplyText('');
     setShowReplyForm(false);
+    setMention(MENTION_INITIAL);
   };
 
+  const handleReplyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setReplyText(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const next = detectMention(val, cursor, textareaRef.current);
+    setMention(next);
+  };
+
+  const handleMentionSelect = useCallback(
+    (user: MentionUser) => {
+      const { newValue, newCursor } = insertMention(replyText, mention, user);
+      setReplyText(newValue);
+      setMention(MENTION_INITIAL);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(newCursor, newCursor);
+        }
+      });
+    },
+    [replyText, mention],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Forward to mention dropdown first
+    if (mention.active && mentionRef.current) {
+      const consumed = mentionRef.current.handleKeyDown(e);
+      if (consumed) return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmitReply();
@@ -90,7 +221,7 @@ function CommentNode({
     }
   };
 
-  const borderColor = hovered ? comment.color : (depth === 0 ? '#e2e8f0' : '#cbd5e1');
+  const borderColor = hovered ? comment.color : depth === 0 ? '#e2e8f0' : '#cbd5e1';
 
   return (
     <div style={{ marginLeft: cappedDepth > 0 ? 20 : 0 }}>
@@ -132,9 +263,17 @@ function CommentNode({
           </span>
         </div>
 
-        {/* Comment text */}
-        <div style={{ fontSize: 13, lineHeight: 1.5, color: '#334155', paddingLeft: 30, whiteSpace: 'pre-wrap' }}>
-          {comment.text}
+        {/* Comment text — with styled @mentions */}
+        <div
+          style={{
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: '#334155',
+            paddingLeft: 30,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {renderCommentText(comment.text)}
         </div>
 
         {/* Reply button */}
@@ -171,26 +310,40 @@ function CommentNode({
               animation: 'sectionCommentsSlideDown 0.2s ease-out',
             }}
           >
-            <textarea
-              ref={textareaRef}
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Write a reply..."
-              rows={2}
-              style={{
-                width: '100%',
-                border: '1px solid #e2e8f0',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 13,
-                fontFamily: 'inherit',
-                outline: 'none',
-                resize: 'vertical',
-                minHeight: 48,
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <textarea
+                ref={textareaRef}
+                value={replyText}
+                onChange={handleReplyChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Write a reply... (type @ to mention)"
+                rows={2}
+                style={{
+                  width: '100%',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  resize: 'vertical',
+                  minHeight: 48,
+                  boxSizing: 'border-box',
+                  color: '#1e293b',
+                  background: '#fff',
+                }}
+              />
+              {mention.active && (
+                <MentionDropdown
+                  ref={mentionRef}
+                  query={mention.query}
+                  users={mentionUsers}
+                  position={mention.position}
+                  onSelect={handleMentionSelect}
+                  onDismiss={() => setMention(MENTION_INITIAL)}
+                />
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <button
                 type="button"
@@ -238,6 +391,7 @@ function CommentNode({
           comment={reply}
           depth={depth + 1}
           onReply={onReply}
+          mentionUsers={mentionUsers}
         />
       ))}
     </div>
@@ -248,21 +402,59 @@ function CommentNode({
 // SectionComments — top-level component
 // ---------------------------------------------------------------------------
 
-export default function SectionComments({ comments, onAddComment }: SectionCommentsProps) {
+export default function SectionComments({
+  comments,
+  onAddComment,
+  participants = [],
+}: SectionCommentsProps) {
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mentionRef = useRef<MentionDropdownHandle>(null);
+  const [mention, setMention] = useState<MentionState>(MENTION_INITIAL);
 
+  const mentionUsers = useMentionUsers(participants);
   const totalCount = countAllComments(comments);
 
   const handlePost = () => {
+    if (mention.active) return; // don't submit while picking a mention
     const trimmed = draft.trim();
     if (!trimmed) return;
     onAddComment(trimmed, null);
     setDraft('');
+    setMention(MENTION_INITIAL);
   };
 
+  const handleDraftChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setDraft(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const next = detectMention(val, cursor, inputRef.current);
+    setMention(next);
+  };
+
+  const handleMentionSelect = useCallback(
+    (user: MentionUser) => {
+      const { newValue, newCursor } = insertMention(draft, mention, user);
+      setDraft(newValue);
+      setMention(MENTION_INITIAL);
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(newCursor, newCursor);
+        }
+      });
+    },
+    [draft, mention],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Forward to mention dropdown first
+    if (mention.active && mentionRef.current) {
+      const consumed = mentionRef.current.handleKeyDown(e);
+      if (consumed) return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handlePost();
@@ -334,26 +526,40 @@ export default function SectionComments({ comments, onAddComment }: SectionComme
               background: '#fff',
             }}
           >
-            <textarea
-              ref={inputRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Add a comment..."
-              rows={1}
-              style={{
-                flex: 1,
-                border: '1px solid #e2e8f0',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 13,
-                fontFamily: 'inherit',
-                outline: 'none',
-                resize: 'none',
-                minHeight: 32,
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ flex: 1, position: 'relative' }}>
+              <textarea
+                ref={inputRef}
+                value={draft}
+                onChange={handleDraftChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Add a comment... (type @ to mention)"
+                rows={1}
+                style={{
+                  width: '100%',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  resize: 'none',
+                  minHeight: 32,
+                  boxSizing: 'border-box',
+                  color: '#1e293b',
+                  background: '#fff',
+                }}
+              />
+              {mention.active && (
+                <MentionDropdown
+                  ref={mentionRef}
+                  query={mention.query}
+                  users={mentionUsers}
+                  position={mention.position}
+                  onSelect={handleMentionSelect}
+                  onDismiss={() => setMention(MENTION_INITIAL)}
+                />
+              )}
+            </div>
             <button
               type="button"
               onClick={handlePost}
@@ -395,6 +601,7 @@ export default function SectionComments({ comments, onAddComment }: SectionComme
                 comment={thread}
                 depth={0}
                 onReply={handleReply}
+                mentionUsers={mentionUsers}
               />
             ))}
           </div>

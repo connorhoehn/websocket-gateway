@@ -169,6 +169,11 @@ export default function DocumentHeader({
           }}
         />
         <span style={statusBadge(meta.status)}>{meta.status}</span>
+        {mode === 'editor' && (
+          <span style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>
+            Auto-saved
+          </span>
+        )}
       </div>
 
       {/* Center: mode selector */}

@@ -2,13 +2,20 @@
 //
 // Renders a single section chunk for ack-mode review.
 
+import type { XmlFragment } from 'yjs';
+import * as Y from 'yjs';
 import type { Section } from '../../types/document';
+import TiptapEditor from './TiptapEditor';
+import type { CollaborationProvider } from './TiptapEditor';
 import ReviewableItem from './ReviewableItem';
 
 interface ChunkViewerProps {
   section: Section;
   onAckItem: (itemId: string, notes?: string) => void;
   onRejectItem: (itemId: string, reason: string) => void;
+  fragment: XmlFragment | null;
+  ydoc: Y.Doc;
+  provider: CollaborationProvider | null;
 }
 
 const typeBadgeColors: Record<Section['type'], { bg: string; text: string }> = {
@@ -54,7 +61,7 @@ const statsStyle: React.CSSProperties = {
   borderTop: '1px solid #f3f4f6',
 };
 
-export default function ChunkViewer({ section, onAckItem, onRejectItem }: ChunkViewerProps) {
+export default function ChunkViewer({ section, onAckItem, onRejectItem, fragment, ydoc, provider }: ChunkViewerProps) {
   const tc = typeBadgeColors[section.type] ?? typeBadgeColors.custom;
   const reviewed = section.items.filter((i) => i.status !== 'pending').length;
 
@@ -63,10 +70,24 @@ export default function ChunkViewer({ section, onAckItem, onRejectItem }: ChunkV
       <h2 style={titleStyle}>{section.title}</h2>
       <span style={badgeStyle(tc.bg, tc.text)}>{section.type}</span>
 
-      {/* Non-task sections show guidance when empty */}
-      {section.items.length === 0 && (
+      {/* Rich-text content (read-only) */}
+      {fragment && (
+        <div style={{ marginBottom: section.items.length > 0 ? 16 : 0 }}>
+          <TiptapEditor
+            fragment={fragment}
+            ydoc={ydoc}
+            provider={provider}
+            user={{ name: '', color: '' }}
+            editable={false}
+            sectionId={section.id}
+          />
+        </div>
+      )}
+
+      {/* No content at all */}
+      {!fragment && section.items.length === 0 && (
         <div style={{ padding: '1.5rem 0', color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
-          This {section.type} section has no reviewable items. Switch to Editor mode to add content.
+          This {section.type} section has no content. Switch to Editor mode to add content.
         </div>
       )}
 

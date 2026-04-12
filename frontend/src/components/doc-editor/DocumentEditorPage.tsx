@@ -394,7 +394,7 @@ export default function DocumentEditorPage({
         )}
 
         {/* Review (ack) mode */}
-        {!isEmpty && mode === 'ack' && (
+        {!isEmpty && mode === 'ack' && ydoc && (
           <AckMode
             sections={sections}
             onAckItem={handleAckItem}
@@ -403,6 +403,9 @@ export default function DocumentEditorPage({
             onSectionFocus={handleSectionFocus}
             jumpToIndex={jumpToSectionIndex}
             onJumpComplete={() => setJumpToSectionIndex(null)}
+            getSectionFragment={getSectionFragment}
+            ydoc={ydoc}
+            provider={provider}
           />
         )}
 
