@@ -32,6 +32,8 @@ export interface TiptapEditorProps {
   user: { name: string; color: string };
   editable?: boolean;
   placeholder?: string;
+  /** Section ID — used to filter cursor overlay to only show cursors in this section */
+  sectionId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +238,7 @@ export default function TiptapEditor({
   user,
   editable = true,
   placeholder: placeholderText = 'Start typing...',
+  sectionId,
 }: TiptapEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const extensions = useMemo(() => [
@@ -274,6 +277,8 @@ export default function TiptapEditor({
       if (clientId === localClientId) return;
       const u = state.user;
       if (!u || !state.cursor) return;
+      // Only show cursors in this section's editor
+      if (sectionId && state.cursor.sectionId !== sectionId) return;
 
       try {
         const ystate = ySyncPluginKey.getState(editor.view.state);
@@ -318,7 +323,7 @@ export default function TiptapEditor({
         const yAnchor = absolutePositionToRelativePosition(anchor, ystate.type, ystate.binding.mapping);
         const yHead = absolutePositionToRelativePosition(head, ystate.type, ystate.binding.mapping);
 
-        provider.awareness.setLocalStateField('cursor', { anchor: yAnchor, head: yHead });
+        provider.awareness.setLocalStateField('cursor', { anchor: yAnchor, head: yHead, sectionId });
       } catch {
         // ySyncPlugin not ready
       }

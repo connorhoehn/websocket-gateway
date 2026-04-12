@@ -273,6 +273,7 @@ export default function SectionBlock({
               user={user}
               editable={editable}
               placeholder={`Write ${section.type} content...`}
+              sectionId={section.id}
             />
           )}
 
