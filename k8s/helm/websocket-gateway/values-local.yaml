@@ -1,0 +1,7 @@
+# Local development overrides for Colima + Tilt
+gateway:
+  image:
+    pullPolicy: Never  # Use locally-built images
+  env:
+    SKIP_AUTH: "true"
+    LOG_LEVEL: debug

@@ -1,0 +1,8 @@
+# Multi-replica testing — verifies CRDT sync across nodes
+gateway:
+  replicaCount: 3
+  image:
+    pullPolicy: Never
+  env:
+    SKIP_AUTH: "true"
+    LOG_LEVEL: info

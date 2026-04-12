@@ -1,0 +1,42 @@
+# Default values for LOCAL development.
+# This is a YAML-formatted file.
+
+gateway:
+  replicaCount: 1
+  image:
+    repository: websocket-gateway
+    tag: latest
+    pullPolicy: Never
+  port: 8080
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  env:
+    NODE_ENV: development
+    LOG_LEVEL: debug
+    PORT: "8080"
+    ENABLED_SERVICES: "chat,presence,cursor,reaction,crdt"
+    SKIP_AUTH: "true"
+    COGNITO_REGION: us-east-1
+    COGNITO_USER_POOL_ID: us-east-1_localdev000
+    REDIS_PORT: "6379"
+    DIRECT_DYNAMO_WRITE: "true"
+    DYNAMODB_CRDT_TABLE: crdt-snapshots
+    SNAPSHOT_INTERVAL_MS: "30000"
+    AWS_ACCESS_KEY_ID: DUMMYIDEXAMPLE
+    AWS_SECRET_ACCESS_KEY: DUMMYEXAMPLEKEY000000000000000000000000000
+    AWS_REGION: us-east-1
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  port: 6379
+
+dynamodb:
+  enabled: true
+  image: amazon/dynamodb-local:1.25.0
+  port: 8000

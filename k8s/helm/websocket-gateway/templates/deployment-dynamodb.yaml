@@ -1,0 +1,32 @@
+{{- if .Values.dynamodb.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "websocket-gateway.fullname" . }}-dynamodb
+  labels:
+    {{- include "websocket-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dynamodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "websocket-gateway.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dynamodb
+  template:
+    metadata:
+      labels:
+        {{- include "websocket-gateway.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dynamodb
+    spec:
+      containers:
+        - name: dynamodb
+          image: {{ .Values.dynamodb.image }}
+          args:
+            - "-jar"
+            - "DynamoDBLocal.jar"
+            - "-sharedDb"
+          ports:
+            - name: dynamodb
+              containerPort: {{ .Values.dynamodb.port }}
+              protocol: TCP
+{{- end }}

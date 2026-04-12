@@ -1,0 +1,19 @@
+{{- if .Values.dynamodb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "websocket-gateway.fullname" . }}-dynamodb
+  labels:
+    {{- include "websocket-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dynamodb
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.dynamodb.port }}
+      targetPort: dynamodb
+      protocol: TCP
+      name: dynamodb
+  selector:
+    {{- include "websocket-gateway.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dynamodb
+{{- end }}
