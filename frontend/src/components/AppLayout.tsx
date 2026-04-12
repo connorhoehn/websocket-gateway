@@ -47,8 +47,10 @@ type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
 interface Notification {
   id: string;
   message: string;
-  type: 'follow' | 'member_joined' | 'post_created';
+  type: 'follow' | 'member_joined' | 'post_created' | 'mention';
   timestamp: number;
+  /** For mention notifications: section ID to jump to */
+  sectionId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,14 +78,15 @@ function NotificationBanner({ notifications, onDismiss }: {
         <div key={n.id} style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
-          borderLeft: '3px solid #646cff',
+          borderLeft: `3px solid ${n.type === 'mention' ? '#3b82f6' : '#646cff'}`,
           borderRadius: 8,
           padding: '12px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           fontFamily: 'system-ui, -apple-system, sans-serif',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+          animation: 'slideInRight 0.3s ease-out',
         }}>
           <span style={{ fontSize: 14, color: '#374151', fontWeight: 400 }}>
             {n.message}
@@ -243,7 +246,8 @@ export function AppLayout({
   activityIsLive,
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'panels' | 'dashboard' | 'doc-editor'>('panels');
+  const [activeView, setActiveView] = useState<'panels' | 'social' | 'dashboard' | 'doc-editor'>('panels');
+  const [showDevTools, setShowDevTools] = useState(false);
 
   const {
     rooms,
@@ -280,11 +284,18 @@ export function AppLayout({
   const onMessageRef = useRef(onMessage);
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
-  // Subscribe to social events for notifications
+  // Refs for notification handler (avoids stale closure in [] deps effect)
+  const displayNameRef = useRef(displayName);
+  useEffect(() => { displayNameRef.current = displayName; }, [displayName]);
+  const userIdRef = useRef(userId);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+
+  // Subscribe to social events + mention notifications
   useEffect(() => {
     const unregister = onMessageRef.current((msg) => {
       let message: string | null = null;
       let type: Notification['type'] | null = null;
+      let sectionId: string | undefined;
 
       if (msg.type === 'social:member_joined') {
         const payload = msg.payload as { userId?: string; roomId?: string } | undefined;
@@ -299,12 +310,38 @@ export function AppLayout({
           message = `New post in ${roomName}`;
           type = 'post_created';
         }
+      } else if (msg.type === 'activity:event') {
+        const payload = msg.payload as {
+          eventType?: string;
+          detail?: {
+            mentionedNames?: string[];
+            sectionId?: string;
+            sectionTitle?: string;
+            authorName?: string;
+          };
+          userId?: string;
+        } | undefined;
+
+        if (
+          payload?.eventType === 'doc.mention' &&
+          payload.userId !== userIdRef.current &&
+          Array.isArray(payload.detail?.mentionedNames) &&
+          payload.detail!.mentionedNames.some(
+            name => name.toLowerCase() === displayNameRef.current.toLowerCase()
+          )
+        ) {
+          const author = payload.detail!.authorName ?? 'Someone';
+          const section = payload.detail!.sectionTitle ?? 'a section';
+          message = `${author} mentioned you in ${section}`;
+          type = 'mention';
+          sectionId = payload.detail!.sectionId;
+        }
       }
 
       if (message && type) {
         const id = `${Date.now()}-${Math.random()}`;
         setNotifications(prev => {
-          const next = [{ id, message: message!, type: type!, timestamp: Date.now() }, ...prev];
+          const next = [{ id, message: message!, type: type!, timestamp: Date.now(), ...(sectionId ? { sectionId } : {}) }, ...prev];
           return next.slice(0, 5);
         });
       }
@@ -474,7 +511,7 @@ export function AppLayout({
                 cursor: 'pointer',
               }}
             >
-              Panels
+              Previews
             </button>
             <button
               onClick={() => setActiveView('dashboard')}
