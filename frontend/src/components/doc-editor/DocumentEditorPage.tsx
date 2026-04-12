@@ -4,7 +4,7 @@
 // Switches between editor, ack (review), and reader modes.
 // Accepts WebSocket and identity props from the parent layout.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ViewMode, DocumentMeta, Participant } from '../../types/document';
 import type { UseWebSocketReturn } from '../../hooks/useWebSocket';
 import type { GatewayMessage } from '../../types/gateway';
@@ -13,6 +13,7 @@ import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { parseMarkdownToSections } from '../../utils/markdownParser';
 import { exportToMarkdown } from '../../utils/documentExport';
 import { DEMO_MARKDOWN } from '../../utils/demoDocument';
+import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
 import DocumentHeader from './DocumentHeader';
 import VersionHistoryPanel from './VersionHistoryPanel';
@@ -46,6 +47,7 @@ function xmlFragmentToText(frag: { toString(): string }): string {
 
 export interface DocumentEditorPageProps {
   documentId: string;
+  documentType?: string;  // template type for auto-populating sections
   ws: UseWebSocketReturn;
   userId: string;
   displayName: string;
@@ -59,6 +61,37 @@ export interface DocumentEditorPageProps {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Minimal markdown-to-HTML converter for PDF export.
+ * Handles headers, bold, italic, inline code, blockquotes, and list items.
+ */
+function simpleMarkdownToHtml(md: string): string {
+  return md
+    .split('\n')
+    .map(line => {
+      // Headers
+      if (line.startsWith('### ')) return `<h3>${line.slice(4)}</h3>`;
+      if (line.startsWith('## ')) return `<h2>${line.slice(3)}</h2>`;
+      if (line.startsWith('# ')) return `<h1>${line.slice(2)}</h1>`;
+      // Blockquotes
+      if (line.startsWith('> ')) return `<blockquote>${line.slice(2)}</blockquote>`;
+      // Task list items
+      if (line.startsWith('- [x] ')) return `<li>&#9745; ${line.slice(6)}</li>`;
+      if (line.startsWith('- [ ] ')) return `<li>&#9744; ${line.slice(6)}</li>`;
+      // Unordered list items
+      if (line.startsWith('- ')) return `<li>${line.slice(2)}</li>`;
+      // Empty lines
+      if (line.trim() === '') return '<br/>';
+      // Paragraph
+      return `<p>${line}</p>`;
+    })
+    .join('\n')
+    // Inline formatting
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
 
 function getInitialMode(): ViewMode {
   if (typeof window !== 'undefined') {
@@ -75,6 +108,7 @@ function getInitialMode(): ViewMode {
 
 export default function DocumentEditorPage({
   documentId,
+  documentType,
   ws,
   userId,
   displayName,
@@ -254,8 +288,8 @@ export default function DocumentEditorPage({
 
   const handleUnresolveThread = useCallback((sectionId: string, commentId: string) => {
     unresolveThread(sectionId, commentId);
-    activityPublish('doc.unresolve_thread', { sectionId, commentId, documentId, documentTitle: meta?.title });
-  }, [unresolveThread, activityPublish, documentId, meta?.title]);
+    activityPublish('doc.unresolve_thread', { sectionId, commentId, reopenedBy: displayName, documentId, documentTitle: meta?.title });
+  }, [unresolveThread, activityPublish, displayName, documentId, meta?.title]);
 
   // ------ My mentions & tasks -----------------------------------------------
 
@@ -288,6 +322,18 @@ export default function DocumentEditorPage({
     setShowMyItems(false);
   }, []);
 
+  // Cmd+M / Ctrl+M to toggle My Items panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'm') {
+        e.preventDefault();
+        handleToggleMyItems();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleToggleMyItems]);
+
   // ------ Version history --------------------------------------------------
 
   const versionChannel = `doc:${documentId}`;
@@ -306,6 +352,25 @@ export default function DocumentEditorPage({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHistory]);
+
+  // ------ Auto-populate from template when new document is empty ----------
+  const templateAppliedRef = useRef(false);
+  useEffect(() => {
+    if (templateAppliedRef.current || !documentType || sections.length > 0) return;
+    const tmpl = DOCUMENT_TEMPLATES.find(t => t.type === documentType);
+    if (!tmpl) return;
+    templateAppliedRef.current = true;
+    updateMeta({
+      id: documentId, title: meta?.title || tmpl.name,
+      sourceType: documentType === 'meeting' ? 'meeting' : 'notes',
+      sourceId: '', createdBy: userId, createdAt: new Date().toISOString(),
+      aiModel: '', status: 'draft',
+    });
+    for (const s of tmpl.defaultSections) {
+      addSection({ id: crypto.randomUUID(), type: s.type, title: s.title, collapsed: false, items: [] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentType, sections.length]);
 
   // ------ Demo document loading -------------------------------------------
 
@@ -376,8 +441,33 @@ export default function DocumentEditorPage({
       const md = exportToMarkdown(data);
       const blob = new Blob([md], { type: 'text/markdown' });
       downloadBlob(blob, `${data.meta.title || 'document'}.md`);
+    } else if (format === 'pdf') {
+      const md = exportToMarkdown(data);
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+          <head>
+            <title>${data.meta.title || 'Document'}</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
+              h1 { font-size: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
+              h2 { font-size: 18px; margin-top: 24px; }
+              h3 { font-size: 14px; color: #64748b; }
+              ul { padding-left: 20px; }
+              li { margin: 4px 0; }
+              blockquote { border-left: 3px solid #e2e8f0; margin: 8px 0; padding: 4px 12px; color: #64748b; }
+              code { background: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-size: 13px; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>${simpleMarkdownToHtml(md)}</body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
+      }
     }
-    // PDF export would require a library; skip for now
   };
 
   // ------ Mode switching -------------------------------------------------
@@ -423,6 +513,7 @@ export default function DocumentEditorPage({
         sections={sections.map(s => ({ id: s.id, title: s.title }))}
         onToggleMyItems={handleToggleMyItems}
         myItemCount={myItems.length}
+        commentCount={Object.values(comments).reduce((sum, threads) => sum + threads.length, 0)}
         onBack={onBack}
       />
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
@@ -505,7 +596,7 @@ export default function DocumentEditorPage({
         )}
 
         {/* Reader mode */}
-        {!isEmpty && mode === 'reader' && (
+        {!isEmpty && mode === 'reader' && ydoc && (
           <ReaderMode
             sections={sections}
             participants={participants}
@@ -520,6 +611,9 @@ export default function DocumentEditorPage({
               }),
             )}
             comments={comments}
+            getSectionFragment={getSectionFragment}
+            ydoc={ydoc}
+            provider={provider}
           />
         )}
 

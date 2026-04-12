@@ -59,11 +59,14 @@ interface Notification {
 // NotificationBanner internal component (UXIN-04)
 // ---------------------------------------------------------------------------
 
-function NotificationBanner({ notifications, onDismiss }: {
+function NotificationBanner({ notifications, onDismiss, onClick }: {
   notifications: Notification[];
   onDismiss: (id: string) => void;
+  onClick?: (notification: Notification) => void;
 }) {
   if (notifications.length === 0) return null;
+
+  const isClickable = (n: Notification) => n.type === 'mention' && !!n.sectionId;
 
   return (
     <div style={{
@@ -90,7 +93,20 @@ function NotificationBanner({ notifications, onDismiss }: {
           boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
           animation: 'slideInRight 0.3s ease-out',
         }}>
-          <span style={{ fontSize: 14, color: '#374151', fontWeight: 400 }}>
+          <span
+            role={isClickable(n) ? 'button' : undefined}
+            tabIndex={isClickable(n) ? 0 : undefined}
+            onClick={isClickable(n) ? () => onClick?.(n) : undefined}
+            onKeyDown={isClickable(n) ? (e) => { if (e.key === 'Enter') onClick?.(n); } : undefined}
+            style={{
+              fontSize: 14,
+              color: '#374151',
+              fontWeight: 400,
+              cursor: isClickable(n) ? 'pointer' : 'default',
+              textDecoration: isClickable(n) ? 'underline' : 'none',
+              textDecorationColor: '#94a3b8',
+            }}
+          >
             {n.message}
           </span>
           <button
@@ -250,6 +266,7 @@ export function AppLayout({
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'panels' | 'social' | 'dashboard' | 'doc-editor'>('panels');
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [activeDocumentType, setActiveDocumentType] = useState<string | undefined>(undefined);
   const [showDevTools, setShowDevTools] = useState(false);
 
   const {
@@ -381,6 +398,17 @@ export function AppLayout({
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
+  const handleNotificationClick = useCallback((notification: Notification) => {
+    if (notification.sectionId) {
+      setActiveView('doc-editor');
+      dismissNotification(notification.id);
+      // Allow the doc editor view to mount before scrolling
+      setTimeout(() => {
+        document.getElementById(`section-${notification.sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  }, [dismissNotification]);
+
   // Derive typingUsers from presenceUsers, excluding self
   const typingUsers = presenceUsers
     .filter(
@@ -405,7 +433,7 @@ export function AppLayout({
       <ReactionsOverlay reactions={activeReactions} />
 
       {/* Notification banner — fixed-position top-right (UXIN-04) */}
-      <NotificationBanner notifications={notifications} onDismiss={dismissNotification} />
+      <NotificationBanner notifications={notifications} onDismiss={dismissNotification} onClick={handleNotificationClick} />
 
       {/* Header bar */}
       <div
@@ -660,8 +688,16 @@ export function AppLayout({
             <DocumentListPage
               documents={documents}
               presence={docPresence}
-              onOpenDocument={(id: string) => setActiveDocumentId(id)}
-              onCreateDocument={createDocument}
+              onOpenDocument={(id: string) => {
+                const doc = documents.find(d => d.id === id);
+                setActiveDocumentType(doc?.type);
+                setActiveDocumentId(id);
+              }}
+              onCreateDocument={(meta) => {
+                createDocument(meta);
+                // After creation, the documentCreated response will add it to the list
+                // The user can then click to open it
+              }}
               onDeleteDocument={deleteDocument}
               onJumpToUser={(docId: string, _userId: string) => {
                 setActiveDocumentId(docId);
@@ -674,13 +710,14 @@ export function AppLayout({
             <div style={{ flex: 1, minHeight: 0 }}>
               <DocumentEditorPage
                 documentId={activeDocumentId}
+                documentType={activeDocumentType}
                 ws={ws}
                 userId={userId}
                 displayName={displayName}
                 onMessage={onMessage}
                 activityPublish={activityPublish}
                 activityEvents={activityEvents}
-                onBack={() => setActiveDocumentId(null)}
+                onBack={() => { setActiveDocumentId(null); setActiveDocumentType(undefined); }}
               />
             </div>
           )}
