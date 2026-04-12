@@ -2,7 +2,8 @@
 //
 // Slide-out sidebar for browsing, previewing, and restoring document versions.
 
-import type { VersionEntry } from '../../hooks/useVersionHistory';
+import type { VersionEntry, SnapshotSection } from '../../hooks/useVersionHistory';
+import DiffViewer from './DiffViewer';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -17,6 +18,18 @@ interface VersionHistoryPanelProps {
   onRestore: (timestamp: number) => void;
   onClearPreview: () => void;
   onClose: () => void;
+  /** Save a named version. */
+  onSaveVersion: (name: string) => void;
+  /** Trigger comparison for a version timestamp. */
+  onCompare: (timestamp: number) => void;
+  /** Dismiss the diff view. */
+  onClearCompare: () => void;
+  /** Sections from the compared historical version (null when no compare active). */
+  compareSections: SnapshotSection[] | null;
+  /** Currently compared timestamp. */
+  compareTimestamp: number | null;
+  /** Current document sections for diff. */
+  currentSections: SnapshotSection[];
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +149,55 @@ const restoreBtnStyle: React.CSSProperties = {
   fontFamily: 'inherit',
 };
 
+const compareBtnStyle: React.CSSProperties = {
+  padding: '3px 8px',
+  fontSize: 11,
+  fontWeight: 500,
+  border: '1px solid #d1d5db',
+  borderRadius: 4,
+  background: '#fff',
+  color: '#6b7280',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+};
+
+const saveBtnStyle: React.CSSProperties = {
+  padding: '4px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  background: '#f9fafb',
+  color: '#374151',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const versionNameStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: '#1f2937',
+  display: 'block',
+  marginBottom: 1,
+};
+
+const versionTypeBadge = (type?: string): React.CSSProperties => ({
+  fontSize: 10,
+  fontWeight: 500,
+  padding: '1px 5px',
+  borderRadius: 3,
+  marginLeft: 6,
+  background: type === 'pre-restore' ? '#fef3c7' : type === 'auto' ? '#f3f4f6' : '#e0f2fe',
+  color: type === 'pre-restore' ? '#92400e' : type === 'auto' ? '#9ca3af' : '#0369a1',
+});
+
+const authorStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: '#9ca3af',
+  display: 'block',
+};
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -149,6 +211,12 @@ export default function VersionHistoryPanel({
   onRestore,
   onClearPreview,
   onClose,
+  onSaveVersion,
+  onCompare,
+  onClearCompare,
+  compareSections,
+  compareTimestamp,
+  currentSections,
 }: VersionHistoryPanelProps) {
   const handleRestore = () => {
     if (previewTimestamp == null) return;
@@ -163,14 +231,42 @@ export default function VersionHistoryPanel({
 
   const handleClose = () => {
     onClearPreview();
+    onClearCompare();
     onClose();
+  };
+
+  const handleSaveVersion = () => {
+    const name = window.prompt('Enter a name for this version:');
+    if (name && name.trim()) {
+      onSaveVersion(name.trim());
+    }
+  };
+
+  const handleCompare = (e: React.MouseEvent, timestamp: number) => {
+    e.stopPropagation(); // Don't trigger the row's preview click
+    if (compareTimestamp === timestamp) {
+      onClearCompare();
+    } else {
+      onCompare(timestamp);
+    }
+  };
+
+  const versionTypeLabel = (v: VersionEntry): string => {
+    if (v.type === 'pre-restore') return 'Before restore';
+    if (v.type === 'auto') return 'Auto-save';
+    return '';
   };
 
   return (
     <div style={panelStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <h3 style={titleStyle}>Version History</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={titleStyle}>Version History</h3>
+          <button type="button" style={saveBtnStyle} onClick={handleSaveVersion}>
+            Save Version
+          </button>
+        </div>
         <button type="button" style={closeBtnStyle} onClick={handleClose}>
           ✕
         </button>
@@ -191,13 +287,45 @@ export default function VersionHistoryPanel({
               style={versionItemStyle(previewTimestamp === v.timestamp)}
               onClick={() => onPreview(v.timestamp)}
             >
-              <span>{formatRelativeTime(v.age)}</span>
-              <span style={timestampLabel}>
-                {new Date(v.timestamp).toLocaleString()}
-              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {v.name && <span style={versionNameStyle}>{v.name}</span>}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {formatRelativeTime(v.age)}
+                  {v.type && v.type !== 'manual' && (
+                    <span style={versionTypeBadge(v.type)}>
+                      {versionTypeLabel(v)}
+                    </span>
+                  )}
+                </span>
+                {v.author && <span style={authorStyle}>by {v.author}</span>}
+                <span style={timestampLabel}>
+                  {new Date(v.timestamp).toLocaleString()}
+                </span>
+              </div>
+              <button
+                type="button"
+                style={{
+                  ...compareBtnStyle,
+                  ...(compareTimestamp === v.timestamp
+                    ? { background: '#eff6ff', borderColor: '#3b82f6', color: '#3b82f6' }
+                    : {}),
+                }}
+                onClick={(e) => handleCompare(e, v.timestamp)}
+              >
+                {compareTimestamp === v.timestamp ? 'Hide Diff' : 'Compare'}
+              </button>
             </div>
           ))}
       </div>
+
+      {/* Diff viewer */}
+      {compareSections != null && (
+        <DiffViewer
+          oldSections={compareSections}
+          newSections={currentSections}
+          onClose={onClearCompare}
+        />
+      )}
 
       {/* Footer: restore button */}
       {previewTimestamp != null && (

@@ -8,6 +8,7 @@ import {
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { getCachedRoom, setCachedRoom } from '../lib/cache';
 const LIKES_TABLE = 'social-likes';
 const PROFILES_TABLE = 'social-profiles';
 const POSTS_TABLE = 'social-posts';
@@ -55,12 +56,19 @@ postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => 
     }));
 
     // Broadcast social:like to room channel (non-fatal if Redis unavailable)
-    const roomForBroadcast = await docClient.send(new GetCommand({
-      TableName: ROOMS_TABLE,
-      Key: { roomId },
-    }));
-    if (roomForBroadcast.Item) {
-      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:like', {
+    let roomData = await getCachedRoom<{ channelId: string }>(roomId);
+    if (!roomData) {
+      const roomForBroadcast = await docClient.send(new GetCommand({
+        TableName: ROOMS_TABLE,
+        Key: { roomId },
+      }));
+      if (roomForBroadcast.Item) {
+        roomData = roomForBroadcast.Item as { channelId: string };
+        void setCachedRoom(roomId, roomForBroadcast.Item);
+      }
+    }
+    if (roomData) {
+      void broadcastService.emit(roomData.channelId, 'social:like', {
         targetId, userId, type: 'like', createdAt,
       });
     }
@@ -236,12 +244,19 @@ commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> 
     }));
 
     // Broadcast social:like (comment like) to room channel (non-fatal if Redis unavailable)
-    const roomForBroadcast = await docClient.send(new GetCommand({
-      TableName: ROOMS_TABLE,
-      Key: { roomId },
-    }));
-    if (roomForBroadcast.Item) {
-      void broadcastService.emit(roomForBroadcast.Item['channelId'] as string, 'social:like', {
+    let roomData = await getCachedRoom<{ channelId: string }>(roomId);
+    if (!roomData) {
+      const roomForBroadcast = await docClient.send(new GetCommand({
+        TableName: ROOMS_TABLE,
+        Key: { roomId },
+      }));
+      if (roomForBroadcast.Item) {
+        roomData = roomForBroadcast.Item as { channelId: string };
+        void setCachedRoom(roomId, roomForBroadcast.Item);
+      }
+    }
+    if (roomData) {
+      void broadcastService.emit(roomData.channelId, 'social:like', {
         targetId, userId, type: 'like', createdAt,
       });
     }

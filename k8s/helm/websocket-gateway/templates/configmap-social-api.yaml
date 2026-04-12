@@ -1,0 +1,15 @@
+{{- if .Values.socialApi.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "websocket-gateway.fullname" . }}-social-api-config
+  labels:
+    {{- include "websocket-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: social-api
+data:
+  {{- range $key, $value := .Values.socialApi.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  REDIS_ENDPOINT: {{ include "websocket-gateway.fullname" . }}-redis
+  LOCALSTACK_ENDPOINT: http://{{ include "websocket-gateway.fullname" . }}-dynamodb:{{ .Values.dynamodb.port }}
+{{- end }}

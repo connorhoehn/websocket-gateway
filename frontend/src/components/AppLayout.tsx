@@ -37,6 +37,7 @@ import { ActivityPanel } from './ActivityPanel';
 import { BigBrotherPanel } from './BigBrotherPanel';
 import DocumentEditorPage from './doc-editor/DocumentEditorPage';
 import DocumentListPage from './doc-editor/DocumentListPage';
+import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
 import type { UseWebSocketReturn } from '../hooks/useWebSocket';
 
@@ -268,6 +269,7 @@ export function AppLayout({
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [activeDocumentType, setActiveDocumentType] = useState<string | undefined>(undefined);
   const [showDevTools, setShowDevTools] = useState(false);
+  const [showNewDocModal, setShowNewDocModal] = useState(false);
 
   const {
     rooms,
@@ -553,7 +555,7 @@ export function AppLayout({
           {/* View switcher tabs */}
           <div style={{
             display: 'flex',
-            gap: 0,
+            alignItems: 'center',
             borderBottom: '1px solid #e2e8f0',
             marginBottom: '0.5rem',
           }}>
@@ -580,6 +582,29 @@ export function AppLayout({
                 {label}
               </button>
             ))}
+            {/* New Document button — shown in toolbar when on Documents tab */}
+            {activeView === 'doc-editor' && !activeDocumentId && (
+              <button
+                onClick={() => setShowNewDocModal(true)}
+                style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '5px 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  border: 'none',
+                  borderRadius: 6,
+                  background: '#3b82f6',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                + New Document
+              </button>
+            )}
           </div>
 
           {activeView === 'panels' && (
@@ -688,6 +713,7 @@ export function AppLayout({
             <DocumentListPage
               documents={documents}
               presence={docPresence}
+              hideHeader
               onOpenDocument={(id: string) => {
                 const doc = documents.find(d => d.id === id);
                 setActiveDocumentType(doc?.type);
@@ -695,13 +721,10 @@ export function AppLayout({
               }}
               onCreateDocument={(meta) => {
                 createDocument(meta);
-                // After creation, the documentCreated response will add it to the list
-                // The user can then click to open it
               }}
               onDeleteDocument={deleteDocument}
               onJumpToUser={(docId: string, _userId: string) => {
                 setActiveDocumentId(docId);
-                // Jump-to-user logic handled after mount by DocumentEditorPage
               }}
             />
           )}
@@ -783,6 +806,16 @@ export function AppLayout({
           </div>
         </div>
       )}
+
+      {/* New document modal — triggered from toolbar button */}
+      <NewDocumentModal
+        open={showNewDocModal}
+        onClose={() => setShowNewDocModal(false)}
+        onCreate={(meta) => {
+          createDocument(meta);
+          setShowNewDocModal(false);
+        }}
+      />
     </div>
   );
 }

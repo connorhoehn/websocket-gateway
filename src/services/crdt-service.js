@@ -7,7 +7,7 @@
 const crypto = require('crypto');
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
-const { DynamoDBClient, PutItemCommand, QueryCommand, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, PutItemCommand, QueryCommand, GetItemCommand, DeleteItemCommand, CreateTableCommand, DescribeTableCommand, ScanCommand } = require('@aws-sdk/client-dynamodb');
 const { EventBridgeClient, PutEventsCommand } = require('@aws-sdk/client-eventbridge');
 const Y = require('yjs');
 const { mergeUpdates } = Y;
@@ -27,9 +27,19 @@ class CRDTService {
         this.operationBatches = new Map(); // channelId -> {operations: [], timeout: null, senderClientId: string}
         this.BATCH_WINDOW_MS = 10; // 10ms batch window for <50ms total latency
 
+        // Awareness coalescing: buffer awareness updates per channel for 50ms,
+        // then broadcast a single merged payload instead of one per client.
+        this.awarenessBatches = new Map(); // channelId -> { updates: Map<clientId, update>, timeout: null }
+        this.AWARENESS_BATCH_WINDOW_MS = 50;
+
         // Debounced snapshot timers per channel (write after 5s of inactivity)
         this.snapshotDebounceTimers = new Map(); // channelId -> timeout
         this.SNAPSHOT_DEBOUNCE_MS = parseInt(process.env.SNAPSHOT_DEBOUNCE_MS || '5000', 10);
+
+        // Idle Y.Doc eviction: when a channel has 0 subscribers, start a 10-min timer.
+        // After 10 minutes, write a final snapshot and evict the Y.Doc from memory.
+        this.idleEvictionTimers = new Map(); // channelId -> timeout
+        this.IDLE_EVICTION_MS = parseInt(process.env.IDLE_EVICTION_MS || '600000', 10); // 10 minutes
 
         // DynamoDB client for snapshot retrieval
         const dynamoOpts = { region: process.env.AWS_REGION || 'us-east-1' };
@@ -62,14 +72,52 @@ class CRDTService {
         }, snapshotInterval);
         this.logger.info(`Periodic snapshots every ${snapshotInterval / 1000}s`);
 
-        // Ensure DynamoDB table exists in local dev
+        // DynamoDB table names
+        this.snapshotsTableName = process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots';
+        this.documentsTableName = process.env.DYNAMODB_DOCUMENTS_TABLE || 'crdt-documents';
+
+        // Ensure DynamoDB tables exist in local dev
         if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
             this._ensureTable().catch(err => this.logger.error('Failed to ensure DynamoDB table:', err.message));
+            this._ensureDocumentsTable().catch(err => this.logger.error('Failed to ensure DynamoDB documents table:', err.message));
         }
+
+        // Register SIGTERM/SIGINT handlers to flush dirty snapshots before exit
+        this._registerShutdownHandlers();
 
         // Document metadata: in-memory fallback when Redis is unavailable
         this.docMetaFallback = new Map(); // documentId -> meta object
         this.docListFallback = [];        // sorted array of { id, updatedAt }
+
+        // Register interceptor to apply remote CRDT updates to local Y.Doc
+        // This prevents cross-node divergence where remote updates were only relayed
+        // to WebSocket clients but not applied to the in-memory Y.Doc.
+        if (this.messageRouter && typeof this.messageRouter.onRemoteChannelMessage === 'function') {
+            this.messageRouter.onRemoteChannelMessage('crdt-sync', (channel, message, _fromNode) => {
+                if (message && message.type === 'crdt:update' && message.update) {
+                    const state = this.channelStates.get(channel);
+                    if (state && state.ydoc) {
+                        try {
+                            const updateBytes = new Uint8Array(Buffer.from(message.update, 'base64'));
+                            // Apply remote update to local Y.Doc without re-broadcasting
+                            // (the message router already relayed it to local clients)
+                            Y.applyUpdate(state.ydoc, updateBytes);
+                            state.operationsSinceSnapshot++;
+                            this._scheduleDebouncedSnapshot(channel);
+                            this.logger.debug(`Applied remote CRDT update to local Y.Doc for channel ${channel}`);
+                        } catch (err) {
+                            this.logger.error(`Failed to apply remote CRDT update for ${channel}:`, err.message);
+                        }
+                    }
+                }
+            });
+        }
+
+        // Push-based document presence tracking
+        // documentPresenceMap: Map<channelId, Map<clientId, {userId, displayName, color, idle}>>
+        this.documentPresenceMap = new Map();
+        // clientDocChannels: Map<clientId, Set<channelId>> — reverse index for disconnect cleanup
+        this.clientDocChannels = new Map();
 
         // Default icons by document type
         this.TYPE_ICONS = {
@@ -102,6 +150,156 @@ class CRDTService {
             } else {
                 this.logger.error(`Error checking DynamoDB table:`, err.message);
             }
+        }
+    }
+
+    async _ensureDocumentsTable() {
+        try {
+            await this.dynamoClient.send(new DescribeTableCommand({ TableName: this.documentsTableName }));
+            this.logger.info(`DynamoDB table ${this.documentsTableName} exists`);
+        } catch (err) {
+            if (err.name === 'ResourceNotFoundException') {
+                this.logger.info(`Creating DynamoDB table ${this.documentsTableName}...`);
+                await this.dynamoClient.send(new CreateTableCommand({
+                    TableName: this.documentsTableName,
+                    AttributeDefinitions: [
+                        { AttributeName: 'documentId', AttributeType: 'S' },
+                    ],
+                    KeySchema: [
+                        { AttributeName: 'documentId', KeyType: 'HASH' },
+                    ],
+                    BillingMode: 'PAY_PER_REQUEST',
+                }));
+                this.logger.info(`DynamoDB table ${this.documentsTableName} created`);
+            } else {
+                this.logger.error(`Error checking DynamoDB documents table:`, err.message);
+            }
+        }
+    }
+
+    /**
+     * Register SIGTERM/SIGINT handlers to flush all dirty Y.Doc snapshots
+     * before the process exits (e.g. rolling deploy pod restart).
+     */
+    _registerShutdownHandlers() {
+        const flushAndExit = async (signal) => {
+            this.logger.info(`${signal} received — flushing dirty CRDT snapshots before exit`);
+            const promises = [];
+            for (const [channelId, state] of this.channelStates.entries()) {
+                if (state && state.operationsSinceSnapshot > 0) {
+                    promises.push(
+                        this.writeSnapshot(channelId).catch(err =>
+                            this.logger.error(`Failed to flush snapshot for ${channelId} on ${signal}:`, err.message)
+                        )
+                    );
+                }
+            }
+            if (promises.length > 0) {
+                await Promise.allSettled(promises);
+                this.logger.info(`Flushed ${promises.length} dirty snapshots on ${signal}`);
+            }
+            // NOTE: we don't call process.exit() here — the server.js handlers do that.
+        };
+
+        process.on('SIGTERM', () => flushAndExit('SIGTERM'));
+        process.on('SIGINT', () => flushAndExit('SIGINT'));
+    }
+
+    // -----------------------------------------------------------------
+    // DynamoDB document metadata persistence helpers
+    // -----------------------------------------------------------------
+
+    /**
+     * Persist document metadata to DynamoDB (crdt-documents table).
+     * Called alongside Redis writes so metadata survives Redis restarts.
+     */
+    async _persistDocumentMeta(document) {
+        try {
+            const item = {
+                documentId: { S: document.id },
+                title: { S: document.title },
+                type: { S: document.type || 'custom' },
+                status: { S: document.status || 'draft' },
+                createdBy: { S: document.createdBy || 'unknown' },
+                createdAt: { S: document.createdAt },
+                updatedAt: { S: document.updatedAt },
+            };
+            // Optional fields
+            if (document.icon) item.icon = { S: document.icon };
+            if (document.description) item.description = { S: document.description };
+
+            await this.dynamoClient.send(new PutItemCommand({
+                TableName: this.documentsTableName,
+                Item: item,
+            }));
+            this.logger.debug(`Document metadata persisted to DynamoDB: ${document.id}`);
+        } catch (err) {
+            this.logger.error(`Failed to persist document metadata to DynamoDB for ${document.id}:`, err.message);
+        }
+    }
+
+    /**
+     * Load a single document metadata from DynamoDB.
+     */
+    async _loadDocumentMetaFromDynamo(documentId) {
+        try {
+            const result = await this.dynamoClient.send(new GetItemCommand({
+                TableName: this.documentsTableName,
+                Key: { documentId: { S: documentId } },
+            }));
+            if (!result.Item) return null;
+            return this._dynamoItemToDocument(result.Item);
+        } catch (err) {
+            this.logger.error(`Failed to load document meta from DynamoDB for ${documentId}:`, err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Load all document metadata from DynamoDB (used to hydrate Redis on startup).
+     */
+    async _loadAllDocumentsFromDynamo() {
+        try {
+            const result = await this.dynamoClient.send(new ScanCommand({
+                TableName: this.documentsTableName,
+            }));
+            if (!result.Items || result.Items.length === 0) return [];
+            return result.Items.map(item => this._dynamoItemToDocument(item));
+        } catch (err) {
+            this.logger.error('Failed to scan documents from DynamoDB:', err.message);
+            return [];
+        }
+    }
+
+    /**
+     * Convert a DynamoDB item to a plain document metadata object.
+     */
+    _dynamoItemToDocument(item) {
+        return {
+            id: item.documentId.S,
+            title: item.title ? item.title.S : 'Untitled',
+            type: item.type ? item.type.S : 'custom',
+            status: item.status ? item.status.S : 'draft',
+            createdBy: item.createdBy ? item.createdBy.S : 'unknown',
+            createdAt: item.createdAt ? item.createdAt.S : new Date().toISOString(),
+            updatedAt: item.updatedAt ? item.updatedAt.S : new Date().toISOString(),
+            icon: item.icon ? item.icon.S : '',
+            description: item.description ? item.description.S : '',
+        };
+    }
+
+    /**
+     * Delete document metadata from DynamoDB.
+     */
+    async _deleteDocumentMetaFromDynamo(documentId) {
+        try {
+            await this.dynamoClient.send(new DeleteItemCommand({
+                TableName: this.documentsTableName,
+                Key: { documentId: { S: documentId } },
+            }));
+            this.logger.debug(`Document metadata deleted from DynamoDB: ${documentId}`);
+        } catch (err) {
+            this.logger.error(`Failed to delete document metadata from DynamoDB for ${documentId}:`, err.message);
         }
     }
 
@@ -203,6 +401,8 @@ class CRDTService {
                     return await this.handleUpdateDocumentMeta(clientId, data);
                 case 'getDocumentPresence':
                     return await this.handleGetDocumentPresence(clientId, data);
+                case 'saveVersion':
+                    return await this.handleSaveVersion(clientId, data);
                 default:
                     this.sendError(clientId, `Unknown CRDT action: ${action}`);
             }
@@ -239,6 +439,9 @@ class CRDTService {
 
             // Subscribe to channel through message router
             await this.messageRouter.subscribeToChannel(clientId, channel);
+
+            // Cancel idle eviction timer if someone is subscribing
+            this._cancelIdleEviction(channel);
 
             // Initialize or update channel state
             let state = this.channelStates.get(channel);
@@ -307,6 +510,9 @@ class CRDTService {
                 // Non-fatal: client starts with empty doc if sync fails
                 this.logger.error(`Failed to push Y.Doc state for ${channel} to ${clientId}:`, syncError.message);
             }
+
+            // Track document presence and broadcast to all clients
+            this._addToDocumentPresence(clientId, channel);
 
             this.logger.info(`Client ${clientId} subscribed to CRDT channel: ${channel}`);
         } catch (error) {
@@ -388,13 +594,21 @@ class CRDTService {
             if (state) {
                 state.subscriberCount--;
 
-                // If last client is unsubscribing, write final snapshot
-                if (state.subscriberCount === 0 && state.operationsSinceSnapshot > 0) {
-                    await this.writeSnapshot(channel);
+                // If last client is unsubscribing, write final snapshot and start eviction timer
+                if (state.subscriberCount <= 0) {
+                    state.subscriberCount = 0; // clamp
+                    if (state.operationsSinceSnapshot > 0) {
+                        await this.writeSnapshot(channel);
+                    }
+                    // Start idle eviction timer — Y.Doc will be evicted after 10 minutes
+                    this._startIdleEviction(channel);
                 }
             }
 
             await this.messageRouter.unsubscribeFromChannel(clientId, channel);
+
+            // Remove from document presence and broadcast
+            this._removeFromDocumentPresence(clientId, channel);
 
             this.sendToClient(clientId, {
                 type: 'crdt',
@@ -455,10 +669,15 @@ class CRDTService {
     }
 
     /**
-     * Relay awareness updates to all other channel subscribers (no persistence)
+     * Relay awareness updates to all other channel subscribers (no persistence).
      * Awareness carries ephemeral state like cursor positions, user names, online status.
+     *
+     * Updates are coalesced in a 50ms window: multiple clients' awareness updates
+     * for the same channel are buffered and broadcast as a single merged message,
+     * reducing Redis pub/sub volume significantly at scale.
      */
-    async handleAwareness(clientId, { channel, update }) {
+    async handleAwareness(clientId, { channel, update, idle }) {
+        this.logger.info(`[awareness-entry] client=${clientId} channel=${channel} hasUpdate=${!!update} idle=${idle} isDoc=${channel?.startsWith?.('doc:')}`);
         if (!this.validateChannel(channel)) {
             this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
             return;
@@ -470,16 +689,82 @@ class CRDTService {
         }
 
         try {
-            // Relay awareness to all other subscribers — no persistence, no batching
+            // Backfill presence map if this client isn't tracked yet (e.g. after pod restart)
+            if (channel.startsWith('doc:')) {
+                const channelMap = this.documentPresenceMap.get(channel);
+                if (!channelMap || !channelMap.has(clientId)) {
+                    this.logger.info(`[presence-backfill] Adding ${clientId} to presence for ${channel}`);
+                    this._addToDocumentPresence(clientId, channel);
+                    this.logger.info(`[presence-backfill] documentPresenceMap size: ${this.documentPresenceMap.size}, channel entries: ${this.documentPresenceMap.get(channel)?.size ?? 0}`);
+                }
+
+                // Update idle state if provided
+                if (typeof idle === 'boolean') {
+                    const updatedMap = this.documentPresenceMap.get(channel);
+                    if (updatedMap) {
+                        const userInfo = updatedMap.get(clientId);
+                        if (userInfo && userInfo.idle !== idle) {
+                            userInfo.idle = idle;
+                            this._broadcastDocumentPresence();
+                        }
+                    }
+                }
+            }
+
+            // Buffer awareness update for coalescing
+            let batch = this.awarenessBatches.get(channel);
+            if (!batch) {
+                batch = { updates: new Map(), timeout: null };
+                this.awarenessBatches.set(channel, batch);
+            }
+
+            // Store latest update per client (overwrites previous — only latest matters)
+            batch.updates.set(clientId, update);
+
+            // Schedule broadcast if not already scheduled
+            if (!batch.timeout) {
+                batch.timeout = setTimeout(() => {
+                    this._flushAwarenessBatch(channel);
+                }, this.AWARENESS_BATCH_WINDOW_MS);
+            }
+
+            this.logger.debug(`Awareness buffered for channel ${channel} from client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error buffering awareness for channel ${channel}:`, error);
+        }
+    }
+
+    /**
+     * Flush coalesced awareness updates for a channel.
+     * Broadcasts a single message containing all buffered client awareness states.
+     */
+    async _flushAwarenessBatch(channel) {
+        const batch = this.awarenessBatches.get(channel);
+        if (!batch || batch.updates.size === 0) {
+            this.awarenessBatches.delete(channel);
+            return;
+        }
+
+        try {
+            // Build merged awareness payload: array of { clientId, update }
+            const merged = [];
+            for (const [cid, upd] of batch.updates) {
+                merged.push({ clientId: cid, update: upd });
+            }
+
+            // Broadcast merged awareness to channel (exclude no one — each entry
+            // already identifies its source client so the frontend can skip self)
             await this.messageRouter.sendToChannel(channel, {
                 type: 'crdt:awareness',
                 channel,
-                update  // base64 awareness state
-            }, clientId);  // exclude sender
+                updates: merged  // array of {clientId, update} for merged broadcast
+            });
 
-            this.logger.debug(`Awareness relayed for channel ${channel} from client ${clientId}`);
+            this.logger.debug(`Awareness flushed for channel ${channel}: ${merged.length} client(s)`);
         } catch (error) {
-            this.logger.error(`Error relaying awareness for channel ${channel}:`, error);
+            this.logger.error(`Error flushing awareness batch for channel ${channel}:`, error);
+        } finally {
+            this.awarenessBatches.delete(channel);
         }
     }
 
@@ -590,9 +875,34 @@ class CRDTService {
     }
 
     /**
-     * Publish snapshot checkpoint to EventBridge (decoupled persistence via crdt-snapshot Lambda)
+     * Compute TTL (epoch seconds) based on version type.
+     * - 'manual' (named versions): no TTL (kept indefinitely)
+     * - 'pre-restore': 90-day TTL
+     * - 'auto' / 'pre-clear' / default: 30-day TTL
      */
-    async writeSnapshot(channelId) {
+    _computeTtl(versionType) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        switch (versionType) {
+            case 'manual':
+                return null; // No TTL — kept indefinitely
+            case 'pre-restore':
+                return nowSec + (90 * 24 * 60 * 60); // 90 days
+            case 'pre-clear':
+                return nowSec + (90 * 24 * 60 * 60); // 90 days
+            default: // 'auto' and anything else
+                return nowSec + (30 * 24 * 60 * 60); // 30 days
+        }
+    }
+
+    /**
+     * Publish snapshot checkpoint to EventBridge (decoupled persistence via crdt-snapshot Lambda)
+     * @param {string} channelId
+     * @param {Object} [meta] - Optional version metadata
+     * @param {string} [meta.author] - userId/displayName of who triggered the save, or 'auto'
+     * @param {string} [meta.name] - Optional user-provided version name
+     * @param {string} [meta.type] - 'auto' | 'manual' | 'pre-restore' | 'pre-clear'
+     */
+    async writeSnapshot(channelId, meta = {}) {
         const state = this.channelStates.get(channelId);
         if (!state || !state.ydoc) {
             return; // No snapshot to write
@@ -611,20 +921,40 @@ class CRDTService {
 
             const compressed = await gzip(Buffer.from(stateUpdate));
 
+            // Version metadata defaults
+            const versionType = meta.type || 'auto';
+            const author = meta.author || 'auto';
+            const versionName = meta.name || null;
+            const sizeBytes = compressed.length;
+
             // Direct DynamoDB write path (bypasses EventBridge + Lambda)
             if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
-                const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+                const item = {
+                    channelId: { S: channelId },
+                    timestamp: { N: String(Date.now()) },
+                    snapshot: { B: compressed },
+                    versionType: { S: versionType },
+                    author: { S: author },
+                    sizeBytes: { N: String(sizeBytes) },
+                };
+
+                // TTL based on version type
+                const ttl = this._computeTtl(versionType);
+                if (ttl !== null) {
+                    item.ttl = { N: String(ttl) };
+                }
+
+                // Optional version name (only set when provided)
+                if (versionName) {
+                    item.versionName = { S: versionName };
+                }
+
                 await this.dynamoClient.send(new PutItemCommand({
                     TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
-                    Item: {
-                        documentId: { S: channelId },
-                        timestamp: { N: String(Date.now()) },
-                        snapshot: { B: compressed },
-                        ttl: { N: String(ttl) },
-                    }
+                    Item: item,
                 }));
                 state.operationsSinceSnapshot = 0;
-                this.logger.info(`Snapshot written directly to DynamoDB for channel ${channelId}`);
+                this.logger.info(`Snapshot written directly to DynamoDB for channel ${channelId} (type=${versionType}, author=${author})`);
                 return;
             }
 
@@ -637,7 +967,11 @@ class CRDTService {
                     Detail: JSON.stringify({
                         channelId,
                         snapshotData: snapshotBase64,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        versionType,
+                        author,
+                        versionName,
+                        sizeBytes,
                     }),
                     EventBusName: this.eventBusName,
                 }]
@@ -651,7 +985,7 @@ class CRDTService {
             // Reset operation counter
             state.operationsSinceSnapshot = 0;
 
-            this.logger.info(`Snapshot published to EventBridge for channel ${channelId}`);
+            this.logger.info(`Snapshot published to EventBridge for channel ${channelId} (type=${versionType}, author=${author})`);
         } catch (error) {
             // Log-and-continue: publish failure must not crash the gateway
             this.logger.error(`Failed to publish snapshot for ${channelId}:`, error.message);
@@ -687,7 +1021,7 @@ class CRDTService {
                 },
                 ScanIndexForward: false, // Newest first
                 Limit: limit,
-                ProjectionExpression: 'documentId, #ts',
+                ProjectionExpression: 'documentId, #ts, versionType, author, versionName, sizeBytes',
                 ExpressionAttributeNames: {
                     '#ts': 'timestamp'
                 }
@@ -697,7 +1031,14 @@ class CRDTService {
             const now = Date.now();
             const snapshots = (result.Items || []).map(item => {
                 const timestamp = parseInt(item.timestamp.N, 10);
-                return { timestamp, age: now - timestamp };
+                return {
+                    timestamp,
+                    age: now - timestamp,
+                    type: item.versionType ? item.versionType.S : 'auto',
+                    author: item.author ? item.author.S : 'auto',
+                    name: item.versionName ? item.versionName.S : null,
+                    sizeBytes: item.sizeBytes ? parseInt(item.sizeBytes.N, 10) : null,
+                };
             });
 
             this.sendToClient(clientId, {
@@ -823,6 +1164,20 @@ class CRDTService {
                 this.channelStates.set(channel, state);
             }
 
+            // Pre-restore checkpoint: save current state so the operation is reversible
+            try {
+                const currentState = Y.encodeStateAsUpdate(state.ydoc);
+                if (currentState.byteLength > 0) {
+                    // Force a snapshot write of the current state before overwriting
+                    state.operationsSinceSnapshot = 1; // Ensure writeSnapshot actually writes
+                    await this.writeSnapshot(channel, { type: 'pre-restore', author: 'system' });
+                    this.logger.info(`Pre-restore checkpoint saved for channel ${channel}`);
+                }
+            } catch (checkpointErr) {
+                this.logger.error(`Failed to save pre-restore checkpoint for ${channel}:`, checkpointErr.message);
+                // Continue with restore even if checkpoint fails
+            }
+
             // Create a fresh Y.Doc and apply the historical update
             const freshDoc = new Y.Doc();
             Y.applyUpdate(freshDoc, historicalUpdate);
@@ -844,7 +1199,7 @@ class CRDTService {
             });
 
             // Write a new snapshot for the restored state
-            await this.writeSnapshot(channel);
+            await this.writeSnapshot(channel, { type: 'auto', author: 'system' });
 
             this.logger.info(`Restored snapshot at version ${timestamp} for channel ${channel}`);
         } catch (error) {
@@ -874,6 +1229,19 @@ class CRDTService {
                 this.channelStates.set(channel, state);
             }
 
+            // Pre-clear checkpoint: save current state so the operation is reversible
+            try {
+                const currentState = Y.encodeStateAsUpdate(state.ydoc);
+                if (currentState.byteLength > 0) {
+                    state.operationsSinceSnapshot = 1; // Ensure writeSnapshot actually writes
+                    await this.writeSnapshot(channel, { type: 'pre-clear', author: 'system' });
+                    this.logger.info(`Pre-clear checkpoint saved for channel ${channel}`);
+                }
+            } catch (checkpointErr) {
+                this.logger.error(`Failed to save pre-clear checkpoint for ${channel}:`, checkpointErr.message);
+                // Continue with clear even if checkpoint fails
+            }
+
             // Replace the live Y.Doc with a fresh empty one
             const freshDoc = new Y.Doc({ gc: false });
             state.ydoc.destroy();
@@ -892,7 +1260,7 @@ class CRDTService {
             });
 
             // Write the empty snapshot to DynamoDB
-            await this.writeSnapshot(channel);
+            await this.writeSnapshot(channel, { type: 'auto', author: 'system' });
 
             // Send confirmation to the requesting client
             this.sendToClient(clientId, {
@@ -906,6 +1274,55 @@ class CRDTService {
         } catch (error) {
             this.logger.error(`Error clearing document for channel ${channel}:`, error);
             this.sendError(clientId, 'Failed to clear document');
+        }
+    }
+
+    /**
+     * Save a named version (manual checkpoint) of the current document state.
+     * The snapshot is written immediately with type 'manual' and no TTL.
+     */
+    async handleSaveVersion(clientId, { channel, name, userId }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        if (!name || typeof name !== 'string' || name.trim().length === 0) {
+            this.sendError(clientId, 'Version name is required and must be a non-empty string');
+            return;
+        }
+
+        try {
+            const state = this.channelStates.get(channel);
+            if (!state || !state.ydoc) {
+                this.sendError(clientId, 'No active document found for this channel');
+                return;
+            }
+
+            const author = userId || 'unknown';
+
+            // Force a snapshot write even if operationsSinceSnapshot is 0
+            state.operationsSinceSnapshot = 1;
+            await this.writeSnapshot(channel, {
+                type: 'manual',
+                author,
+                name: name.trim(),
+            });
+
+            const ts = Date.now();
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'versionSaved',
+                channel,
+                name: name.trim(),
+                author,
+                timestamp: ts,
+            });
+
+            this.logger.info(`Named version "${name.trim()}" saved for channel ${channel} by ${author}`);
+        } catch (error) {
+            this.logger.error(`Error saving named version for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to save named version');
         }
     }
 
@@ -930,6 +1347,26 @@ class CRDTService {
                     documents = metas
                         .filter(Boolean)
                         .map(raw => JSON.parse(raw));
+                }
+
+                // If Redis is empty, hydrate from DynamoDB (e.g. after Redis restart)
+                if (documents.length === 0) {
+                    this.logger.info('Redis doc list empty — hydrating from DynamoDB');
+                    documents = await this._loadAllDocumentsFromDynamo();
+                    // Re-populate Redis cache from DynamoDB
+                    for (const doc of documents) {
+                        try {
+                            await this.redisClient.set(`doc:meta:${doc.id}`, JSON.stringify(doc));
+                            await this.redisClient.zAdd('doc:list', {
+                                score: new Date(doc.updatedAt).getTime(),
+                                value: doc.id,
+                            });
+                        } catch (cacheErr) {
+                            this.logger.error(`Failed to re-cache doc ${doc.id} in Redis:`, cacheErr.message);
+                        }
+                    }
+                    // Sort newest first after hydration
+                    documents.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
                 }
             } else {
                 // In-memory fallback
@@ -1010,6 +1447,9 @@ class CRDTService {
                 this.docListFallback.sort((a, b) => b.updatedAt - a.updatedAt);
             }
 
+            // Persist to DynamoDB so metadata survives Redis restarts
+            await this._persistDocumentMeta(document);
+
             this.sendToClient(clientId, {
                 type: 'crdt',
                 action: 'documentCreated',
@@ -1041,6 +1481,9 @@ class CRDTService {
                 this.docMetaFallback.delete(documentId);
                 this.docListFallback = this.docListFallback.filter(e => e.id !== documentId);
             }
+
+            // Remove from DynamoDB as well
+            await this._deleteDocumentMetaFromDynamo(documentId);
 
             // Clean up in-memory CRDT channel state if it exists
             const channelKey = `doc:${documentId}`;
@@ -1131,6 +1574,9 @@ class CRDTService {
                 this.docListFallback.sort((a, b) => b.updatedAt - a.updatedAt);
             }
 
+            // Persist updated metadata to DynamoDB
+            await this._persistDocumentMeta(existing);
+
             this.sendToClient(clientId, {
                 type: 'crdt',
                 action: 'documentMetaUpdated',
@@ -1152,35 +1598,42 @@ class CRDTService {
         try {
             const presence = {};
 
-            for (const [channelId, state] of this.channelStates.entries()) {
-                if (!channelId.startsWith('doc:')) continue;
-
-                // Extract awareness states from the Y.Doc if any awareness data exists
-                const users = [];
-
-                // The message router tracks which clients are subscribed to which channels.
-                // We can pull client metadata to build a presence list.
-                if (this.messageRouter && typeof this.messageRouter.getChannelClients === 'function') {
-                    const clientIds = this.messageRouter.getChannelClients(channelId);
-                    if (clientIds) {
-                        for (const cid of clientIds) {
-                            try {
-                                const cd = this.messageRouter.getClientData(cid);
-                                if (cd && cd.userContext) {
-                                    users.push({
-                                        userId: cd.userContext.userId || cd.userContext.sub || cid,
-                                        displayName: cd.userContext.displayName || cd.userContext.email || 'Anonymous',
-                                        color: cd.userContext.color || null,
-                                        mode: 'editing',
-                                    });
-                                }
-                            } catch (_) { /* skip */ }
-                        }
+            // Primary source: in-memory documentPresenceMap (populated by subscribe)
+            for (const [channelId, usersMap] of this.documentPresenceMap) {
+                const usersByUserId = new Map();
+                for (const userInfo of usersMap.values()) {
+                    const existing = usersByUserId.get(userInfo.userId);
+                    if (!existing || (!userInfo.idle && existing.idle)) {
+                        usersByUserId.set(userInfo.userId, userInfo);
                     }
                 }
-
+                const users = Array.from(usersByUserId.values());
                 if (users.length > 0) {
                     presence[channelId] = users;
+                }
+            }
+
+            // Fallback: also check channelStates for doc: channels not in the presence map
+            // This handles the case where clients reconnected without re-subscribing
+            for (const [channelId, state] of this.channelStates) {
+                if (!channelId.startsWith('doc:') || presence[channelId]) continue;
+                if (state.subscribers && state.subscribers.size > 0) {
+                    const users = [];
+                    for (const subClientId of state.subscribers) {
+                        const cd = this.messageRouter.getClientData(subClientId);
+                        const ctx = cd?.userContext || cd?.metadata?.userContext || {};
+                        users.push({
+                            userId: ctx.userId || ctx.sub || subClientId,
+                            displayName: ctx.displayName || ctx.email || subClientId.slice(0, 8),
+                            color: ctx.color || '#3b82f6',
+                            idle: false,
+                        });
+                        // Backfill the presence map for future push broadcasts
+                        this._addToDocumentPresence(subClientId, channelId);
+                    }
+                    if (users.length > 0) {
+                        presence[channelId] = users;
+                    }
                 }
             }
 
@@ -1194,6 +1647,193 @@ class CRDTService {
         } catch (error) {
             this.logger.error(`Error getting document presence for client ${clientId}:`, error);
             this.sendError(clientId, 'Failed to get document presence');
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Push-based document presence helpers
+    // -----------------------------------------------------------------
+
+    /**
+     * Add a client to the document presence map for a doc: channel.
+     * Broadcasts updated presence to all connected clients.
+     */
+    _addToDocumentPresence(clientId, channel) {
+        if (!channel.startsWith('doc:')) return;
+
+        const clientData = this.messageRouter.getClientData(clientId);
+        const ctx = clientData?.userContext || clientData?.metadata?.userContext || {};
+
+        const userInfo = {
+            userId: ctx.userId || ctx.sub || clientId,
+            displayName: ctx.displayName || ctx.email || clientId.slice(0, 8),
+            color: ctx.color || '#3b82f6',
+            idle: false,
+        };
+
+        // Add to documentPresenceMap
+        if (!this.documentPresenceMap.has(channel)) {
+            this.documentPresenceMap.set(channel, new Map());
+        }
+        this.documentPresenceMap.get(channel).set(clientId, userInfo);
+
+        // Update reverse index
+        if (!this.clientDocChannels.has(clientId)) {
+            this.clientDocChannels.set(clientId, new Set());
+        }
+        this.clientDocChannels.get(clientId).add(channel);
+
+        // Broadcast updated presence
+        this._broadcastDocumentPresence();
+    }
+
+    /**
+     * Remove a client from a specific doc: channel's presence map.
+     * Broadcasts updated presence to all connected clients.
+     */
+    _removeFromDocumentPresence(clientId, channel) {
+        if (!channel.startsWith('doc:')) return;
+
+        const channelMap = this.documentPresenceMap.get(channel);
+        if (channelMap) {
+            channelMap.delete(clientId);
+            if (channelMap.size === 0) {
+                this.documentPresenceMap.delete(channel);
+            }
+        }
+
+        // Update reverse index
+        const channels = this.clientDocChannels.get(clientId);
+        if (channels) {
+            channels.delete(channel);
+            if (channels.size === 0) {
+                this.clientDocChannels.delete(clientId);
+            }
+        }
+
+        // Broadcast updated presence
+        this._broadcastDocumentPresence();
+    }
+
+    /**
+     * Remove a client from ALL document presence maps (on disconnect).
+     * Broadcasts updated presence to all connected clients.
+     */
+    _removeClientFromAllDocPresence(clientId) {
+        const channels = this.clientDocChannels.get(clientId);
+        if (!channels || channels.size === 0) return;
+
+        for (const channel of channels) {
+            const channelMap = this.documentPresenceMap.get(channel);
+            if (channelMap) {
+                channelMap.delete(clientId);
+                if (channelMap.size === 0) {
+                    this.documentPresenceMap.delete(channel);
+                }
+            }
+        }
+        this.clientDocChannels.delete(clientId);
+
+        // Broadcast updated presence
+        this._broadcastDocumentPresence();
+    }
+
+    /**
+     * Build and broadcast a documents:presence message to all connected clients.
+     * Format: { type: 'documents:presence', documents: [{ documentId, users }] }
+     */
+    _broadcastDocumentPresence() {
+        const documents = [];
+
+        for (const [channelId, usersMap] of this.documentPresenceMap) {
+            // Deduplicate by userId (same user could have multiple tabs)
+            const usersByUserId = new Map();
+            for (const userInfo of usersMap.values()) {
+                // Keep the most recent entry per userId (last write wins for idle)
+                const existing = usersByUserId.get(userInfo.userId);
+                if (!existing || (!userInfo.idle && existing.idle)) {
+                    usersByUserId.set(userInfo.userId, userInfo);
+                }
+            }
+
+            documents.push({
+                documentId: channelId,
+                users: Array.from(usersByUserId.values()),
+            });
+        }
+
+        const message = {
+            type: 'documents:presence',
+            documents,
+            timestamp: new Date().toISOString(),
+        };
+
+        // Broadcast to all connected local clients
+        if (this.messageRouter) {
+            this.messageRouter.broadcastToLocalClients(message);
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Idle Y.Doc eviction
+    // -----------------------------------------------------------------
+
+    /**
+     * Start an idle eviction timer for a channel.
+     * After IDLE_EVICTION_MS (default 10 min) with no subscribers, write a final
+     * snapshot and evict the Y.Doc from memory to reclaim resources.
+     */
+    _startIdleEviction(channel) {
+        // Don't start a duplicate timer
+        if (this.idleEvictionTimers.has(channel)) return;
+
+        const timer = setTimeout(async () => {
+            this.idleEvictionTimers.delete(channel);
+            const state = this.channelStates.get(channel);
+            if (!state) return;
+
+            // Double-check that no subscribers have arrived during the grace period
+            if (state.subscriberCount > 0) return;
+
+            try {
+                // Write final snapshot if there are pending operations
+                if (state.operationsSinceSnapshot > 0) {
+                    await this.writeSnapshot(channel);
+                    this.logger.info(`Final snapshot written before evicting Y.Doc for channel ${channel}`);
+                }
+
+                // Destroy Y.Doc and remove channel state
+                if (state.ydoc) {
+                    state.ydoc.destroy();
+                }
+                this.channelStates.delete(channel);
+
+                // Clean up any snapshot debounce timer
+                const debounceTimer = this.snapshotDebounceTimers.get(channel);
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                    this.snapshotDebounceTimers.delete(channel);
+                }
+
+                this.logger.info(`Y.Doc evicted for idle channel ${channel} (no subscribers for ${this.IDLE_EVICTION_MS / 1000}s)`);
+            } catch (err) {
+                this.logger.error(`Error during idle eviction for channel ${channel}:`, err.message);
+            }
+        }, this.IDLE_EVICTION_MS);
+
+        this.idleEvictionTimers.set(channel, timer);
+        this.logger.debug(`Idle eviction timer started for channel ${channel} (${this.IDLE_EVICTION_MS / 1000}s)`);
+    }
+
+    /**
+     * Cancel an idle eviction timer for a channel (e.g. when a new subscriber joins).
+     */
+    _cancelIdleEviction(channel) {
+        const timer = this.idleEvictionTimers.get(channel);
+        if (timer) {
+            clearTimeout(timer);
+            this.idleEvictionTimers.delete(channel);
+            this.logger.debug(`Idle eviction timer cancelled for channel ${channel}`);
         }
     }
 
@@ -1231,7 +1871,14 @@ class CRDTService {
     }
 
     // Client lifecycle methods
+    // Alias for server.js handleClientDisconnect which calls service.handleDisconnect()
+    async handleDisconnect(clientId) {
+        return this.onClientDisconnect(clientId);
+    }
+
     async onClientDisconnect(clientId) {
+        // Remove from all document presence maps and broadcast update
+        this._removeClientFromAllDocPresence(clientId);
         this.logger.debug(`Client ${clientId} disconnected from CRDT service`);
     }
 
@@ -1242,13 +1889,27 @@ class CRDTService {
             clearInterval(this.periodicSnapshotTimer);
         }
 
-        // Clear all pending batches
+        // Clear all pending CRDT operation batches
         for (const [channel, batch] of this.operationBatches.entries()) {
             if (batch.timeout) {
                 clearTimeout(batch.timeout);
             }
         }
         this.operationBatches.clear();
+
+        // Clear all pending awareness batches
+        for (const [channel, batch] of this.awarenessBatches.entries()) {
+            if (batch.timeout) {
+                clearTimeout(batch.timeout);
+            }
+        }
+        this.awarenessBatches.clear();
+
+        // Clear idle eviction timers
+        for (const [channel, timer] of this.idleEvictionTimers.entries()) {
+            clearTimeout(timer);
+        }
+        this.idleEvictionTimers.clear();
 
         // Clear debounce timers and flush pending snapshots
         for (const [channelId, timer] of this.snapshotDebounceTimers.entries()) {
@@ -1271,7 +1932,10 @@ class CRDTService {
     // Utility methods for debugging/monitoring
     getStats() {
         return {
-            pendingBatches: this.operationBatches.size
+            pendingBatches: this.operationBatches.size,
+            pendingAwarenessBatches: this.awarenessBatches.size,
+            idleEvictionTimers: this.idleEvictionTimers.size,
+            activeChannels: this.channelStates.size
         };
     }
 }

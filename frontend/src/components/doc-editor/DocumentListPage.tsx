@@ -27,6 +27,7 @@ export interface PresenceInfo {
   displayName: string;
   color: string;
   mode: string;
+  idle?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,8 @@ export interface DocumentListPageProps {
   onCreateDocument: (meta: { title: string; type: string; description?: string }) => void;
   onDeleteDocument: (documentId: string) => void;
   onJumpToUser: (documentId: string, userId: string) => void;
+  /** Hide the header row (title + new button) when controlled externally */
+  hideHeader?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +105,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const MODE_ICONS: Record<string, { icon: string; label: string }> = {
+  editor: { icon: '\u270F', label: 'Editing' },    // pencil
+  reviewer: { icon: '\u2714', label: 'Reviewing' }, // check
+  reader: { icon: '\uD83D\uDC41', label: 'Viewing' },    // eye
+};
+
 function PresenceAvatars({
   users,
   onClickUser,
@@ -109,51 +118,96 @@ function PresenceAvatars({
   users: PresenceInfo[];
   onClickUser: (userId: string) => void;
 }) {
-  const MAX_SHOWN = 4;
+  const MAX_SHOWN = 5;
   const shown = users.slice(0, MAX_SHOWN);
   const overflow = users.length - MAX_SHOWN;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
-      {shown.map((u, i) => (
-        <div
-          key={u.userId}
-          title={u.displayName}
-          onClick={(e) => {
-            e.stopPropagation();
-            onClickUser(u.userId);
-          }}
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: u.color,
-            color: '#ffffff',
-            fontSize: 11,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '2px solid #ffffff',
-            marginLeft: i > 0 ? -8 : 0,
-            cursor: 'pointer',
-            position: 'relative',
-            zIndex: MAX_SHOWN - i,
-          }}
-        >
-          {u.displayName
-            .split(' ')
-            .map((w) => w[0])
-            .join('')
-            .slice(0, 2)
-            .toUpperCase()}
-        </div>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      {shown.map((u, i) => {
+        const modeInfo = MODE_ICONS[u.mode] ?? MODE_ICONS.editor;
+        const isIdle = u.idle === true;
+        const statusColor = isIdle ? '#f59e0b' : '#10b981';
+
+        return (
+          <div
+            key={u.userId}
+            title={`${u.displayName} — ${isIdle ? 'Away' : modeInfo.label}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClickUser(u.userId);
+            }}
+            style={{
+              position: 'relative',
+              marginLeft: i > 0 ? -6 : 0,
+              zIndex: MAX_SHOWN - i,
+              cursor: 'pointer',
+            }}
+          >
+            {/* Avatar circle */}
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: isIdle ? `${u.color}99` : u.color,
+                color: '#ffffff',
+                fontSize: 11,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid #ffffff',
+              }}
+            >
+              {u.displayName
+                .split(' ')
+                .map((w) => w[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+            {/* Status dot (green=active, yellow=idle) */}
+            <div
+              style={{
+                position: 'absolute',
+                bottom: -1,
+                right: -1,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: statusColor,
+                border: '2px solid #ffffff',
+              }}
+            />
+            {/* Mode icon badge */}
+            <div
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 8,
+                lineHeight: 1,
+              }}
+            >
+              {modeInfo.icon}
+            </div>
+          </div>
+        );
+      })}
       {overflow > 0 && (
         <div
           style={{
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             borderRadius: '50%',
             background: '#94a3b8',
             color: '#ffffff',
@@ -163,7 +217,7 @@ function PresenceAvatars({
             alignItems: 'center',
             justifyContent: 'center',
             border: '2px solid #ffffff',
-            marginLeft: -8,
+            marginLeft: -6,
           }}
         >
           +{overflow}
@@ -184,6 +238,7 @@ export default function DocumentListPage({
   onCreateDocument,
   onDeleteDocument,
   onJumpToUser,
+  hideHeader,
 }: DocumentListPageProps) {
   const [showModal, setShowModal] = useState(false);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
@@ -199,8 +254,9 @@ export default function DocumentListPage({
   );
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 16px' }}>
-      {/* Header */}
+    <div style={{ padding: '0 16px' }}>
+      {/* Header — hidden when controlled externally (button in toolbar) */}
+      {!hideHeader && (
       <div
         style={{
           display: 'flex',
@@ -231,6 +287,7 @@ export default function DocumentListPage({
           New Document
         </button>
       </div>
+      )}
 
       {/* Document cards */}
       {documents.length === 0 ? (

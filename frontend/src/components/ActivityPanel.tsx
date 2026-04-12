@@ -126,8 +126,8 @@ function useActivityFeed({
     fetch(`${SOCIAL_API_URL}/api/activity?limit=20`, {
       headers: { Authorization: `Bearer ${idToken}` },
     })
-      .then(r => r.json())
-      .then((data: ActivityResponse) => { if (!cancelled) setItems(data.items); })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((data: ActivityResponse) => { if (!cancelled && data?.items) setItems(data.items); })
       .catch(err => console.error('[activity] fetch failed:', err))
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };

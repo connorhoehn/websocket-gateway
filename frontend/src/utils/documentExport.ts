@@ -3,7 +3,7 @@
 // Export utilities for converting structured DocumentData back into
 // plain markdown or plain-text formats.
 
-import type { DocumentData, Section, TaskItem } from '../types/document';
+import type { DocumentData, Section, TaskItem, CommentThread } from '../types/document';
 
 // ---------------------------------------------------------------------------
 // Markdown export
@@ -12,6 +12,16 @@ import type { DocumentData, Section, TaskItem } from '../types/document';
 function taskToMarkdown(item: TaskItem): string {
   const checked = item.status === 'done' || item.status === 'acked';
   return `- [${checked ? 'x' : ' '}] ${item.text}`;
+}
+
+function commentToMarkdown(thread: CommentThread, depth: number = 0): string {
+  const indent = '  '.repeat(depth);
+  const lines: string[] = [];
+  lines.push(`${indent}> **${thread.displayName}**: ${thread.text}`);
+  for (const reply of thread.replies) {
+    lines.push(commentToMarkdown(reply, depth + 1));
+  }
+  return lines.join('\n');
 }
 
 function sectionToMarkdown(section: Section): string {
@@ -28,6 +38,16 @@ function sectionToMarkdown(section: Section): string {
   if (section.items.length > 0) {
     for (const item of section.items) {
       lines.push(taskToMarkdown(item));
+    }
+    lines.push('');
+  }
+
+  // Comments
+  const sectionComments = (section as unknown as Record<string, unknown>)['comments'] as CommentThread[] | undefined;
+  if (sectionComments && sectionComments.length > 0) {
+    lines.push(`### Comments (${sectionComments.length})`, '');
+    for (const thread of sectionComments) {
+      lines.push(commentToMarkdown(thread));
     }
     lines.push('');
   }

@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Y from 'yjs';
 import { GatewayProvider } from '../providers/GatewayProvider';
+import { useIdleDetector } from './useIdleDetector';
 import type { UseWebSocketReturn } from './useWebSocket';
 import type {
   DocumentMeta,
@@ -83,6 +84,12 @@ export interface UseCollaborativeDocReturn {
     color: string;
     parentCommentId?: string | null;
   }) => void;
+
+  /** Mark a root comment thread as resolved. */
+  resolveThread: (sectionId: string, commentId: string, resolverDisplayName: string) => void;
+
+  /** Unresolve a previously resolved thread. */
+  unresolveThread: (sectionId: string, commentId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +178,9 @@ export function useCollaborativeDoc(
 ): UseCollaborativeDocReturn {
   const { documentId, mode, ws, userId, displayName, color, onMessage } = options;
 
+  // ---- Idle detection -------------------------------------------------------
+  const { isIdle } = useIdleDetector();
+
   // ---- Reactive state (drives re-renders) ---------------------------------
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -199,6 +209,7 @@ export function useCollaborativeDoc(
       mode,
       currentSectionId: null,
       lastSeen: Date.now(),
+      idle: false,
     });
 
     // Subscribe to the document channel
@@ -245,6 +256,7 @@ export function useCollaborativeDoc(
     // Observe awareness changes to track remote participants
     const awarenessHandler = () => {
       const states = provider.awareness.getStates();
+      console.log('[collab] Awareness change, states:', states.size, 'localId:', provider.awareness.clientID);
       const parts: Participant[] = [];
       states.forEach((state: Record<string, unknown>, clientId: number) => {
         if (clientId === provider.awareness.clientID) return; // skip self
@@ -258,12 +270,17 @@ export function useCollaborativeDoc(
           mode: user.mode === 'ack' ? 'reviewer' : user.mode === 'reader' ? 'reader' : 'editor',
           currentSectionId: (user.currentSectionId as string | null) ?? null,
           lastSeen: (user.lastSeen as number) ?? Date.now(),
+          idle: (user.idle as boolean) ?? false,
         });
       });
-      // Deduplicate by userId — keep the most recent entry per user
+      // Deduplicate by userId or displayName — keep the most recent entry per user
       const seen = new Map<string, Participant>();
       for (const p of parts) {
-        seen.set(p.userId || p.clientId, p);
+        const key = p.userId || p.displayName || p.clientId;
+        const existing = seen.get(key);
+        if (!existing || (p.lastSeen ?? 0) > (existing.lastSeen ?? 0)) {
+          seen.set(key, p);
+        }
       }
       queueMicrotask(() => setParticipants(Array.from(seen.values())));
     };
@@ -292,6 +309,39 @@ export function useCollaborativeDoc(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
+
+  // ---- Broadcast idle state changes via awareness ---------------------------
+  useEffect(() => {
+    const provider = providerRef.current;
+    if (!provider) return;
+    const currentState = provider.awareness.getLocalState();
+    const currentUser = currentState?.user as Record<string, unknown> | undefined;
+    if (currentUser) {
+      provider.awareness.setLocalStateField('user', {
+        ...currentUser,
+        idle: isIdle,
+        lastSeen: Date.now(),
+      });
+    }
+  }, [isIdle]);
+
+  // ---- Re-subscribe on WebSocket reconnect ----------------------------------
+  // When the gateway restarts, the WS auto-reconnects but doc channel
+  // subscriptions are lost server-side. Listen for 'session' messages
+  // (sent on every connect/reconnect) to re-send the subscribe.
+  useEffect(() => {
+    const channel = `doc:${documentId}`;
+    const unregister = onMessage((msg: GatewayMessage) => {
+      if (msg.type === 'session') {
+        ws.sendMessage({
+          service: 'crdt',
+          action: 'subscribe',
+          channel,
+        });
+      }
+    });
+    return unregister;
+  }, [documentId, ws.sendMessage, onMessage]);
 
   // ---- Handle incoming gateway messages -----------------------------------
   // Register via the onMessage registrar so the hook receives live CRDT
@@ -323,10 +373,22 @@ export function useCollaborativeDoc(
         return;
       }
 
-      // Server sends type: 'crdt:awareness' with update field for awareness state
+      // Server sends type: 'crdt:awareness' with awareness state
       if (msg.type === 'crdt:awareness') {
         if (msg.channel !== channel) return;
-        const updateB64 = (msg as Record<string, unknown>).update as string | undefined;
+        const raw = msg as Record<string, unknown>;
+        // Handle coalesced format: { updates: [{clientId, update}, ...] }
+        const updates = raw.updates as Array<{ clientId: string; update: string }> | undefined;
+        if (updates && Array.isArray(updates)) {
+          for (const entry of updates) {
+            if (entry.update) {
+              provider.applyAwarenessUpdate(entry.update);
+            }
+          }
+          return;
+        }
+        // Handle single format: { update: '...' }
+        const updateB64 = raw.update as string | undefined;
         if (updateB64) {
           provider.applyAwarenessUpdate(updateB64);
         }
@@ -563,6 +625,52 @@ export function useCollaborativeDoc(
     });
   }, [getOrCreateCommentsArray]);
 
+  const resolveThread = useCallback((sectionId: string, commentId: string, resolverDisplayName: string) => {
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    const commentsArr = getOrCreateCommentsArray(sectionId);
+    if (!commentsArr) return;
+    let found = false;
+    ydoc.transact(() => {
+      for (let i = 0; i < commentsArr.length; i++) {
+        const yComment = commentsArr.get(i) as Y.Map<unknown>;
+        if (yComment.get('id') === commentId) {
+          yComment.set('resolved', true);
+          yComment.set('resolvedBy', resolverDisplayName);
+          yComment.set('resolvedAt', new Date().toISOString());
+          found = true;
+          break;
+        }
+      }
+    });
+    if (!found) {
+      console.warn(`resolveThread: comment ${commentId} not found in section ${sectionId}`);
+    }
+  }, [getOrCreateCommentsArray]);
+
+  const unresolveThread = useCallback((sectionId: string, commentId: string) => {
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    const commentsArr = getOrCreateCommentsArray(sectionId);
+    if (!commentsArr) return;
+    let found = false;
+    ydoc.transact(() => {
+      for (let i = 0; i < commentsArr.length; i++) {
+        const yComment = commentsArr.get(i) as Y.Map<unknown>;
+        if (yComment.get('id') === commentId) {
+          yComment.set('resolved', false);
+          yComment.delete('resolvedBy');
+          yComment.delete('resolvedAt');
+          found = true;
+          break;
+        }
+      }
+    });
+    if (!found) {
+      console.warn(`unresolveThread: comment ${commentId} not found in section ${sectionId}`);
+    }
+  }, [getOrCreateCommentsArray]);
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const loadFromMarkdown = useCallback((_markdown: string) => {
     // Stub: will be implemented in a future plan when markdown parsing is wired.
@@ -605,5 +713,7 @@ export function useCollaborativeDoc(
     participants,
     comments,
     addComment,
+    resolveThread,
+    unresolveThread,
   };
 }

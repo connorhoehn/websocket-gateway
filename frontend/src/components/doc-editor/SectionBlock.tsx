@@ -29,6 +29,8 @@ export interface SectionBlockProps {
   isFocused?: boolean;
   comments?: CommentThread[];
   onAddComment?: (text: string, parentCommentId?: string | null) => void;
+  onResolveThread?: (commentId: string) => void;
+  onUnresolveThread?: (commentId: string) => void;
 }
 
 const typeColors: Record<Section['type'], string> = {
@@ -51,13 +53,16 @@ const headerStyle: React.CSSProperties = {
 
 const titleInputStyle: React.CSSProperties = {
   flex: 1,
-  border: 'none',
+  border: '1px solid transparent',
+  borderRadius: 4,
   outline: 'none',
   fontSize: 15,
   fontWeight: 600,
   fontFamily: 'inherit',
   background: 'transparent',
   color: '#1e293b',
+  padding: '2px 6px',
+  cursor: 'text',
 };
 
 const typeBadgeStyle = (bg: string): React.CSSProperties => ({
@@ -71,14 +76,19 @@ const typeBadgeStyle = (bg: string): React.CSSProperties => ({
   whiteSpace: 'nowrap',
 });
 
-const collapseBtnStyle: React.CSSProperties = {
+const collapseBtnBase: React.CSSProperties = {
   border: 'none',
   background: 'none',
   cursor: 'pointer',
-  fontSize: 16,
-  padding: '2px 6px',
+  fontSize: 12,
+  padding: '4px 6px',
   color: '#64748b',
   lineHeight: 1,
+  borderRadius: 4,
+  transition: 'background 0.15s ease, transform 0.2s ease',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const bodyStyle: React.CSSProperties = {
@@ -217,6 +227,8 @@ export default function SectionBlock({
   isFocused,
   comments,
   onAddComment,
+  onResolveThread,
+  onUnresolveThread,
 }: SectionBlockProps) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
 
@@ -238,7 +250,15 @@ export default function SectionBlock({
     });
   };
 
-  const isTaskSection = section.type === 'tasks';
+  // Determine rendering mode from sectionType (if set), falling back to legacy type
+  const effectiveSectionType = section.sectionType ?? null;
+  const showTaskList =
+    effectiveSectionType === 'tasks' ||
+    effectiveSectionType === 'checklist' ||
+    (!effectiveSectionType && section.type === 'tasks');
+
+  // Resolve placeholder: prefer section-level, then fall back to generic
+  const editorPlaceholder = section.placeholder ?? `Write ${section.type} content...`;
 
   // Presence-aware left border: pick first participant's color or none
   const hasPresence = participants && participants.length > 0;
@@ -255,10 +275,23 @@ export default function SectionBlock({
   };
 
   return (
-    <div id={`section-${section.id}`} style={sectionOuterStyle} onClick={onFocus}>
+    <div id={`section-${section.id}`} style={sectionOuterStyle} onClickCapture={onFocus} onFocusCapture={onFocus}>
       <div style={headerStyle}>
-        <button type="button" onClick={toggleCollapse} style={collapseBtnStyle} title="Toggle section">
-          {collapsed ? '\u25B6' : '\u25BC'}
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          style={{
+            ...collapseBtnBase,
+            transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+          }}
+          title={collapsed ? 'Expand section' : 'Collapse section'}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#e2e8f0'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+        >
+          {/* Chevron down SVG — rotated -90deg when collapsed */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
 
         <input
@@ -267,6 +300,8 @@ export default function SectionBlock({
           onChange={(e) => onUpdateSection({ title: e.target.value })}
           readOnly={!editable}
           style={titleInputStyle}
+          onFocus={(e) => { if (editable) (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; }}
+          onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = 'transparent'; }}
         />
 
         <span style={typeBadgeStyle(typeColors[section.type])}>
@@ -285,13 +320,12 @@ export default function SectionBlock({
               provider={provider}
               user={user}
               editable={editable}
-              placeholder={`Write ${section.type} content...`}
+              placeholder={editorPlaceholder}
               sectionId={section.id}
-              participants={participants}
             />
           )}
 
-          {isTaskSection && (
+          {showTaskList && (
             <>
               <TaskList
                 items={section.items}
@@ -301,7 +335,7 @@ export default function SectionBlock({
               />
               {editable && (
                 <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
-                  + Add task
+                  + Add {effectiveSectionType === 'checklist' ? 'item' : 'task'}
                 </button>
               )}
             </>
@@ -312,6 +346,8 @@ export default function SectionBlock({
               comments={comments ?? []}
               onAddComment={onAddComment}
               participants={participants}
+              onResolveThread={onResolveThread}
+              onUnresolveThread={onUnresolveThread}
             />
           )}
         </div>

@@ -10,6 +10,8 @@ interface ParticipantAvatarsProps {
   participants: Participant[];
   sections?: { id: string; title: string }[];
   onJumpToUser?: (participant: Participant) => void;
+  onFollowUser?: (participant: Participant) => void;
+  followingUserId?: string | null;
 }
 
 /* ---- helpers ------------------------------------------------------------ */
@@ -113,15 +115,15 @@ const tooltipStyle: React.CSSProperties = {
   bottom: '100%',
   left: '50%',
   transform: 'translateX(-50%)',
-  marginBottom: 8,
+  marginBottom: 4,
   background: '#1e293b',
   color: '#fff',
-  padding: '6px 10px',
+  padding: '8px 12px',
   borderRadius: 6,
   fontSize: 12,
   whiteSpace: 'nowrap',
   zIndex: 100,
-  pointerEvents: 'none',
+  pointerEvents: 'auto',
   boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
   lineHeight: 1.4,
 };
@@ -140,13 +142,26 @@ function AvatarItem({
   participant,
   sectionTitle,
   onJumpToUser,
+  onFollowUser,
+  isFollowing,
 }: {
   participant: Participant;
   sectionTitle?: string;
   onJumpToUser?: (p: Participant) => void;
+  onFollowUser?: (p: Participant) => void;
+  isFollowing?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showTooltip = () => {
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+    setHovered(true);
+  };
+  const hideTooltip = () => {
+    hideTimer.current = setTimeout(() => setHovered(false), 150);
+  };
 
   const badge = modeBadgeColor(participant.mode);
   const baseColor = participant.color || '#3b82f6';
@@ -155,19 +170,35 @@ function AvatarItem({
     <div
       ref={ref}
       style={avatarWrap}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={showTooltip}
+      onMouseLeave={hideTooltip}
       onClick={() => onJumpToUser?.(participant)}
-      title=""
     >
       {/* Tooltip */}
       {hovered && (
-        <div style={tooltipStyle}>
+        <div style={tooltipStyle} onMouseEnter={showTooltip} onMouseLeave={hideTooltip}>
           <div style={{ fontWeight: 600, marginBottom: 2 }}>{participant.displayName}</div>
-          <div style={{ color: '#94a3b8', fontSize: 11 }}>{modeText(participant.mode)}{lastSeenText(participant.lastSeen)}</div>
+          <div style={{ color: '#94a3b8', fontSize: 11 }}>
+            {participant.idle ? 'away' : modeText(participant.mode)}{lastSeenText(participant.lastSeen)}
+          </div>
           {sectionTitle && (
             <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
               &sect; {sectionTitle}
+            </div>
+          )}
+          {onFollowUser && (
+            <div
+              role="button"
+              onClick={(e) => { e.stopPropagation(); onFollowUser(participant); }}
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                color: isFollowing ? '#f59e0b' : '#60a5fa',
+                cursor: 'pointer',
+              }}
+            >
+              {isFollowing ? 'Stop following' : 'Follow'}
             </div>
           )}
         </div>
@@ -195,7 +226,7 @@ function AvatarItem({
           {getInitials(participant.displayName)}
         </div>
 
-        {/* Online dot */}
+        {/* Status dot: green = active, yellow = away/idle */}
         <div
           style={{
             position: 'absolute',
@@ -204,9 +235,9 @@ function AvatarItem({
             width: 8,
             height: 8,
             borderRadius: '50%',
-            background: '#10b981',
+            background: participant.idle ? '#f59e0b' : '#10b981',
             border: '2px solid #fff',
-            animation: 'presencePulse 2s infinite',
+            animation: participant.idle ? 'none' : 'presencePulse 2s infinite',
           }}
         />
       </div>
@@ -218,13 +249,26 @@ function AvatarItem({
           fontWeight: 600,
           padding: '1px 8px',
           borderRadius: 9999,
-          background: badge.bg,
-          color: badge.text,
+          background: participant.idle ? '#fef3c7' : badge.bg,
+          color: participant.idle ? '#92400e' : badge.text,
           lineHeight: '16px',
         }}
       >
-        {modeText(participant.mode)}{lastSeenText(participant.lastSeen)}
+        {participant.idle ? 'away' : modeText(participant.mode)}{lastSeenText(participant.lastSeen)}
       </span>
+
+      {/* Following indicator */}
+      {isFollowing && (
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: '#3b82f6',
+          }}
+        >
+          following
+        </span>
+      )}
 
       {/* Section indicator */}
       {sectionTitle && (
@@ -250,6 +294,8 @@ export default function ParticipantAvatars({
   participants,
   sections,
   onJumpToUser,
+  onFollowUser,
+  followingUserId,
 }: ParticipantAvatarsProps) {
   useEffect(() => {
     ensurePulseKeyframe();
@@ -273,6 +319,8 @@ export default function ParticipantAvatars({
             participant={p}
             sectionTitle={p.currentSectionId ? sectionMap.get(p.currentSectionId) : undefined}
             onJumpToUser={onJumpToUser}
+            onFollowUser={onFollowUser}
+            isFollowing={followingUserId === (p.userId || p.clientId)}
           />
         ))}
       </div>

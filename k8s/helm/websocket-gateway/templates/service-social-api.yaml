@@ -1,0 +1,19 @@
+{{- if .Values.socialApi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "websocket-gateway.fullname" . }}-social-api
+  labels:
+    {{- include "websocket-gateway.labels" . | nindent 4 }}
+    app.kubernetes.io/component: social-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.socialApi.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "websocket-gateway.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: social-api
+{{- end }}

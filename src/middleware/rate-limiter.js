@@ -14,7 +14,8 @@ class RateLimiter {
         // Rate limits (messages per second)
         this.limits = {
             cursor: 40,
-            crdt: 500,      // Y.js CRDT updates + awareness need high throughput
+            crdt: 500,       // Y.js CRDT document updates need high throughput
+            awareness: 60,   // Awareness (cursor pos, presence) — separate from CRDT updates
             general: 100
         };
     }
@@ -77,7 +78,12 @@ class RateLimiter {
      */
     detectMessageType(message) {
         if (message.service === 'cursor') return 'cursor';
-        if (message.service === 'crdt') return 'crdt';
+        if (message.service === 'crdt') {
+            // Separate awareness from CRDT document updates so cursor spam
+            // doesn't consume the CRDT budget and block document edits
+            if (message.action === 'awareness') return 'awareness';
+            return 'crdt';
+        }
         return 'general';
     }
 }

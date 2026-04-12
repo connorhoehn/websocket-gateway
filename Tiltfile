@@ -29,6 +29,22 @@ docker_build(
     ],
 )
 
+# --- Build social-api Docker image ---
+docker_build(
+    'social-api',
+    './social-api',
+    dockerfile='social-api/Dockerfile',
+    live_update=[
+        sync('./social-api/src', '/app/src'),
+        run('cd /app && npx tsc', trigger=['./social-api/src']),
+    ],
+    ignore=[
+        'node_modules',
+        'dist',
+        '.git',
+    ],
+)
+
 # --- Deploy Helm chart ---
 k8s_yaml(helm(
     'k8s/helm/websocket-gateway',
@@ -51,6 +67,11 @@ k8s_resource('wsg-websocket-gateway-dynamodb',
     port_forwards=['8000:8000'],
     labels=['infra'],
 )
+k8s_resource('wsg-websocket-gateway-social-api',
+    port_forwards=['3001:3001'],
+    labels=['app'],
+    resource_deps=['wsg-websocket-gateway-redis', 'wsg-websocket-gateway-dynamodb'],
+)
 
 # --- Frontend dev server (runs locally, not in K8s) ---
 local_resource(
@@ -67,6 +88,9 @@ local_resource(
     'dynamodb-setup',
     cmd='''
         sleep 5
+        ENDPOINT="--endpoint-url http://localhost:8000 --region us-east-1"
+
+        # Gateway CRDT table
         aws dynamodb create-table \
             --table-name crdt-snapshots \
             --attribute-definitions \
@@ -76,8 +100,25 @@ local_resource(
                 AttributeName=channelId,KeyType=HASH \
                 AttributeName=timestamp,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
-            --endpoint-url http://localhost:8000 \
-            --region us-east-1 2>/dev/null || echo "Table already exists"
+            $ENDPOINT 2>/dev/null || echo "crdt-snapshots exists"
+
+        # Social API tables + gateway doc registry
+        CT="aws dynamodb create-table --billing-mode PAY_PER_REQUEST $ENDPOINT"
+
+        $CT --table-name social-profiles --attribute-definitions AttributeName=userId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH 2>/dev/null || echo "social-profiles exists"
+        $CT --table-name social-relationships --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE 2>/dev/null || echo "social-relationships exists"
+        $CT --table-name social-outbox --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "social-outbox exists"
+        $CT --table-name social-rooms --attribute-definitions AttributeName=roomId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH 2>/dev/null || echo "social-rooms exists"
+        $CT --table-name social-room-members --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-room-members exists"
+        $CT --table-name social-groups --attribute-definitions AttributeName=groupId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH 2>/dev/null || echo "social-groups exists"
+        $CT --table-name social-group-members --attribute-definitions AttributeName=groupId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-group-members exists"
+        $CT --table-name social-posts --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH AttributeName=postId,KeyType=RANGE 2>/dev/null || echo "social-posts exists"
+        $CT --table-name social-comments --attribute-definitions AttributeName=postId,AttributeType=S AttributeName=commentId,AttributeType=S --key-schema AttributeName=postId,KeyType=HASH AttributeName=commentId,KeyType=RANGE 2>/dev/null || echo "social-comments exists"
+        $CT --table-name social-likes --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-likes exists"
+        $CT --table-name user-activity --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "user-activity exists"
+        $CT --table-name crdt-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "crdt-documents exists"
+
+        echo "All tables ready"
     ''',
     resource_deps=['wsg-websocket-gateway-dynamodb'],
     labels=['setup'],

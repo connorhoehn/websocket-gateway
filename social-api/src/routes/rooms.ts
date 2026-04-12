@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
+import { setCachedRoom } from '../lib/cache';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 const REL_TABLE = 'social-relationships';
@@ -116,6 +117,12 @@ roomsRouter.post('/dm', async (req: Request, res: Response): Promise<void> => {
       Item: { roomId: dmRoomId, userId: targetUserId, role: 'member', joinedAt: now } as RoomMemberItem,
     }));
 
+    // Populate cache with newly created DM room
+    void setCachedRoom(dmRoomId, {
+      roomId: dmRoomId, channelId, name: `dm-${callerId.slice(-6)}-${targetUserId.slice(-6)}`,
+      type: 'dm', ownerId: callerId, dmPeerUserId: targetUserId, createdAt: now, updatedAt: now,
+    });
+
     res.status(201).json({ roomId: dmRoomId, channelId, type: 'dm', dmPeerUserId: targetUserId, createdAt: now });
   } catch (err) {
     console.error('[rooms] POST /dm error:', err);
@@ -161,6 +168,12 @@ roomsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
         joinedAt: now,
       } as RoomMemberItem,
     }));
+
+    // Populate cache with newly created room
+    void setCachedRoom(roomId, {
+      roomId, channelId, name: req.body.name, type: 'standalone',
+      ownerId: req.user!.sub, createdAt: now, updatedAt: now,
+    });
 
     res.status(201).json({ roomId, channelId, name: req.body.name, type: 'standalone', ownerId: req.user!.sub, role: 'owner', createdAt: now });
   } catch (err) {

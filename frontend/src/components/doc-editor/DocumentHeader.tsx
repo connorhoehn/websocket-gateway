@@ -19,17 +19,20 @@ interface DocumentHeaderProps {
   sections?: { id: string; title: string }[];
   onToggleMyItems?: () => void;
   myItemCount?: number;
+  commentCount?: number;
   onBack?: () => void;
+  onFollowUser?: (participant: Participant) => void;
+  followingUserId?: string | null;
 }
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '0.75rem 1rem',
+  flexDirection: 'column',
+  padding: '0.5rem 1rem',
   background: '#fff',
   borderBottom: '1px solid #e5e7eb',
   flexShrink: 0,
+  gap: 6,
 };
 
 const leftStyle: React.CSSProperties = {
@@ -154,63 +157,85 @@ export default function DocumentHeader({
   sections,
   onToggleMyItems,
   myItemCount,
+  commentCount,
   onBack,
+  onFollowUser,
+  followingUserId,
 }: DocumentHeaderProps) {
   const [showExport, setShowExport] = useState(false);
 
   return (
     <header style={headerStyle}>
-      {/* Left: breadcrumb + title + status */}
-      <div style={{ ...leftStyle, flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-        {onBack && (
-          <button onClick={onBack} style={{
-            background: 'none', border: 'none', color: '#3b82f6',
-            cursor: 'pointer', fontSize: 13, padding: '2px 0',
-            display: 'flex', alignItems: 'center', gap: 4,
-            fontFamily: 'inherit',
-          }}>
-            &larr; Documents
-          </button>
-        )}
+      {/* Row 1: breadcrumb + title + status + participants */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <input
-          style={titleInput}
-          value={meta.title}
-          placeholder="Untitled document"
-          onChange={(e) => onUpdateMeta({ title: e.target.value })}
-          onFocus={(e) => {
-            (e.target as HTMLInputElement).style.borderColor = '#3b82f6';
-          }}
-          onBlur={(e) => {
-            (e.target as HTMLInputElement).style.borderColor = 'transparent';
-          }}
-        />
-        <span style={statusBadge(meta.status)}>{meta.status}</span>
-        {mode === 'editor' && (
-          <span style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>
-            Auto-saved
-          </span>
-        )}
+          {onBack && (
+            <button onClick={onBack} style={{
+              background: 'none', border: 'none', color: '#3b82f6',
+              cursor: 'pointer', fontSize: 13, padding: '2px 0',
+              display: 'flex', alignItems: 'center', gap: 4,
+              fontFamily: 'inherit',
+            }}>
+              &larr; Documents
+            </button>
+          )}
+          <input
+            style={titleInput}
+            value={meta.title}
+            placeholder="Untitled document"
+            onChange={(e) => onUpdateMeta({ title: e.target.value })}
+            onFocus={(e) => {
+              (e.target as HTMLInputElement).style.borderColor = '#3b82f6';
+            }}
+            onBlur={(e) => {
+              (e.target as HTMLInputElement).style.borderColor = 'transparent';
+            }}
+          />
+          <span style={statusBadge(meta.status)}>{meta.status}</span>
+          {mode === 'editor' && (
+            <span style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>
+              Auto-saved
+            </span>
+          )}
+          {commentCount != null && commentCount > 0 && (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              padding: '2px 10px',
+              borderRadius: 9999,
+              background: '#f3f4f6',
+              color: '#6b7280',
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              {commentCount}
+            </span>
+          )}
         </div>
+        {participants.length > 0 && (
+          <ParticipantAvatars participants={participants} sections={sections} onJumpToUser={onJumpToUser} onFollowUser={onFollowUser} followingUserId={followingUserId} />
+        )}
       </div>
 
-      {/* Center: mode selector */}
-      <div style={centerStyle}>
-        {modeLabels.map(({ mode: m, label }) => (
-          <button
-            key={m}
-            type="button"
-            style={modeBtnStyle(mode === m)}
-            onClick={() => onModeChange(m)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Right: participants + export */}
-      <div style={rightStyle}>
-        <ParticipantAvatars participants={participants} sections={sections} onJumpToUser={onJumpToUser} />
+      {/* Row 2: mode selector + actions */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={centerStyle}>
+          {modeLabels.map(({ mode: m, label }) => (
+            <button
+              key={m}
+              type="button"
+              style={modeBtnStyle(mode === m)}
+              onClick={() => onModeChange(m)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           type="button"
           style={exportBtnStyle}
@@ -271,6 +296,7 @@ export default function DocumentHeader({
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
     </header>

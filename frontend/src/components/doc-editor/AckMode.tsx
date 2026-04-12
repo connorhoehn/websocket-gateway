@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
-import type { Section, Participant } from '../../types/document';
+import type { Section, Participant, CommentThread } from '../../types/document';
 import type { CollaborationProvider } from './TiptapEditor';
 import ReviewProgress from './ReviewProgress';
 import ChunkViewer from './ChunkViewer';
@@ -22,6 +22,10 @@ interface AckModeProps {
   getSectionFragment: (sectionId: string) => XmlFragment | null;
   ydoc: Y.Doc;
   provider: CollaborationProvider | null;
+  comments?: Record<string, CommentThread[]>;
+  onAddComment?: (sectionId: string, text: string, parentCommentId?: string | null) => void;
+  onResolveThread?: (sectionId: string, commentId: string) => void;
+  onUnresolveThread?: (sectionId: string, commentId: string) => void;
 }
 
 const navStyle: React.CSSProperties = {
@@ -50,80 +54,98 @@ const emptyStyle: React.CSSProperties = {
   fontSize: 15,
 };
 
-export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus, jumpToIndex, onJumpComplete, getSectionFragment, ydoc, provider }: AckModeProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+const SECTIONS_PER_PAGE = 4;
 
-  const section = sections.length > 0 ? sections[currentIndex] : null;
+export default function AckMode({ sections, onAckItem, onRejectItem, participants, onSectionFocus, jumpToIndex, onJumpComplete, getSectionFragment, ydoc, provider, comments, onAddComment, onResolveThread, onUnresolveThread }: AckModeProps) {
+  const [pageIndex, setPageIndex] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(sections.length / SECTIONS_PER_PAGE));
+  const startIdx = pageIndex * SECTIONS_PER_PAGE;
+  const pageSections = sections.slice(startIdx, startIdx + SECTIONS_PER_PAGE);
 
   // Handle jump-to-index from handleJumpToUser
   useEffect(() => {
     if (jumpToIndex != null && jumpToIndex >= 0 && jumpToIndex < sections.length) {
-      setCurrentIndex(jumpToIndex);
+      setPageIndex(Math.floor(jumpToIndex / SECTIONS_PER_PAGE));
       onJumpComplete?.();
     }
   }, [jumpToIndex, sections.length, onJumpComplete]);
 
-  // Update awareness when the viewed section changes — must be before any early return
+  // Update awareness when the first visible section changes
   useEffect(() => {
-    if (section && onSectionFocus) {
-      onSectionFocus(section.id);
+    if (pageSections.length > 0 && onSectionFocus) {
+      onSectionFocus(pageSections[0].id);
     }
-  }, [section?.id, onSectionFocus]);
+  }, [startIdx, onSectionFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!section) {
+  if (sections.length === 0) {
     return <div style={emptyStyle}>No sections to review.</div>;
   }
 
-  const sectionParticipants = participants?.filter(p => p.currentSectionId === section.id) ?? [];
-  const prev = () => setCurrentIndex((i) => Math.max(0, i - 1));
-  const next = () => setCurrentIndex((i) => Math.min(sections.length - 1, i + 1));
+  const prev = () => setPageIndex((i) => Math.max(0, i - 1));
+  const next = () => setPageIndex((i) => Math.min(totalPages - 1, i + 1));
+  const reviewedCount = startIdx + pageSections.length;
 
   return (
     <div>
-      <ReviewProgress current={currentIndex + 1} total={sections.length} />
+      <ReviewProgress current={reviewedCount} total={sections.length} />
 
-      {sectionParticipants.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#6b7280', marginRight: 4 }}>Viewing:</span>
-          {sectionParticipants.map(p => (
-            <div key={p.clientId} title={`${p.displayName} (${p.mode})`} style={{
-              width: 24, height: 24, borderRadius: '50%',
-              background: p.color, color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10, fontWeight: 600,
-            }}>
-              {p.displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {pageSections.map((section) => {
+          const sectionParticipants = participants?.filter(p => p.currentSectionId === section.id) ?? [];
+          return (
+            <div key={section.id}>
+              {sectionParticipants.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#6b7280', marginRight: 4 }}>Viewing:</span>
+                  {sectionParticipants.map(p => (
+                    <div key={p.clientId} title={`${p.displayName} (${p.mode})`} style={{
+                      width: 24, height: 24, borderRadius: '50%',
+                      background: p.color, color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 600,
+                    }}>
+                      {p.displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <ChunkViewer
+                section={section}
+                onAckItem={(itemId, notes) => onAckItem(section.id, itemId, notes)}
+                onRejectItem={(itemId, reason) => onRejectItem(section.id, itemId, reason)}
+                fragment={getSectionFragment(section.id)}
+                ydoc={ydoc}
+                provider={provider}
+                comments={comments?.[section.id]}
+                onAddComment={onAddComment ? (text, parentCommentId) => onAddComment(section.id, text, parentCommentId) : undefined}
+                onResolveThread={onResolveThread ? (commentId) => onResolveThread(section.id, commentId) : undefined}
+                onUnresolveThread={onUnresolveThread ? (commentId) => onUnresolveThread(section.id, commentId) : undefined}
+                participants={sectionParticipants}
+              />
             </div>
-          ))}
-        </div>
-      )}
-
-      <ChunkViewer
-        section={section}
-        onAckItem={(itemId, notes) => onAckItem(section.id, itemId, notes)}
-        onRejectItem={(itemId, reason) => onRejectItem(section.id, itemId, reason)}
-        fragment={getSectionFragment(section.id)}
-        ydoc={ydoc}
-        provider={provider}
-      />
+          );
+        })}
+      </div>
 
       <div style={navStyle}>
         <button
           type="button"
-          style={navBtnStyle(currentIndex === 0)}
+          style={navBtnStyle(pageIndex === 0)}
           onClick={prev}
-          disabled={currentIndex === 0}
+          disabled={pageIndex === 0}
         >
           Previous
         </button>
         <span style={{ fontSize: 13, color: '#6b7280' }}>
-          {currentIndex + 1} / {sections.length}
+          Page {pageIndex + 1} of {totalPages} ({sections.length} sections)
         </span>
         <button
           type="button"
-          style={navBtnStyle(currentIndex === sections.length - 1)}
+          style={navBtnStyle(pageIndex === totalPages - 1)}
           onClick={next}
-          disabled={currentIndex === sections.length - 1}
+          disabled={pageIndex === totalPages - 1}
         >
           Next
         </button>

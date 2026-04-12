@@ -6,7 +6,11 @@
 // summaries) and a sidebar (progress, participants, document stats).
 
 import { useState } from 'react';
-import type { Section, TaskItem, Participant, DocumentMeta } from '../../types/document';
+import type { XmlFragment } from 'yjs';
+import * as Y from 'yjs';
+import type { Section, TaskItem, Participant, DocumentMeta, CommentThread } from '../../types/document';
+import TiptapEditor from './TiptapEditor';
+import type { CollaborationProvider } from './TiptapEditor';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -17,6 +21,16 @@ interface ReaderModeProps {
   participants: Participant[];
   meta: DocumentMeta;
   commentCounts?: Record<string, number>; // sectionId -> count
+  /** Plain-text content extracted from each section's Y.XmlFragment */
+  sectionContentTexts?: Record<string, string>;
+  /** Threaded comments per section */
+  comments?: Record<string, CommentThread[]>;
+  /** Y.js fragment getter for rich-text rendering */
+  getSectionFragment?: (sectionId: string) => XmlFragment | null;
+  /** Y.Doc instance for collaboration */
+  ydoc?: Y.Doc | null;
+  /** Collaboration provider for awareness */
+  provider?: CollaborationProvider | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -244,12 +258,53 @@ function HeaderBanner({
 
 function ExecutiveSummaryCard({
   bullets,
+  contentText,
+  fragment,
+  ydoc,
+  provider,
 }: {
   bullets: string[];
+  contentText?: string;
+  fragment?: XmlFragment | null;
+  ydoc?: Y.Doc | null;
+  provider?: CollaborationProvider | null;
 }) {
+  const hasFragment = fragment && ydoc;
+  const hasContent = contentText && contentText.trim().length > 0;
   return (
     <div style={card}>
       <h2 style={sectionHeader}>Executive Summary</h2>
+      {hasFragment ? (
+        <div style={{
+          marginBottom: bullets.length > 0 ? 12 : 0,
+          padding: '4px 12px',
+          background: '#f8fafc',
+          borderRadius: 6,
+          borderLeft: '3px solid #8b5cf6',
+        }}>
+          <TiptapEditor
+            fragment={fragment}
+            ydoc={ydoc}
+            provider={provider ?? null}
+            user={{ name: '', color: '' }}
+            editable={false}
+          />
+        </div>
+      ) : hasContent ? (
+        <div style={{
+          fontSize: 14,
+          color: '#1e293b',
+          lineHeight: 1.7,
+          whiteSpace: 'pre-wrap',
+          marginBottom: bullets.length > 0 ? 12 : 0,
+          padding: '8px 12px',
+          background: '#f8fafc',
+          borderRadius: 6,
+          borderLeft: '3px solid #8b5cf6',
+        }}>
+          {contentText!.trim()}
+        </div>
+      ) : null}
       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#334155', lineHeight: 1.7 }}>
         {bullets.map((b, i) => (
           <li key={i}>{b}</li>
@@ -488,9 +543,19 @@ function ItemRow({
 function SectionSummariesCard({
   sections,
   commentCounts,
+  sectionContentTexts,
+  comments,
+  getSectionFragment,
+  ydoc,
+  provider,
 }: {
   sections: Section[];
   commentCounts?: Record<string, number>;
+  sectionContentTexts?: Record<string, string>;
+  comments?: Record<string, CommentThread[]>;
+  getSectionFragment?: (sectionId: string) => XmlFragment | null;
+  ydoc?: Y.Doc | null;
+  provider?: CollaborationProvider | null;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -532,8 +597,11 @@ function SectionSummariesCard({
               (i) => i.status === 'acked' || i.status === 'done',
             ).length;
             const total = section.items.length;
-            const comments = commentCounts?.[section.id] ?? 0;
+            const commentCount = commentCounts?.[section.id] ?? 0;
+            const sectionContent = sectionContentTexts?.[section.id] ?? '';
+            const sectionComments = comments?.[section.id] ?? [];
             const isOpen = !!expanded[section.id];
+            const hasContent = sectionContent.trim().length > 0;
 
             return (
               <div key={section.id}>
@@ -574,15 +642,58 @@ function SectionSummariesCard({
                       {done}/{total} done
                     </span>
                   )}
-                  {comments > 0 && (
+                  {commentCount > 0 && (
                     <span style={{ fontSize: 11, color: '#64748b', flexShrink: 0 }}>
-                      {comments} comment{comments !== 1 ? 's' : ''}
+                      {commentCount} comment{commentCount !== 1 ? 's' : ''}
                     </span>
                   )}
                 </button>
 
-                {isOpen && section.items.length > 0 && (
+                {isOpen && (
                   <div style={{ paddingLeft: 24, paddingBottom: 8 }}>
+                    {/* Rich-text content */}
+                    {(() => {
+                      const frag = getSectionFragment?.(section.id);
+                      if (frag && ydoc) {
+                        return (
+                          <div style={{
+                            padding: '4px 10px',
+                            background: '#f8fafc',
+                            borderRadius: 4,
+                            borderLeft: '2px solid #cbd5e1',
+                            marginBottom: section.items.length > 0 ? 8 : 0,
+                          }}>
+                            <TiptapEditor
+                              fragment={frag}
+                              ydoc={ydoc}
+                              provider={provider ?? null}
+                              user={{ name: '', color: '' }}
+                              editable={false}
+                            />
+                          </div>
+                        );
+                      }
+                      if (hasContent) {
+                        return (
+                          <div style={{
+                            fontSize: 13,
+                            color: '#334155',
+                            lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap',
+                            padding: '8px 10px',
+                            background: '#f8fafc',
+                            borderRadius: 4,
+                            borderLeft: '2px solid #cbd5e1',
+                            marginBottom: section.items.length > 0 ? 8 : 0,
+                          }}>
+                            {sectionContent.trim()}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Task items */}
                     {section.items.map((item) => (
                       <div
                         key={item.id}
@@ -608,20 +719,43 @@ function SectionSummariesCard({
                         </span>
                       </div>
                     ))}
-                  </div>
-                )}
 
-                {isOpen && section.items.length === 0 && (
-                  <div
-                    style={{
-                      paddingLeft: 24,
-                      paddingBottom: 8,
-                      fontSize: 12,
-                      color: '#94a3b8',
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    No items in this section
+                    {/* Comments summary */}
+                    {sectionComments.length > 0 && (
+                      <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginBottom: 4 }}>
+                          Comments ({commentCount})
+                        </div>
+                        {sectionComments.slice(0, 3).map(c => (
+                          <div key={c.id} style={{
+                            fontSize: 12,
+                            color: '#64748b',
+                            padding: '2px 0',
+                            display: 'flex',
+                            gap: 6,
+                          }}>
+                            <span style={{ fontWeight: 600, color: '#475569', flexShrink: 0 }}>
+                              {c.displayName}:
+                            </span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {c.text}
+                            </span>
+                          </div>
+                        ))}
+                        {sectionComments.length > 3 && (
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            +{sectionComments.length - 3} more
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Empty state */}
+                    {!hasContent && section.items.length === 0 && sectionComments.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                        No content in this section
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -795,6 +929,11 @@ export default function ReaderMode({
   participants,
   meta,
   commentCounts,
+  sectionContentTexts,
+  comments,
+  getSectionFragment,
+  ydoc,
+  provider,
 }: ReaderModeProps) {
   const allItems = sections.flatMap((s) => s.items);
   const reviewed = allItems.filter((i) => i.status !== 'pending').length;
@@ -811,10 +950,30 @@ export default function ReaderMode({
 
       {/* Main content column */}
       <div>
-        <ExecutiveSummaryCard bullets={summaryBullets} />
+        <ExecutiveSummaryCard
+          bullets={summaryBullets}
+          contentText={(() => {
+            const summarySection = sections.find(s => s.type === 'summary');
+            return summarySection ? sectionContentTexts?.[summarySection.id] : undefined;
+          })()}
+          fragment={(() => {
+            const summarySection = sections.find(s => s.type === 'summary');
+            return summarySection ? getSectionFragment?.(summarySection.id) : null;
+          })()}
+          ydoc={ydoc}
+          provider={provider}
+        />
         <KeyDecisionsCard sections={sections} />
         <ActionItemsCard allItems={allItems} />
-        <SectionSummariesCard sections={sections} commentCounts={commentCounts} />
+        <SectionSummariesCard
+          sections={sections}
+          commentCounts={commentCounts}
+          sectionContentTexts={sectionContentTexts}
+          comments={comments}
+          getSectionFragment={getSectionFragment}
+          ydoc={ydoc}
+          provider={provider}
+        />
       </div>
 
       {/* Sidebar column */}

@@ -24,6 +24,13 @@ export async function requireAuth(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // Skip auth in local development
+  if (process.env.SKIP_AUTH === 'true') {
+    req.user = { sub: 'dev-user', email: 'dev@local' };
+    next();
+    return;
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({ error: 'Authorization required' });

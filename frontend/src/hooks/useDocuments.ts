@@ -29,7 +29,8 @@ export interface DocumentPresenceUser {
   userId: string;
   displayName: string;
   color: string;
-  mode: string;
+  mode?: string;
+  idle?: boolean;
 }
 
 export interface UseDocumentsOptions {
@@ -49,7 +50,9 @@ export interface UseDocumentsReturn {
   refreshPresence: () => void;
 }
 
-// Presence polling interval in milliseconds
+// If no push-based presence arrives within this window, start polling.
+const PRESENCE_PUSH_TIMEOUT_MS = 15_000;
+// Polling interval once fallback is activated.
 const PRESENCE_POLL_INTERVAL_MS = 10_000;
 
 // ---------------------------------------------------------------------------
@@ -77,6 +80,9 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
 
   // ---- Refs ----------------------------------------------------------------
   const presencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set to true once we receive at least one push-based presence message. */
+  const receivedPushRef = useRef(false);
 
   // Keep stable references for use inside effects without stale closures
   const sendMessageRef = useRef(sendMessage);
@@ -87,6 +93,26 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
   // ---- Message handler -----------------------------------------------------
   useEffect(() => {
     const unregister = onMessage((msg: GatewayMessage) => {
+      // Handle push-based documents:presence (broadcast from server on sub/unsub/disconnect)
+      if (msg.type === 'documents:presence') {
+        console.log('[useDocuments] Received push presence:', msg);
+        receivedPushRef.current = true;
+        const docs = msg.documents as Array<{ documentId: string; users: DocumentPresenceUser[] }> | undefined;
+        if (docs) {
+          const presenceMap: Record<string, DocumentPresenceUser[]> = {};
+          for (const entry of docs) {
+            // Strip "doc:" prefix from channel ID to match document IDs
+            const docId = entry.documentId.startsWith('doc:')
+              ? entry.documentId.slice(4)
+              : entry.documentId;
+            presenceMap[docId] = entry.users;
+          }
+          console.log('[useDocuments] Presence map after strip:', presenceMap);
+          setPresence(presenceMap);
+        }
+        return;
+      }
+
       if (msg.type !== 'crdt') return;
 
       if (msg.action === 'documentList') {
@@ -125,10 +151,18 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
         return;
       }
 
+      // Legacy poll-based response (kept for backwards compatibility)
       if (msg.action === 'documentPresence') {
         const incoming = msg.presence as Record<string, DocumentPresenceUser[]> | undefined;
+        console.log('[useDocuments] Received poll presence:', incoming);
         if (incoming) {
-          setPresence(incoming);
+          // Strip "doc:" prefix from keys to match document IDs
+          const stripped: Record<string, DocumentPresenceUser[]> = {};
+          for (const [key, users] of Object.entries(incoming)) {
+            const docId = key.startsWith('doc:') ? key.slice(4) : key;
+            stripped[docId] = users;
+          }
+          setPresence(stripped);
         }
       }
     });
@@ -138,18 +172,33 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
 
   // ---- Fetch on connect ----------------------------------------------------
   useEffect(() => {
+    console.log('[useDocuments] connectionState changed:', connectionState);
     if (connectionState !== 'connected') return;
 
-    // Request document list and presence on connect
+    receivedPushRef.current = false;
+
+    // Request document list on connect
+    console.log('[useDocuments] Sending listDocuments + getDocumentPresence');
     sendMessage({ service: 'crdt', action: 'listDocuments' });
+
+    // Request initial presence snapshot (server will also push updates going forward)
     sendMessage({ service: 'crdt', action: 'getDocumentPresence' });
 
-    // Start presence polling
-    presencePollRef.current = setInterval(() => {
-      sendMessageRef.current({ service: 'crdt', action: 'getDocumentPresence' });
-    }, PRESENCE_POLL_INTERVAL_MS);
+    // Wait for push-based presence. If none arrives within the timeout, start polling.
+    pushTimeoutRef.current = setTimeout(() => {
+      if (!receivedPushRef.current) {
+        // No push received — activate fallback polling
+        presencePollRef.current = setInterval(() => {
+          sendMessageRef.current({ service: 'crdt', action: 'getDocumentPresence' });
+        }, PRESENCE_POLL_INTERVAL_MS);
+      }
+    }, PRESENCE_PUSH_TIMEOUT_MS);
 
     return () => {
+      if (pushTimeoutRef.current !== null) {
+        clearTimeout(pushTimeoutRef.current);
+        pushTimeoutRef.current = null;
+      }
       if (presencePollRef.current !== null) {
         clearInterval(presencePollRef.current);
         presencePollRef.current = null;

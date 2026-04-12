@@ -1,6 +1,7 @@
 import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
+import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '../lib/cache';
 const TABLE = 'social-profiles';
 
 export const profilesRouter = Router();
@@ -67,6 +68,9 @@ profilesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       Item: item,
     }));
 
+    // Populate cache with newly created profile
+    void setCachedProfile(userId, item);
+
     res.status(201).json(item);
   } catch (err) {
     console.error('POST /profiles error:', err);
@@ -79,17 +83,25 @@ profilesRouter.get('/:userId', async (req: Request, res: Response): Promise<void
   try {
     const { userId } = req.params;
 
-    const result = await docClient.send(new GetCommand({
-      TableName: TABLE,
-      Key: { userId },
-    }));
+    // Check Redis cache first
+    let item = await getCachedProfile<ProfileItem>(userId);
 
-    if (!result.Item) {
-      res.status(404).json({ error: 'Profile not found' });
-      return;
+    if (!item) {
+      const result = await docClient.send(new GetCommand({
+        TableName: TABLE,
+        Key: { userId },
+      }));
+
+      if (!result.Item) {
+        res.status(404).json({ error: 'Profile not found' });
+        return;
+      }
+
+      item = result.Item as ProfileItem;
+
+      // Populate cache on miss
+      void setCachedProfile(userId, item);
     }
-
-    const item = result.Item as ProfileItem;
 
     // Visibility gate: private profile only visible to owner
     if (item.visibility === 'private' && req.user!.sub !== item.userId) {
@@ -171,7 +183,12 @@ profilesRouter.put('/', async (req: Request, res: Response): Promise<void> => {
       ReturnValues: 'ALL_NEW',
     }));
 
-    res.status(200).json(result.Attributes as ProfileItem);
+    const updated = result.Attributes as ProfileItem;
+
+    // Invalidate stale cache; next GET will re-populate
+    void invalidateProfileCache(userId);
+
+    res.status(200).json(updated);
   } catch (err) {
     console.error('PUT /profiles error:', err);
     res.status(500).json({ error: 'Internal server error' });

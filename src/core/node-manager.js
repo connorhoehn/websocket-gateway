@@ -24,6 +24,11 @@ class NodeManager {
             nodeChannels: (nodeId) => `websocket:node:${nodeId}:channels`,
             nodeHeartbeat: (nodeId) => `websocket:node:${nodeId}:heartbeat`
         };
+
+        // Local in-memory cache for channel -> nodes mapping to reduce Redis SMEMBERS calls.
+        // At 50 concurrent users, awareness messages generate ~3,000 Redis ops/sec without this.
+        this.channelNodesCache = new Map(); // channel -> { nodes: string[], expiry: number }
+        this.CHANNEL_NODES_CACHE_TTL_MS = 5000; // 5-second TTL
     }
 
     generateNodeId() {
@@ -206,6 +211,9 @@ class NodeManager {
             // Store client's channel subscription
             await this.redis.sAdd(`websocket:client:${clientId}:channels`, channel);
 
+            // Invalidate local cache since this node's channel membership changed
+            this.invalidateChannelNodesCache(channel);
+
             this.logger.debug(`Client ${clientId} subscribed to channel ${channel} on node ${this.nodeId}`);
         } catch (error) {
             this.logger.error(`Failed to subscribe client ${clientId} to channel ${channel}:`, error);
@@ -240,6 +248,9 @@ class NodeManager {
                 await this.redis.sRem(this.keys.nodeChannels(this.nodeId), channel);
             }
 
+            // Invalidate local cache since this node's channel membership may have changed
+            this.invalidateChannelNodesCache(channel);
+
             this.logger.debug(`Client ${clientId} unsubscribed from channel ${channel}`);
         } catch (error) {
             this.logger.error(`Failed to unsubscribe client ${clientId} from channel ${channel}:`, error);
@@ -247,18 +258,41 @@ class NodeManager {
     }
 
     /**
-     * Get all nodes that have clients subscribed to a specific channel
+     * Get all nodes that have clients subscribed to a specific channel.
+     * Uses a local in-memory cache with 5s TTL to avoid excessive Redis SMEMBERS calls.
      */
     async getNodesForChannel(channel) {
         if (!this.redis) return [this.nodeId];
 
+        // Check local cache first
+        const cached = this.channelNodesCache.get(channel);
+        if (cached && Date.now() < cached.expiry) {
+            return cached.nodes;
+        }
+
         try {
             const nodes = await this.redis.sMembers(this.keys.channelNodes(channel));
-            return nodes.length > 0 ? nodes : [this.nodeId];
+            const result = nodes.length > 0 ? nodes : [this.nodeId];
+
+            // Cache the result
+            this.channelNodesCache.set(channel, {
+                nodes: result,
+                expiry: Date.now() + this.CHANNEL_NODES_CACHE_TTL_MS
+            });
+
+            return result;
         } catch (error) {
             this.logger.error(`Failed to get nodes for channel ${channel}:`, error);
             return [this.nodeId];
         }
+    }
+
+    /**
+     * Invalidate the local channel-nodes cache for a specific channel.
+     * Called when the local node subscribes or unsubscribes from a channel.
+     */
+    invalidateChannelNodesCache(channel) {
+        this.channelNodesCache.delete(channel);
     }
 
     /**
@@ -400,6 +434,9 @@ class NodeManager {
                 
                 // Remove node from active nodes set
                 await this.redis.sRem(this.keys.nodes, this.nodeId);
+
+                // Clear local caches
+                this.channelNodesCache.clear();
 
                 this.logger.info(`Node ${this.nodeId} cleanup completed`);
             } catch (error) {

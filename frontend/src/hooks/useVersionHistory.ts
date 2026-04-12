@@ -15,6 +15,23 @@ import type { GatewayMessage } from '../types/gateway';
 export interface VersionEntry {
   timestamp: number;
   age: number;
+  name?: string;
+  author?: string;
+  type?: 'manual' | 'auto' | 'pre-restore';
+}
+
+/** Plain-object snapshot of a section for diffing (no Y.js references). */
+export interface SnapshotSection {
+  id: string;
+  type: string;
+  title: string;
+  items: Array<{
+    id: string;
+    text: string;
+    status: string;
+    assignee: string;
+    priority: string;
+  }>;
 }
 
 export interface UseVersionHistoryOptions {
@@ -32,6 +49,58 @@ export interface UseVersionHistoryReturn {
   previewDoc: Y.Doc | null;
   previewTimestamp: number | null;
   clearPreview: () => void;
+  /** Save a named version snapshot. */
+  saveVersion: (name: string) => void;
+  /** Extract sections as plain JSON from a Y.Doc (live or preview). */
+  extractSections: (doc: Y.Doc) => SnapshotSection[];
+  /** Compare sections: load preview for a given timestamp, returns sections via callback. */
+  compareSections: SnapshotSection[] | null;
+  compareTimestamp: number | null;
+  compareVersion: (timestamp: number) => void;
+  clearCompare: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract sections as plain JSON from a Y.Doc.
+ * Reads the Y.Array<Y.Map> at 'sections' and converts each to a SnapshotSection.
+ */
+function extractSectionsFromDoc(doc: Y.Doc): SnapshotSection[] {
+  const yArr = doc.getArray('sections');
+  const result: SnapshotSection[] = [];
+
+  for (let i = 0; i < yArr.length; i++) {
+    const yMap = yArr.get(i) as Y.Map<unknown>;
+    if (!yMap || typeof yMap.get !== 'function') continue;
+
+    const id = (yMap.get('id') as string) ?? '';
+    const type = (yMap.get('type') as string) ?? 'tasks';
+    const title = (yMap.get('title') as string) ?? '';
+
+    const yItems = yMap.get('items') as Y.Array<Y.Map<unknown>> | undefined;
+    const items: SnapshotSection['items'] = [];
+
+    if (yItems && typeof yItems.toArray === 'function') {
+      for (const yItem of yItems.toArray()) {
+        if (!yItem || typeof (yItem as Y.Map<unknown>).get !== 'function') continue;
+        const m = yItem as Y.Map<unknown>;
+        items.push({
+          id: (m.get('id') as string) ?? '',
+          text: (m.get('text') as string) ?? '',
+          status: (m.get('status') as string) ?? 'pending',
+          assignee: (m.get('assignee') as string) ?? '',
+          priority: (m.get('priority') as string) ?? 'medium',
+        });
+      }
+    }
+
+    result.push({ id, type, title, items });
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,8 +116,13 @@ export function useVersionHistory(
   const [loading, setLoading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<Y.Doc | null>(null);
   const [previewTimestamp, setPreviewTimestamp] = useState<number | null>(null);
+  const [compareSections, setCompareSections] = useState<SnapshotSection[] | null>(null);
+  const [compareTimestamp, setCompareTimestamp] = useState<number | null>(null);
 
   const previewDocRef = useRef<Y.Doc | null>(null);
+  const compareDocRef = useRef<Y.Doc | null>(null);
+  /** When true, the next incoming snapshot is for a compare operation. */
+  const pendingCompareRef = useRef(false);
 
   // Register message handler via the onMessage registrar
   useEffect(() => {
@@ -58,7 +132,13 @@ export function useVersionHistory(
 
       switch (msg.action) {
         case 'snapshotList': {
-          const list = msg['snapshots'] as Array<{ timestamp: number; age: number }> | undefined;
+          const list = msg['snapshots'] as Array<{
+            timestamp: number;
+            age: number;
+            name?: string;
+            author?: string;
+            type?: 'manual' | 'auto' | 'pre-restore';
+          }> | undefined;
           setVersions(list ?? []);
           setLoading(false);
           break;
@@ -69,16 +149,33 @@ export function useVersionHistory(
           const update = msg['update'] as string | undefined;
           if (!update) break;
 
-          // Clean up previous preview doc
-          if (previewDocRef.current) {
-            previewDocRef.current.destroy();
-          }
-
           const doc = new Y.Doc({ gc: false });
           const bytes = fromBase64(update);
           Y.applyUpdate(doc, bytes);
-          previewDocRef.current = doc;
-          setPreviewDoc(doc);
+
+          // Route to compare or preview based on pending flag
+          if (pendingCompareRef.current) {
+            pendingCompareRef.current = false;
+            if (compareDocRef.current) compareDocRef.current.destroy();
+            compareDocRef.current = doc;
+            setCompareSections(extractSectionsFromDoc(doc));
+          } else {
+            // Clean up previous preview doc
+            if (previewDocRef.current) previewDocRef.current.destroy();
+            previewDocRef.current = doc;
+            setPreviewDoc(doc);
+          }
+          break;
+        }
+        case 'versionSaved': {
+          // After saving a version, refresh the list
+          setLoading(true);
+          sendMessage({
+            service: 'crdt',
+            action: 'listSnapshots',
+            channel,
+            limit: 20,
+          });
           break;
         }
         case 'snapshotRestored': {
@@ -99,12 +196,16 @@ export function useVersionHistory(
     return unregister;
   }, [channel, onMessage, sendMessage]);
 
-  // Cleanup preview doc on unmount
+  // Cleanup preview/compare docs on unmount
   useEffect(() => {
     return () => {
       if (previewDocRef.current) {
         previewDocRef.current.destroy();
         previewDocRef.current = null;
+      }
+      if (compareDocRef.current) {
+        compareDocRef.current.destroy();
+        compareDocRef.current = null;
       }
     };
   }, []);
@@ -147,6 +248,39 @@ export function useVersionHistory(
     setPreviewTimestamp(null);
   }, []);
 
+  const saveVersion = useCallback((name: string) => {
+    sendMessage({
+      service: 'crdt',
+      action: 'saveVersion',
+      channel,
+      name,
+    });
+  }, [channel, sendMessage]);
+
+  const extractSections = useCallback((doc: Y.Doc): SnapshotSection[] => {
+    return extractSectionsFromDoc(doc);
+  }, []);
+
+  const compareVersion = useCallback((timestamp: number) => {
+    pendingCompareRef.current = true;
+    setCompareTimestamp(timestamp);
+    sendMessage({
+      service: 'crdt',
+      action: 'getSnapshotAtVersion',
+      channel,
+      timestamp,
+    });
+  }, [channel, sendMessage]);
+
+  const clearCompare = useCallback(() => {
+    if (compareDocRef.current) {
+      compareDocRef.current.destroy();
+      compareDocRef.current = null;
+    }
+    setCompareSections(null);
+    setCompareTimestamp(null);
+  }, []);
+
   return {
     versions,
     loading,
@@ -156,5 +290,11 @@ export function useVersionHistory(
     previewDoc,
     previewTimestamp,
     clearPreview,
+    saveVersion,
+    extractSections,
+    compareSections,
+    compareTimestamp,
+    compareVersion,
+    clearCompare,
   };
 }

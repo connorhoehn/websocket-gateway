@@ -1,34 +1,35 @@
+{{- if .Values.socialApi.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "websocket-gateway.fullname" . }}-gateway
+  name: {{ include "websocket-gateway.fullname" . }}-social-api
   labels:
     {{- include "websocket-gateway.labels" . | nindent 4 }}
-    app.kubernetes.io/component: gateway
+    app.kubernetes.io/component: social-api
 spec:
-  replicas: {{ .Values.gateway.replicaCount }}
+  replicas: {{ .Values.socialApi.replicaCount }}
   selector:
     matchLabels:
       {{- include "websocket-gateway.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: gateway
+      app.kubernetes.io/component: social-api
   template:
     metadata:
       labels:
         {{- include "websocket-gateway.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: gateway
+        app.kubernetes.io/component: social-api
     spec:
       terminationGracePeriodSeconds: 30
       containers:
-        - name: gateway
-          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
-          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+        - name: social-api
+          image: "{{ .Values.socialApi.image.repository }}:{{ .Values.socialApi.image.tag }}"
+          imagePullPolicy: {{ .Values.socialApi.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.gateway.port }}
+              containerPort: {{ .Values.socialApi.port }}
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "websocket-gateway.fullname" . }}-config
+                name: {{ include "websocket-gateway.fullname" . }}-social-api-config
           lifecycle:
             preStop:
               exec:
@@ -46,4 +47,5 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
-            {{- toYaml .Values.gateway.resources | nindent 12 }}
+            {{- toYaml .Values.socialApi.resources | nindent 12 }}
+{{- end }}

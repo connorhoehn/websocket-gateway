@@ -32,8 +32,22 @@ class MessageRouter {
             CURSOR_UPDATE: 'cursor_update'
         };
 
+        // Interceptors called when a remote channel message is received via Redis pub/sub.
+        // Map of callback functions keyed by a label: (channel, message, fromNode) => void
+        this.channelMessageInterceptors = new Map();
+
         this.setupRedisHealthMonitoring();
         this.setupNodeMessageHandlers();
+    }
+
+    /**
+     * Register a callback to be invoked when a remote channel message arrives via Redis pub/sub.
+     * Useful for services that need to apply remote updates to local state (e.g. CRDT Y.Doc sync).
+     * @param {string} label - Unique label for the interceptor
+     * @param {function} callback - (channel, message, fromNode) => void
+     */
+    onRemoteChannelMessage(label, callback) {
+        this.channelMessageInterceptors.set(label, callback);
     }
 
     /**
@@ -544,6 +558,17 @@ class MessageRouter {
                         ? { ...data.message, _meta: { seq: data.seq, nodeId: data.fromNode, timestamp: data.timestamp } }
                         : { data: data.message, _meta: { seq: data.seq, nodeId: data.fromNode, timestamp: data.timestamp } };
                     this.broadcastToLocalChannel(data.channel, messageWithMeta, data.excludeClientId);
+
+                    // Notify interceptors (e.g. CRDT service applies remote updates to local Y.Doc)
+                    if (data.fromNode !== this.nodeManager.nodeId) {
+                        for (const [, callback] of this.channelMessageInterceptors) {
+                            try {
+                                callback(data.channel, data.message, data.fromNode);
+                            } catch (interceptorErr) {
+                                this.logger.error('Channel message interceptor error:', interceptorErr);
+                            }
+                        }
+                    }
                 }
             }
         } catch (error) {
@@ -683,6 +708,21 @@ class MessageRouter {
             subscribedChannels: this.subscribedChannels.size,
             channelDistribution: this.getChannelDistribution()
         };
+    }
+
+    /**
+     * Get the set of local client IDs subscribed to a given channel
+     * @param {string} channel
+     * @returns {string[]} Array of clientIds subscribed to the channel
+     */
+    getChannelClients(channel) {
+        const clients = [];
+        for (const [clientId, client] of this.localClients) {
+            if (client.channels.has(channel)) {
+                clients.push(clientId);
+            }
+        }
+        return clients;
     }
 
     /**

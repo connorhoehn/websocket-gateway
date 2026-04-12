@@ -11,6 +11,7 @@ import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { getCachedRoom, setCachedRoom } from '../lib/cache';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 const OUTBOX_TABLE = 'social-outbox';
@@ -39,14 +40,19 @@ interface RoomMemberItem {
 // POST /api/rooms/:roomId/join — join a room (ROOM-04)
 roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<void> => {
   try {
-    // Verify room exists
-    const roomResult = await docClient.send(new GetCommand({
-      TableName: ROOMS_TABLE,
-      Key: { roomId: req.params.roomId },
-    }));
-    if (!roomResult.Item) {
-      res.status(404).json({ error: 'Room not found' });
-      return;
+    // Verify room exists (check cache first)
+    let roomItem = await getCachedRoom<RoomItem>(req.params.roomId);
+    if (!roomItem) {
+      const roomResult = await docClient.send(new GetCommand({
+        TableName: ROOMS_TABLE,
+        Key: { roomId: req.params.roomId },
+      }));
+      if (!roomResult.Item) {
+        res.status(404).json({ error: 'Room not found' });
+        return;
+      }
+      roomItem = roomResult.Item as RoomItem;
+      void setCachedRoom(req.params.roomId, roomItem);
     }
 
     // Check if caller is already a member
@@ -95,8 +101,8 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
     res.status(201).json({ roomId: req.params.roomId, userId: req.user!.sub, role: 'member', joinedAt: now });
 
     // Broadcast social:member_joined to room channel (non-fatal if Redis unavailable)
-    if (roomResult.Item) {
-      void broadcastService.emit(roomResult.Item['channelId'] as string, 'social:member_joined', {
+    if (roomItem) {
+      void broadcastService.emit(roomItem.channelId, 'social:member_joined', {
         roomId: req.params.roomId, userId: req.user!.sub, joinedAt: now,
       });
     }

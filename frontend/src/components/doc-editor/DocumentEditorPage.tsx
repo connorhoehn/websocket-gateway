@@ -121,6 +121,8 @@ export default function DocumentEditorPage({
   const [mode, setMode] = useState<ViewMode>(getInitialMode);
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  const cleanupFollowRef = useRef<(() => void) | null>(null);
 
   const {
     meta,
@@ -201,6 +203,105 @@ export default function DocumentEditorPage({
     }, 150);
   }, [mode, sections]);
 
+  // ------ Follow mode -------------------------------------------------------
+
+  const handleFollowUser = useCallback((participant: Participant) => {
+    const targetId = participant.userId || participant.clientId;
+    setFollowingUserId((prev) => (prev === targetId ? null : targetId));
+  }, []);
+
+  // Auto-scroll to the followed user's current section when it changes
+  const followedSectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!followingUserId) {
+      followedSectionRef.current = null;
+      return;
+    }
+    const followed = participants.find(
+      (p) => (p.userId || p.clientId) === followingUserId,
+    );
+    // Debug: log the raw awareness states to see what the remote user has
+    if (provider?.awareness) {
+      const states = provider.awareness.getStates();
+      states.forEach((state: Record<string, unknown>, cid: number) => {
+        if (cid !== provider!.awareness.clientID) {
+          console.log('[follow] Remote awareness state:', cid, JSON.stringify(state));
+        }
+      });
+    }
+    console.log('[follow] Looking for user:', followingUserId, 'found:', followed?.displayName, 'section:', followed?.currentSectionId);
+    if (!followed || !followed.currentSectionId) {
+      // Fallback: if no section is set, scroll to the first section
+      if (followed && sections.length > 0) {
+        const firstEl = document.getElementById(`section-${sections[0].id}`);
+        if (firstEl && !followedSectionRef.current) {
+          firstEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          followedSectionRef.current = '__initial__';
+        }
+      }
+      return;
+    }
+    if (followed.currentSectionId === followedSectionRef.current) return;
+
+    followedSectionRef.current = followed.currentSectionId;
+
+    // Switch mode to match followed user if needed
+    const targetMode: ViewMode =
+      followed.mode === 'reviewer' ? 'ack' :
+      followed.mode === 'reader' ? 'reader' : 'editor';
+
+    if (mode !== targetMode) {
+      setMode(targetMode);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('mode', targetMode);
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+
+    // For review mode, jump to section page
+    if (targetMode === 'ack') {
+      const idx = sections.findIndex((s) => s.id === followed.currentSectionId);
+      if (idx >= 0) setJumpToSectionIndex(idx);
+      return;
+    }
+
+    // For editor/reader mode, scroll to the section
+    setTimeout(() => {
+      const el = document.getElementById(`section-${followed.currentSectionId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.transition = 'box-shadow 0.3s ease';
+        el.style.boxShadow = `0 0 0 3px ${followed.color}40`;
+        setTimeout(() => { el.style.boxShadow = ''; }, 1500);
+      }
+    }, 100);
+  }, [followingUserId, participants, mode, sections]);
+
+  // Auto-unlock follow on local user interaction in the editor area
+  // Delay listener registration to avoid the "Follow" click itself triggering it
+  useEffect(() => {
+    if (!followingUserId) return;
+    const timerId = setTimeout(() => {
+      const handler = () => setFollowingUserId(null);
+      const events: (keyof WindowEventMap)[] = ['mousedown', 'keydown', 'wheel'];
+      for (const evt of events) {
+        window.addEventListener(evt, handler, { once: true, passive: true });
+      }
+      // Store cleanup ref
+      cleanupFollowRef.current = () => {
+        for (const evt of events) {
+          window.removeEventListener(evt, handler);
+        }
+      };
+    }, 500); // delay so the Follow click doesn't immediately cancel
+    return () => {
+      clearTimeout(timerId);
+      cleanupFollowRef.current?.();
+      cleanupFollowRef.current = null;
+    };
+  }, [followingUserId]);
+
   // ------ Activity helpers --------------------------------------------------
 
   // Wrapped handlers that log activity
@@ -236,12 +337,38 @@ export default function DocumentEditorPage({
     activityPublish('doc.add_section', { documentId, documentTitle: meta?.title });
   }, [addSection, activityPublish, documentId, meta?.title]);
 
+  // ------ Auto-focus first section on load ----------------------------------
+  // Sets currentSectionId in awareness so other users know where we are.
+  // Runs whenever sections load and no section is focused yet.
+  useEffect(() => {
+    if (sections.length === 0 || focusedSectionId) return;
+    // Delay to ensure provider is ready (Y.Doc sync may still be in progress)
+    const timer = setTimeout(() => {
+      if (provider?.awareness) {
+        const firstId = sections[0].id;
+        setFocusedSectionId(firstId);
+        const currentState = provider.awareness.getLocalState();
+        const currentUser = (currentState?.user as Record<string, unknown>) || {};
+        provider.awareness.setLocalStateField('user', {
+          ...currentUser,
+          currentSectionId: firstId,
+          lastSeen: Date.now(),
+        });
+        console.log('[auto-focus] Set initial section:', firstId);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [sections, focusedSectionId, provider]);
+
   // ------ Section focus (awareness) ----------------------------------------
 
   const handleSectionFocus = useCallback((sectionId: string) => {
     setFocusedSectionId(sectionId);
     if (provider?.awareness) {
+      const currentState = provider.awareness.getLocalState();
+      const currentUser = (currentState?.user as Record<string, unknown>) || {};
       provider.awareness.setLocalStateField('user', {
+        ...currentUser,
         userId,
         displayName,
         color,
@@ -515,7 +642,48 @@ export default function DocumentEditorPage({
         myItemCount={myItems.length}
         commentCount={Object.values(comments).reduce((sum, threads) => sum + threads.length, 0)}
         onBack={onBack}
+        onFollowUser={handleFollowUser}
+        followingUserId={followingUserId}
       />
+      {/* Following banner */}
+      {followingUserId && (() => {
+        const followed = participants.find(p => (p.userId || p.clientId) === followingUserId);
+        if (!followed) return null;
+        return (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '6px 16px',
+            background: '#eff6ff',
+            borderBottom: '1px solid #bfdbfe',
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#1d4ed8',
+            flexShrink: 0,
+          }}>
+            <span>Following {followed.displayName}</span>
+            <button
+              onClick={() => setFollowingUserId(null)}
+              style={{
+                background: 'none',
+                border: '1px solid #93c5fd',
+                borderRadius: 4,
+                padding: '2px 8px',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#1d4ed8',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        );
+      })()}
+
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
         {/* Show demo loader when document is empty */}
         {isEmpty && (
@@ -636,6 +804,12 @@ export default function DocumentEditorPage({
           onRestore={versionHistory.restoreVersion}
           onClearPreview={versionHistory.clearPreview}
           onClose={() => setShowHistory(false)}
+          onSaveVersion={versionHistory.saveVersion}
+          onCompare={versionHistory.compareVersion}
+          onClearCompare={versionHistory.clearCompare}
+          compareSections={versionHistory.compareSections}
+          compareTimestamp={versionHistory.compareTimestamp}
+          currentSections={ydoc ? versionHistory.extractSections(ydoc) : []}
         />
       )}
 

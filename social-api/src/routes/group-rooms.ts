@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
+import { setCachedRoom } from '../lib/cache';
 const ROOMS_TABLE = 'social-rooms';
 const ROOM_MEMBERS_TABLE = 'social-room-members';
 const GROUPS_TABLE = 'social-groups';
@@ -93,6 +94,12 @@ groupRoomsRouter.post('/', async (req: Request, res: Response): Promise<void> =>
         joinedAt: now,
       } as RoomMemberItem,
     }));
+
+    // Populate cache with newly created group room
+    void setCachedRoom(roomId, {
+      roomId, channelId, name: req.body.name, type: 'group',
+      ownerId: req.user!.sub, groupId: req.params.groupId, createdAt: now, updatedAt: now,
+    });
 
     res.status(201).json({ roomId, channelId, name: req.body.name, type: 'group', groupId: req.params.groupId, ownerId: req.user!.sub, role: 'owner', createdAt: now });
   } catch (err) {

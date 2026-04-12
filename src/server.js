@@ -758,6 +758,17 @@ class DistributedWebSocketServer {
                 });
             }
             
+            // Shut down services (flush pending snapshots, etc.) before closing Redis
+            for (const [name, service] of this.services.entries()) {
+                if (typeof service.shutdown === 'function') {
+                    try {
+                        await service.shutdown();
+                    } catch (err) {
+                        this.logger.warn(`Error shutting down ${name} service:`, err.message);
+                    }
+                }
+            }
+
             // Close Redis connections
             if (this.redisPublisher) {
                 try {

@@ -19,6 +19,8 @@ interface SectionCommentsProps {
   comments: CommentThread[];
   onAddComment: (text: string, parentCommentId?: string | null) => void;
   participants?: Participant[];
+  onResolveThread?: (commentId: string) => void;
+  onUnresolveThread?: (commentId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,9 +62,9 @@ function countAllComments(threads: CommentThread[]): number {
 
 /** Render comment text with styled @mention spans. */
 function renderCommentText(text: string): React.ReactNode {
-  const parts = text.split(/(@\w+)/g);
+  const parts = text.split(/(@[A-Z][a-zA-Z]*(?:\s[A-Z][a-zA-Z]*)*)/g);
   return parts.map((part, i) =>
-    part.startsWith('@') ? (
+    part.startsWith('@') && /^@[A-Z]/.test(part) ? (
       <span
         key={i}
         style={{
@@ -157,11 +159,15 @@ function CommentNode({
   depth,
   onReply,
   mentionUsers,
+  onResolveThread,
+  onUnresolveThread,
 }: {
   comment: CommentThread;
   depth: number;
   onReply: (parentId: string, text: string) => void;
   mentionUsers: MentionUser[];
+  onResolveThread?: (commentId: string) => void;
+  onUnresolveThread?: (commentId: string) => void;
 }) {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -169,7 +175,9 @@ function CommentNode({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mentionRef = useRef<MentionDropdownHandle>(null);
   const [mention, setMention] = useState<MentionState>(MENTION_INITIAL);
+  const [resolvedExpanded, setResolvedExpanded] = useState(false);
 
+  const isResolved = depth === 0 && !!comment.resolved;
   const cappedDepth = Math.min(depth, 5);
 
   const handleSubmitReply = () => {
@@ -223,8 +231,116 @@ function CommentNode({
 
   const borderColor = hovered ? comment.color : depth === 0 ? '#e2e8f0' : '#cbd5e1';
 
+  // Resolved banner (shown for resolved root threads)
+  if (isResolved && !resolvedExpanded) {
+    return (
+      <div style={{ marginLeft: cappedDepth > 0 ? 20 : 0 }}>
+        <div
+          style={{
+            background: '#f0fdf4',
+            borderLeft: '3px solid #22c55e',
+            padding: '8px 12px',
+            marginBottom: 4,
+            borderRadius: 4,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+          onClick={() => setResolvedExpanded(true)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#16a34a', fontSize: 12 }}>{'\u2714'}</span>
+            <span style={{ color: '#16a34a', fontSize: 12, fontWeight: 600 }}>
+              Resolved by {comment.resolvedBy}
+            </span>
+            {comment.resolvedAt && (
+              <span style={{ color: '#86efac', fontSize: 11 }}>
+                {relativeTime(comment.resolvedAt)}
+              </span>
+            )}
+            <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>
+              — click to expand
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnresolveThread?.(comment.id);
+            }}
+            style={{
+              background: 'none',
+              border: '1px solid #cbd5e1',
+              borderRadius: 4,
+              color: '#64748b',
+              fontSize: 11,
+              cursor: 'pointer',
+              padding: '2px 8px',
+              fontFamily: 'inherit',
+            }}
+          >
+            Reopen
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ marginLeft: cappedDepth > 0 ? 20 : 0 }}>
+    <div style={{ marginLeft: cappedDepth > 0 ? 20 : 0, opacity: isResolved ? 0.6 : 1 }}>
+      {/* Resolved banner (expanded) */}
+      {isResolved && resolvedExpanded && (
+        <div
+          style={{
+            background: '#f0fdf4',
+            borderLeft: '3px solid #22c55e',
+            padding: '8px 12px',
+            marginBottom: 4,
+            borderRadius: 4,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+          onClick={() => setResolvedExpanded(false)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#16a34a', fontSize: 12 }}>{'\u2714'}</span>
+            <span style={{ color: '#16a34a', fontSize: 12, fontWeight: 600 }}>
+              Resolved by {comment.resolvedBy}
+            </span>
+            {comment.resolvedAt && (
+              <span style={{ color: '#86efac', fontSize: 11 }}>
+                {relativeTime(comment.resolvedAt)}
+              </span>
+            )}
+            <span style={{ color: '#94a3b8', fontSize: 11, marginLeft: 4 }}>
+              — click to collapse
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onUnresolveThread?.(comment.id);
+            }}
+            style={{
+              background: 'none',
+              border: '1px solid #cbd5e1',
+              borderRadius: 4,
+              color: '#64748b',
+              fontSize: 11,
+              cursor: 'pointer',
+              padding: '2px 8px',
+              fontFamily: 'inherit',
+            }}
+          >
+            Reopen
+          </button>
+        </div>
+      )}
+
       {/* Comment card */}
       <div
         style={{
@@ -276,8 +392,8 @@ function CommentNode({
           {renderCommentText(comment.text)}
         </div>
 
-        {/* Reply button */}
-        <div style={{ paddingLeft: 30, marginTop: 4 }}>
+        {/* Reply + Resolve buttons */}
+        <div style={{ paddingLeft: 30, marginTop: 4, display: 'flex', gap: 8 }}>
           <button
             type="button"
             onClick={() => {
@@ -298,6 +414,23 @@ function CommentNode({
           >
             Reply
           </button>
+          {depth === 0 && !isResolved && onResolveThread && (
+            <button
+              type="button"
+              onClick={() => onResolveThread(comment.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                fontSize: 12,
+                cursor: 'pointer',
+                padding: '2px 0',
+                fontFamily: 'inherit',
+              }}
+            >
+              {'\u2714'} Resolve
+            </button>
+          )}
         </div>
 
         {/* Inline reply form — slides down */}
@@ -392,6 +525,8 @@ function CommentNode({
           depth={depth + 1}
           onReply={onReply}
           mentionUsers={mentionUsers}
+          onResolveThread={onResolveThread}
+          onUnresolveThread={onUnresolveThread}
         />
       ))}
     </div>
@@ -406,6 +541,8 @@ export default function SectionComments({
   comments,
   onAddComment,
   participants = [],
+  onResolveThread,
+  onUnresolveThread,
 }: SectionCommentsProps) {
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState('');
@@ -415,6 +552,13 @@ export default function SectionComments({
 
   const mentionUsers = useMentionUsers(participants);
   const totalCount = countAllComments(comments);
+
+  // Sort resolved threads to the bottom
+  const sortedComments = [...comments].sort((a, b) => {
+    if (a.resolved && !b.resolved) return 1;
+    if (!a.resolved && b.resolved) return -1;
+    return 0;
+  });
 
   const handlePost = () => {
     if (mention.active) return; // don't submit while picking a mention
@@ -595,13 +739,15 @@ export default function SectionComments({
                 No comments yet. Start the discussion!
               </div>
             )}
-            {comments.map((thread) => (
+            {sortedComments.map((thread) => (
               <CommentNode
                 key={thread.id}
                 comment={thread}
                 depth={0}
                 onReply={handleReply}
                 mentionUsers={mentionUsers}
+                onResolveThread={onResolveThread}
+                onUnresolveThread={onUnresolveThread}
               />
             ))}
           </div>

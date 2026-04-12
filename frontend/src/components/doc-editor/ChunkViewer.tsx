@@ -4,10 +4,11 @@
 
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
-import type { Section } from '../../types/document';
+import type { Section, CommentThread, Participant } from '../../types/document';
 import TiptapEditor from './TiptapEditor';
 import type { CollaborationProvider } from './TiptapEditor';
 import ReviewableItem from './ReviewableItem';
+import SectionComments from './SectionComments';
 
 interface ChunkViewerProps {
   section: Section;
@@ -16,6 +17,11 @@ interface ChunkViewerProps {
   fragment: XmlFragment | null;
   ydoc: Y.Doc;
   provider: CollaborationProvider | null;
+  comments?: CommentThread[];
+  onAddComment?: (text: string, parentCommentId?: string | null) => void;
+  onResolveThread?: (commentId: string) => void;
+  onUnresolveThread?: (commentId: string) => void;
+  participants?: Participant[];
 }
 
 const typeBadgeColors: Record<Section['type'], { bg: string; text: string }> = {
@@ -61,7 +67,7 @@ const statsStyle: React.CSSProperties = {
   borderTop: '1px solid #f3f4f6',
 };
 
-export default function ChunkViewer({ section, onAckItem, onRejectItem, fragment, ydoc, provider }: ChunkViewerProps) {
+export default function ChunkViewer({ section, onAckItem, onRejectItem, fragment, ydoc, provider, comments, onAddComment, onResolveThread, onUnresolveThread, participants }: ChunkViewerProps) {
   const tc = typeBadgeColors[section.type] ?? typeBadgeColors.custom;
   const reviewed = section.items.filter((i) => i.status !== 'pending').length;
 
@@ -105,6 +111,16 @@ export default function ChunkViewer({ section, onAckItem, onRejectItem, fragment
             {reviewed} of {section.items.length} items reviewed
           </div>
         </div>
+      )}
+
+      {onAddComment && (
+        <SectionComments
+          comments={comments ?? []}
+          onAddComment={onAddComment}
+          participants={participants}
+          onResolveThread={onResolveThread}
+          onUnresolveThread={onUnresolveThread}
+        />
       )}
     </div>
   );

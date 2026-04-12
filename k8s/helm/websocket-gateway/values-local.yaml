@@ -5,3 +5,7 @@ gateway:
   env:
     SKIP_AUTH: "true"
     LOG_LEVEL: debug
+
+socialApi:
+  image:
+    pullPolicy: Never

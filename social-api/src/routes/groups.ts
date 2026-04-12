@@ -9,6 +9,7 @@ import {
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
+import { getCachedGroup, setCachedGroup, invalidateGroupCache } from '../lib/cache';
 const GROUPS_TABLE = 'social-groups';
 const MEMBERS_TABLE = 'social-group-members';
 
@@ -103,6 +104,9 @@ groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       throw err;
     }
 
+    // Populate cache with newly created group
+    void setCachedGroup(groupId, groupItem);
+
     res.status(201).json({ ...groupItem, role: 'owner' });
   } catch (err) {
     console.error('POST /groups error:', err);
@@ -116,18 +120,25 @@ groupsRouter.get('/:groupId', async (req: Request, res: Response): Promise<void>
     const { groupId } = req.params;
     const callerId = req.user!.sub;
 
-    // Fetch the group
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
+    // Check Redis cache first
+    let group = await getCachedGroup<GroupItem>(groupId);
 
-    if (!groupResult.Item) {
-      res.status(404).json({ error: 'Group not found' });
-      return;
+    if (!group) {
+      const groupResult = await docClient.send(new GetCommand({
+        TableName: GROUPS_TABLE,
+        Key: { groupId },
+      }));
+
+      if (!groupResult.Item) {
+        res.status(404).json({ error: 'Group not found' });
+        return;
+      }
+
+      group = groupResult.Item as GroupItem;
+
+      // Populate cache on miss
+      void setCachedGroup(groupId, group);
     }
-
-    const group = groupResult.Item as GroupItem;
 
     // Check caller membership
     const memberResult = await docClient.send(new GetCommand({
@@ -179,6 +190,9 @@ groupsRouter.delete('/:groupId', async (req: Request, res: Response): Promise<vo
       Key: { groupId },
     }));
 
+    // Invalidate cache for deleted group
+    void invalidateGroupCache(groupId);
+
     res.status(200).json({ message: 'Group deleted' });
   } catch (err) {
     console.error('DELETE /groups/:groupId error:', err);
@@ -226,6 +240,9 @@ groupsRouter.patch('/:groupId/visibility', async (req: Request, res: Response): 
       },
       ReturnValues: 'ALL_NEW',
     }));
+
+    // Invalidate stale cache; next GET will re-populate
+    void invalidateGroupCache(groupId);
 
     res.status(200).json(result.Attributes as GroupItem);
   } catch (err) {
