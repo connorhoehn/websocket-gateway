@@ -101,14 +101,17 @@ if (typeof document !== 'undefined' && !document.getElementById(PROSEMIRROR_STYL
 // Helper: get pixel coordinates for a ProseMirror position
 // ---------------------------------------------------------------------------
 
-function getCoords(view: any, pos: number): { top: number; left: number; height: number } | null {
+function getCoords(view: any, pos: number, containerEl?: HTMLDivElement | null): { top: number; left: number; height: number } | null {
   try {
     if (pos < 0 || pos > view.state.doc.content.size) return null;
     const coords = view.coordsAtPos(pos);
-    const editorRect = view.dom.getBoundingClientRect();
+    // Use the container element (editorAreaRef) as reference, not view.dom,
+    // because the overlay is positioned relative to the container which has padding.
+    const refEl = containerEl || view.dom;
+    const refRect = refEl.getBoundingClientRect();
     return {
-      top: coords.top - editorRect.top,
-      left: coords.left - editorRect.left,
+      top: coords.top - refRect.top,
+      left: coords.left - refRect.left,
       height: coords.bottom - coords.top,
     };
   } catch {
@@ -120,9 +123,10 @@ function getCoords(view: any, pos: number): { top: number; left: number; height:
 // Cursor Overlay Component
 // ---------------------------------------------------------------------------
 
-function CursorOverlay({ cursors, editorView }: {
+function CursorOverlay({ cursors, editorView, containerEl }: {
   cursors: RemoteCursorInfo[];
   editorView: any;
+  containerEl: HTMLDivElement | null;
 }) {
   if (!editorView) return null;
 
@@ -130,44 +134,68 @@ function CursorOverlay({ cursors, editorView }: {
     <>
       {cursors.map((c) => {
         if (c.head == null) return null;
-        const coords = getCoords(editorView, c.head);
+        const coords = getCoords(editorView, c.head, containerEl);
         if (!coords) return null;
 
         const initials = c.name
           .split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2)
           || c.name.slice(0, 2).toUpperCase();
 
-        // Selection highlight
-        let selectionEl = null;
+        // Multi-line selection highlight — render per-line rectangles
+        const selectionEls: React.ReactNode[] = [];
         if (c.anchor != null && c.anchor !== c.head) {
           const startPos = Math.min(c.anchor, c.head);
           const endPos = Math.max(c.anchor, c.head);
-          const startCoords = getCoords(editorView, startPos);
-          const endCoords = getCoords(editorView, endPos);
-          if (startCoords && endCoords) {
-            selectionEl = (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: startCoords.top,
-                  left: startCoords.left,
-                  width: Math.max(endCoords.left - startCoords.left, 4),
-                  height: startCoords.height || 18,
-                  background: c.color,
-                  opacity: 0.15,
-                  borderRadius: 2,
-                  pointerEvents: 'none',
-                  zIndex: 5,
-                }}
-              />
-            );
+          // Walk through positions to find line breaks and render per-line rects
+          try {
+            const editorDom = editorView.dom as HTMLElement;
+            const editorWidth = editorDom.offsetWidth;
+            let pos = startPos;
+            while (pos <= endPos) {
+              const lineStart = getCoords(editorView, pos, containerEl);
+              if (!lineStart) break;
+              // Find end of this line — scan forward until y coordinate changes
+              let lineEndPos = pos;
+              const lineY = lineStart.top;
+              for (let p = pos + 1; p <= endPos; p++) {
+                const pc = getCoords(editorView, p, containerEl);
+                if (!pc || Math.abs(pc.top - lineY) > 2) break;
+                lineEndPos = p;
+              }
+              const lineEnd = getCoords(editorView, lineEndPos, containerEl);
+              if (lineEnd) {
+                const left = pos === startPos ? lineStart.left : 0;
+                const right = lineEndPos === endPos ? lineEnd.left + 4 : editorWidth;
+                selectionEls.push(
+                  <div
+                    key={`sel-${c.clientId}-${pos}`}
+                    style={{
+                      position: 'absolute',
+                      top: lineY,
+                      left,
+                      width: Math.max(right - left, 4),
+                      height: lineStart.height || 18,
+                      background: c.color,
+                      opacity: 0.12,
+                      borderRadius: 2,
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}
+                  />
+                );
+              }
+              // Move to next line
+              pos = lineEndPos + 1;
+            }
+          } catch {
+            // fallback: skip selection rendering
           }
         }
 
         return (
           <div key={c.clientId} style={{ pointerEvents: 'none' }}>
-            {selectionEl}
-            {/* Cursor caret */}
+            {selectionEls}
+            {/* Cursor caret — semi-transparent ghost */}
             <div
               style={{
                 position: 'absolute',
@@ -176,14 +204,14 @@ function CursorOverlay({ cursors, editorView }: {
                 width: 2,
                 height: coords.height || 18,
                 background: c.color,
-                opacity: 0.7,
+                opacity: 0.4,
                 borderRadius: 1,
                 pointerEvents: 'none',
                 zIndex: 10,
                 animation: 'cursorBlink 1.2s ease-in-out infinite',
               }}
             />
-            {/* Ghost glow */}
+            {/* Ghost glow — very subtle */}
             <div
               style={{
                 position: 'absolute',
@@ -192,13 +220,13 @@ function CursorOverlay({ cursors, editorView }: {
                 width: 8,
                 height: coords.height || 18,
                 background: c.color,
-                opacity: 0.1,
+                opacity: 0.06,
                 borderRadius: 4,
                 pointerEvents: 'none',
                 zIndex: 9,
               }}
             />
-            {/* Name badge */}
+            {/* Name badge — semi-transparent */}
             <div
               style={{
                 position: 'absolute',
@@ -213,8 +241,8 @@ function CursorOverlay({ cursors, editorView }: {
                 whiteSpace: 'nowrap',
                 pointerEvents: 'none',
                 zIndex: 11,
-                opacity: 0.85,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+                opacity: 0.55,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
               }}
               title={c.name}
             >
@@ -357,7 +385,7 @@ export default function TiptapEditor({
       <div ref={editorAreaRef} style={editorAreaStyle}>
         <EditorContent editor={editor} />
         {/* Custom cursor overlay — rendered as React elements, not ProseMirror decorations */}
-        <CursorOverlay cursors={remoteCursors} editorView={editor?.view} />
+        <CursorOverlay cursors={remoteCursors} editorView={editor?.view} containerEl={editorAreaRef.current} />
       </div>
     </div>
   );

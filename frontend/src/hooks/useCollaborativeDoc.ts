@@ -258,7 +258,12 @@ export function useCollaborativeDoc(
           currentSectionId: (user.currentSectionId as string | null) ?? null,
         });
       });
-      queueMicrotask(() => setParticipants(parts));
+      // Deduplicate by userId — keep the most recent entry per user
+      const seen = new Map<string, Participant>();
+      for (const p of parts) {
+        seen.set(p.userId || p.clientId, p);
+      }
+      queueMicrotask(() => setParticipants(Array.from(seen.values())));
     };
     provider.awareness.on('change', awarenessHandler);
 

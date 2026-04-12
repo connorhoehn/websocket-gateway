@@ -98,16 +98,33 @@ export default function DocumentEditorPage({
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
 
   const handleJumpToUser = useCallback((participant: Participant) => {
-    if (!participant.currentSectionId) return;
-    const el = document.getElementById(`section-${participant.currentSectionId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Flash highlight
-      el.style.transition = 'box-shadow 0.3s ease';
-      el.style.boxShadow = `0 0 0 3px ${participant.color}40`;
-      setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+    // Switch to the same mode the participant is in
+    const targetMode: ViewMode =
+      participant.mode === 'reviewer' ? 'ack' :
+      participant.mode === 'reader' ? 'reader' : 'editor';
+
+    if (mode !== targetMode) {
+      setMode(targetMode);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('mode', targetMode);
+        window.history.replaceState({}, '', url.toString());
+      }
     }
-  }, []);
+
+    // Scroll to their section after a short delay (allow mode switch to render)
+    if (participant.currentSectionId) {
+      setTimeout(() => {
+        const el = document.getElementById(`section-${participant.currentSectionId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.transition = 'box-shadow 0.3s ease';
+          el.style.boxShadow = `0 0 0 3px ${participant.color}40`;
+          setTimeout(() => { el.style.boxShadow = ''; }, 2000);
+        }
+      }, 100);
+    }
+  }, [mode]);
 
   // ------ Activity helpers --------------------------------------------------
 
