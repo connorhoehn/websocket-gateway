@@ -37,16 +37,17 @@ k8s_yaml(helm(
 ))
 
 # --- Resource configuration ---
-k8s_resource('wsg-websocket-gateway',
+# Resource names match Helm deployment names: {release}-{chart}-{component}
+k8s_resource('wsg-websocket-gateway-gateway',
     port_forwards=['8080:8080'],
     labels=['app'],
-    resource_deps=['wsg-redis', 'wsg-dynamodb'],
+    resource_deps=['wsg-websocket-gateway-redis', 'wsg-websocket-gateway-dynamodb'],
 )
-k8s_resource('wsg-redis',
+k8s_resource('wsg-websocket-gateway-redis',
     port_forwards=['6379:6379'],
     labels=['infra'],
 )
-k8s_resource('wsg-dynamodb',
+k8s_resource('wsg-websocket-gateway-dynamodb',
     port_forwards=['8000:8000'],
     labels=['infra'],
 )
@@ -78,6 +79,6 @@ local_resource(
             --endpoint-url http://localhost:8000 \
             --region us-east-1 2>/dev/null || echo "Table already exists"
     ''',
-    resource_deps=['wsg-dynamodb'],
+    resource_deps=['wsg-websocket-gateway-dynamodb'],
     labels=['setup'],
 )
