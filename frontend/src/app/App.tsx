@@ -7,12 +7,12 @@ import { useCursors } from '../hooks/useCursors';
 import { useCRDT } from '../hooks/useCRDT';
 import { useChat } from '../hooks/useChat';
 import { useReactions } from '../hooks/useReactions';
+import { useActivityBus } from '../hooks/useActivityBus';
 import { getGatewayConfig } from '../config/gateway';
 import { LoginForm } from '../components/LoginForm';
 import { SignupForm } from '../components/SignupForm';
 import { AppLayout } from '../components/AppLayout';
 import type { LogEntry } from '../components/EventLog';
-import type { TextSelectionData } from '../hooks/useCursors';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
 
@@ -112,17 +112,7 @@ function GatewayDemo({
   // message, then the raw message is appended to the dev log.
   const featureHandlers = useRef<Array<(msg: GatewayMessage) => void>>([]);
 
-  const {
-    connectionState,
-    lastError,
-    currentChannel,
-    clientId,
-    sessionToken,
-    switchChannel,
-    sendMessage,
-    disconnect,
-    reconnect,
-  } = useWebSocket({
+  const wsReturn = useWebSocket({
     config,
     onMessage: (msg) => {
       featureHandlers.current.forEach((h) => h(msg));
@@ -144,12 +134,26 @@ function GatewayDemo({
     },
   });
 
-  // Track lastError from useWebSocket in the errors state
-  useEffect(() => {
-    if (lastError) {
-      setErrors((prev) => [lastError, ...prev]);
-    }
-  }, [lastError]);
+  const {
+    connectionState,
+    lastError,
+    currentChannel,
+    clientId,
+    sessionToken,
+    switchChannel,
+    sendMessage,
+    disconnect,
+    reconnect,
+  } = wsReturn;
+
+  // Track lastError from useWebSocket in the errors state.
+  // Use a state variable (not a ref) to detect changes during render, avoiding
+  // both react-hooks/set-state-in-effect and react-hooks/refs violations.
+  const [prevLastError, setPrevLastError] = useState<GatewayError | null>(null);
+  if (lastError && lastError !== prevLastError) {
+    setPrevLastError(lastError);
+    setErrors((prev) => [lastError, ...prev]);
+  }
 
   // Logged send wrapper: logs outbound messages to EventLog before forwarding
   const loggedSendMessage = useCallback((msg: Record<string, unknown>) => {
@@ -194,6 +198,7 @@ function GatewayDemo({
 
   const {
     cursors,
+    localCursor,
     activeMode,
     sendFreeformUpdate,
     sendTableUpdate,
@@ -231,6 +236,14 @@ function GatewayDemo({
     connectionState,
   });
 
+  const activityBus = useActivityBus({
+    sendMessage: loggedSendMessage,
+    onMessage,
+    connectionState,
+    userId: clientId ?? 'anonymous',
+    displayName,
+  });
+
   return (
     <AppLayout
       connectionState={connectionState}
@@ -248,6 +261,7 @@ function GatewayDemo({
       onChatSend={sendChat}
       onTyping={setTyping}
       cursors={cursors}
+      localCursor={localCursor}
       activeMode={activeMode}
       onModeChange={switchMode}
       onFreeformMove={sendFreeformUpdate}
@@ -266,6 +280,12 @@ function GatewayDemo({
       idToken={auth.idToken}
       onMessage={onMessage}
       sendMessage={loggedSendMessage}
+      ws={wsReturn}
+      userId={clientId ?? 'anonymous'}
+      displayName={displayName}
+      activityEvents={activityBus.events}
+      activityPublish={activityBus.publish}
+      activityIsLive={activityBus.isLive}
     />
   );
 }

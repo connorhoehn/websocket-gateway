@@ -3,6 +3,8 @@ const WebSocket = require("ws");
 const redis = require("redis");
 const http = require("http");
 const crypto = require("crypto");
+const path = require("path");
+const fs = require("fs");
 
 // Import our distributed architecture components
 const NodeManager = require("./core/node-manager");
@@ -77,7 +79,10 @@ class DistributedWebSocketServer {
         this.MAX_TOTAL_CONNECTIONS = parseInt(process.env.MAX_TOTAL_CONNECTIONS || '10000', 10);
 
         // CORS configuration
-        this.allowedOrigins = (process.env.ALLOWED_ORIGINS || '*').split(',').map(o => o.trim());
+        // In production, set ALLOWED_ORIGINS explicitly (e.g. "https://app.example.com")
+        this.allowedOrigins = process.env.ALLOWED_ORIGINS
+            ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+            : ['*'];
 
         this.setupHttpServer();
     }
@@ -221,7 +226,7 @@ class DistributedWebSocketServer {
         }
 
         if (config.server.enabledServices.includes('crdt')) {
-            const crdtService = new CRDTService(this.messageRouter, this.logger, this.metricsCollector);
+            const crdtService = new CRDTService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher);
             this.services.set('crdt', crdtService);
             this.logger.info('✅ CRDT service initialized');
         }
@@ -232,22 +237,103 @@ class DistributedWebSocketServer {
         this.logger.info('✅ Social service initialized');
 
         // Activity service is always enabled — required for real-time activity feed
-        const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector);
+        const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher);
         this.services.set('activity', activityService);
         this.logger.info('✅ Activity service initialized');
     }
 
     setupHttpServer() {
+        const MIME_TYPES = {
+            '.html': 'text/html',
+            '.js': 'application/javascript',
+            '.css': 'text/css',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.map': 'application/json',
+        };
+
+        const publicDir = path.join(__dirname, 'public');
+
         this.httpServer = http.createServer((req, res) => {
+            // API routes take priority
             if (req.url === '/health' && req.method === 'GET') {
                 this.handleHealthCheck(req, res);
             } else if (req.url === '/cluster' && req.method === 'GET') {
                 this.handleClusterInfo(req, res);
             } else if (req.url === '/stats' && req.method === 'GET') {
                 this.handleStats(req, res);
+            } else if (req.method === 'GET') {
+                // Static file serving for the React SPA
+                this.serveStatic(req, res, publicDir, MIME_TYPES);
             } else {
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
                 res.end('Not Found');
+            }
+        });
+    }
+
+    serveStatic(req, res, publicDir, MIME_TYPES) {
+        // Parse URL to strip query strings
+        const urlPath = req.url.split('?')[0];
+
+        // Prevent directory traversal
+        const safePath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
+        const filePath = path.join(publicDir, safePath);
+
+        // Ensure resolved path is within publicDir
+        if (!filePath.startsWith(publicDir)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+        }
+
+        fs.stat(filePath, (err, stats) => {
+            if (!err && stats.isFile()) {
+                // File exists, serve it
+                const ext = path.extname(filePath).toLowerCase();
+                const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+                // Assets with hash in filename get long cache; index.html gets no-cache
+                const cacheControl = ext === '.html'
+                    ? 'no-cache, no-store, must-revalidate'
+                    : 'public, max-age=31536000, immutable';
+
+                res.writeHead(200, {
+                    'Content-Type': contentType,
+                    'Cache-Control': cacheControl,
+                });
+
+                const stream = fs.createReadStream(filePath);
+                stream.pipe(res);
+                stream.on('error', () => {
+                    res.writeHead(500, { 'Content-Type': 'text/plain' });
+                    res.end('Internal Server Error');
+                });
+            } else {
+                // File not found -- SPA fallback: serve index.html
+                const indexPath = path.join(publicDir, 'index.html');
+                fs.stat(indexPath, (indexErr, indexStats) => {
+                    if (!indexErr && indexStats.isFile()) {
+                        res.writeHead(200, {
+                            'Content-Type': 'text/html',
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        });
+                        const stream = fs.createReadStream(indexPath);
+                        stream.pipe(res);
+                        stream.on('error', () => {
+                            res.writeHead(500, { 'Content-Type': 'text/plain' });
+                            res.end('Internal Server Error');
+                        });
+                    } else {
+                        res.writeHead(404, { 'Content-Type': 'text/plain' });
+                        res.end('Not Found');
+                    }
+                });
             }
         });
     }
@@ -351,6 +437,17 @@ class DistributedWebSocketServer {
                 this.messageRouter.registerLocalClient(clientId, ws, metadata);
                 this.connections.set(clientId, { ws, metadata });
 
+                // Notify services that support onClientConnect lifecycle hook
+                for (const [serviceName, service] of this.services) {
+                    if (typeof service.onClientConnect === 'function') {
+                        try {
+                            await service.onClientConnect(clientId);
+                        } catch (error) {
+                            this.logger.error(`Error in ${serviceName} onClientConnect handler:`, error);
+                        }
+                    }
+                }
+
                 // WebSocket ping/pong keepalive (every 30 seconds)
                 const pingInterval = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
@@ -366,7 +463,9 @@ class DistributedWebSocketServer {
                 // Setup message handler with error boundary
                 ws.on("message", async (message) => {
                     try {
-                        await this.handleMessage(clientId, message);
+                        // Convert Buffer/ArrayBuffer to string for JSON parsing
+                        const rawMessage = Buffer.isBuffer(message) ? message.toString('utf8') : message;
+                        await this.handleMessage(clientId, rawMessage);
                     } catch (error) {
                         this.logger.error('Unhandled error in message handler', {
                             clientId,
@@ -681,7 +780,7 @@ class DistributedWebSocketServer {
             
             // Cleanup node manager
             if (this.nodeManager) {
-                await this.nodeManager.cleanup();
+                await this.nodeManager.shutdown();
             }
             
             this.logger.info('✅ Server shutdown complete');

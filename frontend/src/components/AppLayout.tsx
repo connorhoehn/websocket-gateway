@@ -35,6 +35,8 @@ import { RoomList } from './RoomList';
 import { PostFeed } from './PostFeed';
 import { ActivityPanel } from './ActivityPanel';
 import { BigBrotherPanel } from './BigBrotherPanel';
+import DocumentEditorPage from './doc-editor/DocumentEditorPage';
+import type { UseWebSocketReturn } from '../hooks/useWebSocket';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,6 +138,7 @@ export interface AppLayoutProps {
 
   // Cursors
   cursors: Map<string, RemoteCursor>;
+  localCursor: RemoteCursor | null;
   activeMode: CursorMode;
   onModeChange: (mode: CursorMode) => void;
   onFreeformMove: (x: number, y: number) => void;
@@ -160,6 +163,17 @@ export interface AppLayoutProps {
   idToken: string | null;
   onMessage: OnMessageFn;
   sendMessage: (msg: Record<string, unknown>) => void;
+
+  // WebSocket return object (needed for collaborative doc editor)
+  ws: UseWebSocketReturn;
+  // Identity
+  userId: string;
+  displayName: string;
+
+  // Unified activity bus (lifted to GatewayDemo so it persists across tab switches)
+  activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
+  activityPublish: (eventType: string, detail: Record<string, unknown>) => void;
+  activityIsLive: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +216,7 @@ export function AppLayout({
   onChatSend,
   onTyping,
   cursors,
+  localCursor,
   activeMode,
   onModeChange,
   onFreeformMove,
@@ -220,9 +235,15 @@ export function AppLayout({
   idToken,
   onMessage,
   sendMessage,
+  ws,
+  userId,
+  displayName,
+  activityEvents,
+  activityPublish,
+  activityIsLive,
 }: AppLayoutProps) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'panels' | 'dashboard'>('panels');
+  const [activeView, setActiveView] = useState<'panels' | 'dashboard' | 'doc-editor'>('panels');
 
   const {
     rooms,
@@ -289,7 +310,7 @@ export function AppLayout({
       }
     });
     return unregister;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // Auto-dismiss notifications after 4 seconds
   useEffect(() => {
@@ -470,6 +491,21 @@ export function AppLayout({
             >
               Live Activity
             </button>
+            <button
+              onClick={() => setActiveView('doc-editor')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                borderBottom: activeView === 'doc-editor' ? '2px solid #646cff' : '2px solid transparent',
+                background: 'none',
+                color: activeView === 'doc-editor' ? '#0f172a' : '#64748b',
+                fontWeight: activeView === 'doc-editor' ? 600 : 400,
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+              }}
+            >
+              Document Editor
+            </button>
           </div>
 
           {activeView === 'panels' && (
@@ -491,16 +527,16 @@ export function AppLayout({
             <p style={sectionHeaderStyle}>Cursors</p>
             <CursorModeSelector activeMode={activeMode} onModeChange={onModeChange} />
             {activeMode === 'freeform' && (
-              <CursorCanvas cursors={cursors} onMouseMove={onFreeformMove} />
+              <CursorCanvas cursors={cursors} localCursor={localCursor} onMouseMove={onFreeformMove} />
             )}
             {activeMode === 'table' && (
-              <TableCursorGrid cursors={cursors} onCellClick={onTableClick} />
+              <TableCursorGrid cursors={cursors} localCursor={localCursor} onCellClick={onTableClick} />
             )}
             {activeMode === 'text' && (
-              <TextCursorEditor cursors={cursors} onPositionChange={onTextChange} />
+              <TextCursorEditor cursors={cursors} localCursor={localCursor} onPositionChange={onTextChange} />
             )}
             {activeMode === 'canvas' && (
-              <CanvasCursorBoard cursors={cursors} onMouseMove={onCanvasMove} />
+              <CanvasCursorBoard cursors={cursors} localCursor={localCursor} onMouseMove={onCanvasMove} />
             )}
           </div>
 
@@ -581,13 +617,25 @@ export function AppLayout({
 
           {activeView === 'dashboard' && (
             <BigBrotherPanel
-              idToken={idToken}
               rooms={rooms}
               presenceUsers={presenceUsers}
-              sendMessage={sendMessage}
-              onMessage={onMessage}
-              connectionState={connectionState}
+              activityEvents={activityEvents}
+              activityIsLive={activityIsLive}
             />
+          )}
+
+          {activeView === 'doc-editor' && (
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <DocumentEditorPage
+                documentId="demo-q2-sprint"
+                ws={ws}
+                userId={userId}
+                displayName={displayName}
+                onMessage={onMessage}
+                activityPublish={activityPublish}
+                activityEvents={activityEvents}
+              />
+            </div>
           )}
 
         </div>

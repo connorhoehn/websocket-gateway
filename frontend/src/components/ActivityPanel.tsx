@@ -36,7 +36,7 @@ interface GatewayMessage {
 // Constants
 // ---------------------------------------------------------------------------
 
-const SOCIAL_API_URL = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? 'http://localhost:3001';
+const SOCIAL_API_URL = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
 
 const MAX_ITEMS = 50;
 
@@ -112,35 +112,39 @@ function useActivityFeed({
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
   const sendMessageRef = useRef(sendMessage);
-  sendMessageRef.current = sendMessage;
+  useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
 
   const userId = extractUserId(idToken);
 
   // 1. Hydrate from REST on mount
   useEffect(() => {
-    if (!idToken) return;
-    setLoading(true);
+    if (!idToken || !SOCIAL_API_URL) return;
+    let cancelled = false;
+    // Set loading synchronously before the async fetch — this is intentional
+    // to show a loading indicator immediately on mount/token change.
+    setLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     fetch(`${SOCIAL_API_URL}/api/activity?limit=20`, {
       headers: { Authorization: `Bearer ${idToken}` },
     })
       .then(r => r.json())
-      .then((data: ActivityResponse) => setItems(data.items))
+      .then((data: ActivityResponse) => { if (!cancelled) setItems(data.items); })
       .catch(err => console.error('[activity] fetch failed:', err))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [idToken]);
 
   // 2. Subscribe to WebSocket channel when connected
   useEffect(() => {
     if (connectionState !== 'connected' || !userId) {
-      setIsLive(false);
+      setIsLive(false); // eslint-disable-line react-hooks/set-state-in-effect
       return;
     }
     const channelId = `activity:${userId}`;
     sendMessageRef.current({ service: 'activity', action: 'subscribe', channelId });
-    setIsLive(true);
+    setIsLive(true);  
     return () => {
       sendMessageRef.current({ service: 'activity', action: 'unsubscribe', channelId });
-      setIsLive(false);
+      setIsLive(false);  
     };
   }, [connectionState, userId]);
 

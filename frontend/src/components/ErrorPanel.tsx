@@ -3,9 +3,9 @@
 // ErrorPanel — always-visible dev tool component that accumulates and displays
 // all gateway errors since page load. Newest errors appear first.
 //
-// Imports ERROR_CODE_DESCRIPTIONS from ErrorDisplay — no duplication.
+// Imports ERROR_CODE_DESCRIPTIONS from shared errorCodes module.
 
-import { ERROR_CODE_DESCRIPTIONS } from './ErrorDisplay';
+import { ERROR_CODE_DESCRIPTIONS } from './errorCodes';
 import type { GatewayError } from '../types/gateway';
 
 // ---------------------------------------------------------------------------
@@ -35,9 +35,9 @@ export function ErrorPanel({ errors }: Props) {
         <p style={{ color: '#9ca3af', fontSize: '0.875rem' }}>No errors.</p>
       ) : (
         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          {errors.map((error) => (
+          {errors.map((error, index) => (
             <div
-              key={error.timestamp + error.code}
+              key={`${error.timestamp}-${error.code}-${index}`}
               style={{
                 background: '#fef2f2',
                 border: '1px solid #fca5a5',

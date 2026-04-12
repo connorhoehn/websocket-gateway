@@ -6,7 +6,7 @@
 // Renders colored line cursors and semi-transparent selection highlights for
 // remote cursors that have metadata.mode === 'text'.
 
-import { useRef } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import type { RemoteCursor, TextSelectionData } from '../hooks/useCursors';
 import { identityToColor, identityToInitials } from '../utils/identity';
 
@@ -100,6 +100,7 @@ function getTextCoordinates(
 
 interface TextCursorEditorProps {
   cursors: Map<string, RemoteCursor>;
+  localCursor?: RemoteCursor | null;
   onPositionChange: (
     position: number,
     selectionData: TextSelectionData | null,
@@ -118,12 +119,17 @@ const INITIAL_TEXT =
 // Component
 // ---------------------------------------------------------------------------
 
-export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditorProps) {
+export function TextCursorEditor({ cursors, localCursor, onPositionChange }: TextCursorEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editableRef = useRef<HTMLDivElement>(null);
+  // Use state to hold the editable element so we can read it during render
+  // without violating react-hooks/refs (refs cannot be read during render).
+  const [editableEl, setEditableEl] = useState<HTMLDivElement | null>(null);
+  const editableCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    setEditableEl(node);
+  }, []);
 
   function handleInteraction() {
-    const editable = editableRef.current;
+    const editable = editableEl;
     if (!editable) return;
     const offset = getCharOffset(editable);
     const selection = getSelectionData(editable);
@@ -158,8 +164,8 @@ export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditor
   });
 
   // Render cursor lines and selections relative to the editable div.
-  // We compute coordinates only when the editable ref is available.
-  const editable = editableRef.current;
+  // We compute coordinates only when the editable element is available.
+  const editable = editableEl;
 
   return (
     <div
@@ -177,7 +183,7 @@ export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditor
     >
       {/* Contenteditable document */}
       <div
-        ref={editableRef}
+        ref={editableCallbackRef}
         contentEditable
         suppressContentEditableWarning
         onClick={handleInteraction}
@@ -187,6 +193,7 @@ export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditor
           minHeight: 80,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
+          color: '#1e293b',
         }}
       >
         {INITIAL_TEXT}
@@ -232,6 +239,51 @@ export function TextCursorEditor({ cursors, onPositionChange }: TextCursorEditor
             </div>
           );
         })}
+
+      {/* Local cursor caret */}
+      {editable && localCursor && (localCursor.metadata as Record<string, unknown>).mode === 'text' && (() => {
+        const pos = localCursor.position as { position?: number };
+        if (pos.position == null) return null;
+        const coords = getTextCoordinates(editable, pos.position);
+        return (
+          <div style={{ pointerEvents: 'none' }}>
+            {/* Local caret line (dashed) */}
+            <div
+              style={{
+                position: 'absolute',
+                top: coords.top + 12,
+                left: coords.left + 12,
+                width: 2,
+                height: coords.height,
+                background: '#3b82f6',
+                zIndex: 10,
+                pointerEvents: 'none',
+                opacity: 0.7,
+                borderRight: '1px dashed #3b82f6',
+              }}
+            />
+            {/* "You" label */}
+            <div
+              style={{
+                position: 'absolute',
+                top: coords.top + 12 - 14,
+                left: coords.left + 12,
+                fontSize: 10,
+                background: '#3b82f6',
+                color: 'white',
+                padding: '1px 3px',
+                borderRadius: 2,
+                zIndex: 11,
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+                opacity: 0.8,
+              }}
+            >
+              You
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Remote selection highlights */}
       {editable &&

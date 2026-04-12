@@ -71,8 +71,10 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
       if (msg.type !== 'presence') return;
 
       if (msg.action === 'subscribed') {
-        // Initialize user list from the subscribed message
-        const incoming = (msg.users as PresenceUser[] | undefined) ?? [];
+        // Server sends { presence: [...] } with the current channel users
+        const incoming = (msg.presence as PresenceUser[] | undefined)
+          ?? (msg.users as PresenceUser[] | undefined)
+          ?? [];
         const map = new Map<string, PresenceUser>();
         for (const user of incoming) {
           map.set(user.clientId, user);
@@ -82,11 +84,15 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
       }
 
       if (msg.action === 'update') {
-        const clientId = msg.clientId as string;
-        const presence = msg.presence as { status: string; metadata: Record<string, unknown> };
+        // Server sends { presence: { clientId, status, metadata, ... } }
+        const presence = msg.presence as { clientId: string; status: string; metadata: Record<string, unknown> } | undefined;
+        const clientId = presence?.clientId ?? (msg.clientId as string);
+        if (!clientId) return;
+        const status = presence?.status ?? 'online';
+        const metadata = presence?.metadata ?? {};
         setUsers((prev) => {
           const next = new Map(prev);
-          next.set(clientId, { clientId, status: presence.status, metadata: presence.metadata });
+          next.set(clientId, { clientId, status, metadata });
           return next;
         });
         return;
@@ -115,8 +121,14 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
     // Subscribe to the channel
     sendMessage({ service: 'presence', action: 'subscribe', channel: currentChannel });
 
-    // Clear user list for the new channel (subscribing implies fresh state)
-    setUsers(new Map());
+    // Announce ourselves as online in this channel
+    sendMessage({
+      service: 'presence',
+      action: 'set',
+      status: 'online',
+      metadata: { displayName: displayNameRef.current },
+      channels: [currentChannel],
+    });
 
     // Start heartbeat interval
     heartbeatRef.current = setInterval(() => {
@@ -180,7 +192,7 @@ export function usePresence(options: UsePresenceOptions): UsePresenceReturn {
         }
       }
     },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    []  
     // All deps are accessed via refs — stable callback that never causes re-renders
   );
 

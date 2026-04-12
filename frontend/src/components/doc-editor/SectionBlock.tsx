@@ -1,0 +1,305 @@
+// frontend/src/components/doc-editor/SectionBlock.tsx
+//
+// Renders a single document section with header, rich-text editor, and task list.
+// Includes presence-aware left border, avatar stack, and focus glow.
+
+import { useState } from 'react';
+import type { XmlFragment } from 'yjs';
+import * as Y from 'yjs';
+import type { Section, TaskItem, Participant } from '../../types/document';
+import TiptapEditor from './TiptapEditor';
+import type { CollaborationProvider } from './TiptapEditor';
+import TaskList from './TaskList';
+import SectionComments from './SectionComments';
+import type { CommentThread } from '../../types/document';
+
+export interface SectionBlockProps {
+  section: Section;
+  fragment: XmlFragment | null;
+  ydoc: Y.Doc;
+  provider: CollaborationProvider | null;
+  user: { name: string; color: string };
+  editable: boolean;
+  onUpdateSection: (patch: Partial<Section>) => void;
+  onAddItem: (item: Omit<TaskItem, 'id'>) => void;
+  onUpdateItem: (itemId: string, patch: Partial<TaskItem>) => void;
+  onRemoveItem: (itemId: string) => void;
+  participants?: Participant[];
+  onFocus?: () => void;
+  isFocused?: boolean;
+  comments?: CommentThread[];
+  onAddComment?: (text: string, parentCommentId?: string | null) => void;
+}
+
+const typeColors: Record<Section['type'], string> = {
+  summary: '#8b5cf6',
+  tasks: '#3b82f6',
+  decisions: '#f59e0b',
+  notes: '#6b7280',
+  custom: '#10b981',
+};
+
+const headerStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '10px 14px',
+  background: '#f8fafc',
+  borderBottom: '1px solid #e2e8f0',
+  borderRadius: '8px 8px 0 0',
+};
+
+const titleInputStyle: React.CSSProperties = {
+  flex: 1,
+  border: 'none',
+  outline: 'none',
+  fontSize: 15,
+  fontWeight: 600,
+  fontFamily: 'inherit',
+  background: 'transparent',
+  color: '#1e293b',
+};
+
+const typeBadgeStyle = (bg: string): React.CSSProperties => ({
+  padding: '2px 10px',
+  fontSize: 11,
+  fontWeight: 600,
+  borderRadius: 12,
+  background: bg,
+  color: '#fff',
+  textTransform: 'capitalize',
+  whiteSpace: 'nowrap',
+});
+
+const collapseBtnStyle: React.CSSProperties = {
+  border: 'none',
+  background: 'none',
+  cursor: 'pointer',
+  fontSize: 16,
+  padding: '2px 6px',
+  color: '#64748b',
+  lineHeight: 1,
+};
+
+const bodyStyle: React.CSSProperties = {
+  padding: 14,
+};
+
+const addTaskBtnStyle: React.CSSProperties = {
+  marginTop: 8,
+  padding: '6px 14px',
+  fontSize: 13,
+  border: '1px dashed #cbd5e1',
+  borderRadius: 6,
+  background: 'transparent',
+  color: '#64748b',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+/* ---- helpers ------------------------------------------------------------ */
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((w) => w[0] ?? '')
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+/* ---- avatar stack ------------------------------------------------------- */
+
+const MAX_VISIBLE_AVATARS = 3;
+
+function AvatarStack({ participants }: { participants: Participant[] }) {
+  if (!participants || participants.length === 0) return null;
+
+  const visible = participants.slice(0, MAX_VISIBLE_AVATARS);
+  const overflow = participants.length - MAX_VISIBLE_AVATARS;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginLeft: 'auto',
+        flexShrink: 0,
+      }}
+    >
+      {visible.map((p, i) => (
+        <div
+          key={p.clientId}
+          title={`${p.displayName} (${p.mode})`}
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            background: `linear-gradient(135deg, ${p.color || '#3b82f6'}, ${darkenHex(p.color || '#3b82f6', 0.2)})`,
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 10,
+            fontWeight: 600,
+            border: '2px solid #fff',
+            marginLeft: i === 0 ? 0 : -8,
+            zIndex: MAX_VISIBLE_AVATARS - i,
+            position: 'relative',
+            transition: 'transform 0.2s ease',
+          }}
+        >
+          {getInitials(p.displayName)}
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            background: '#e2e8f0',
+            color: '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 9,
+            fontWeight: 700,
+            border: '2px solid #fff',
+            marginLeft: -8,
+            position: 'relative',
+          }}
+        >
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function darkenHex(hex: string, amount: number): string {
+  const h = hex.replace('#', '');
+  const num = parseInt(h, 16);
+  const r = Math.max(0, ((num >> 16) & 0xff) * (1 - amount));
+  const g = Math.max(0, ((num >> 8) & 0xff) * (1 - amount));
+  const b = Math.max(0, (num & 0xff) * (1 - amount));
+  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+}
+
+/* ---- component ---------------------------------------------------------- */
+
+export default function SectionBlock({
+  section,
+  fragment,
+  ydoc,
+  provider,
+  user,
+  editable,
+  onUpdateSection,
+  onAddItem,
+  onUpdateItem,
+  onRemoveItem,
+  participants,
+  onFocus,
+  isFocused,
+  comments,
+  onAddComment,
+}: SectionBlockProps) {
+  const [collapsed, setCollapsed] = useState(section.collapsed);
+
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    onUpdateSection({ collapsed: next });
+  };
+
+  const handleAddTask = () => {
+    onAddItem({
+      text: '',
+      status: 'pending',
+      assignee: '',
+      ackedBy: '',
+      ackedAt: '',
+      priority: 'medium',
+      notes: '',
+    });
+  };
+
+  const isTaskSection = section.type === 'tasks';
+
+  // Presence-aware left border: pick first participant's color or none
+  const hasPresence = participants && participants.length > 0;
+  const presenceBorderColor = hasPresence ? (participants![0].color || '#3b82f6') : 'transparent';
+
+  const sectionOuterStyle: React.CSSProperties = {
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    marginBottom: 16,
+    background: '#fff',
+    borderLeft: hasPresence ? `3px solid ${presenceBorderColor}` : '1px solid #e2e8f0',
+    boxShadow: isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.3)' : 'none',
+    transition: 'border-left 0.3s ease, box-shadow 0.3s ease',
+  };
+
+  return (
+    <div id={`section-${section.id}`} style={sectionOuterStyle} onClick={onFocus}>
+      <div style={headerStyle}>
+        <button type="button" onClick={toggleCollapse} style={collapseBtnStyle} title="Toggle section">
+          {collapsed ? '\u25B6' : '\u25BC'}
+        </button>
+
+        <input
+          type="text"
+          value={section.title}
+          onChange={(e) => onUpdateSection({ title: e.target.value })}
+          readOnly={!editable}
+          style={titleInputStyle}
+        />
+
+        <span style={typeBadgeStyle(typeColors[section.type])}>
+          {section.type}
+        </span>
+
+        <AvatarStack participants={participants ?? []} />
+      </div>
+
+      {!collapsed && (
+        <div style={bodyStyle}>
+          {fragment && (
+            <TiptapEditor
+              fragment={fragment}
+              ydoc={ydoc}
+              provider={provider}
+              user={user}
+              editable={editable}
+              placeholder={`Write ${section.type} content...`}
+            />
+          )}
+
+          {isTaskSection && (
+            <>
+              <TaskList
+                items={section.items}
+                editable={editable}
+                onUpdateItem={onUpdateItem}
+                onRemoveItem={onRemoveItem}
+              />
+              {editable && (
+                <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
+                  + Add task
+                </button>
+              )}
+            </>
+          )}
+
+          {onAddComment && (
+            <SectionComments
+              comments={comments ?? []}
+              onAddComment={onAddComment}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

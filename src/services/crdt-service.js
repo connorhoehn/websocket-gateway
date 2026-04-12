@@ -6,28 +6,40 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
-const { DynamoDBClient, PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, PutItemCommand, QueryCommand, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { EventBridgeClient, PutEventsCommand } = require('@aws-sdk/client-eventbridge');
-const { mergeUpdates } = require('yjs');
+const Y = require('yjs');
+const { mergeUpdates } = Y;
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
 class CRDTService {
-    constructor(messageRouter, logger, metricsCollector = null) {
+    constructor(messageRouter, logger, metricsCollector = null, redisClient = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
         this.metricsCollector = metricsCollector;
+        this.redisClient = redisClient;
 
         // Operation batching for reduced Redis message volume
         this.operationBatches = new Map(); // channelId -> {operations: [], timeout: null, senderClientId: string}
         this.BATCH_WINDOW_MS = 10; // 10ms batch window for <50ms total latency
 
+        // Debounced snapshot timers per channel (write after 5s of inactivity)
+        this.snapshotDebounceTimers = new Map(); // channelId -> timeout
+        this.SNAPSHOT_DEBOUNCE_MS = parseInt(process.env.SNAPSHOT_DEBOUNCE_MS || '5000', 10);
+
         // DynamoDB client for snapshot retrieval
-        this.dynamoClient = new DynamoDBClient({
-            region: process.env.AWS_REGION || 'us-east-1'
-        });
+        const dynamoOpts = { region: process.env.AWS_REGION || 'us-east-1' };
+        if (process.env.LOCALSTACK_ENDPOINT) {
+            dynamoOpts.endpoint = process.env.LOCALSTACK_ENDPOINT;
+            dynamoOpts.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'local',
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
+            };
+        }
+        this.dynamoClient = new DynamoDBClient(dynamoOpts);
 
         // EventBridge client for publishing snapshot checkpoints
         this.eventBridgeClient = new EventBridgeClient({
@@ -39,13 +51,114 @@ class CRDTService {
         });
         this.eventBusName = process.env.EVENT_BUS_NAME || 'social-events';
 
-        // Channel state tracking for snapshots
-        this.channelStates = new Map(); // channelId -> {currentSnapshot: Buffer, operationsSinceSnapshot: number, subscriberCount: number}
+        // Channel state tracking with Y.Doc per channel for proper CRDT sync
+        this.channelStates = new Map(); // channelId -> {ydoc: Y.Doc, operationsSinceSnapshot: number, subscriberCount: number}
 
-        // Schedule periodic snapshot timer (every 5 minutes)
+        // Schedule periodic snapshot timer
+        const snapshotInterval = parseInt(process.env.SNAPSHOT_INTERVAL_MS || '300000', 10);
         this.periodicSnapshotTimer = setInterval(() => {
             this.writePeriodicSnapshots();
-        }, 300000); // 300,000ms = 5 minutes
+        }, snapshotInterval);
+        this.logger.info(`Periodic snapshots every ${snapshotInterval / 1000}s`);
+
+        // Ensure DynamoDB table exists in local dev
+        if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
+            this._ensureTable().catch(err => this.logger.error('Failed to ensure DynamoDB table:', err.message));
+        }
+    }
+
+    async _ensureTable() {
+        const tableName = process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots';
+        try {
+            await this.dynamoClient.send(new DescribeTableCommand({ TableName: tableName }));
+            this.logger.info(`DynamoDB table ${tableName} exists`);
+        } catch (err) {
+            if (err.name === 'ResourceNotFoundException') {
+                this.logger.info(`Creating DynamoDB table ${tableName}...`);
+                await this.dynamoClient.send(new CreateTableCommand({
+                    TableName: tableName,
+                    AttributeDefinitions: [
+                        { AttributeName: 'documentId', AttributeType: 'S' },
+                        { AttributeName: 'timestamp', AttributeType: 'N' },
+                    ],
+                    KeySchema: [
+                        { AttributeName: 'documentId', KeyType: 'HASH' },
+                        { AttributeName: 'timestamp', KeyType: 'RANGE' },
+                    ],
+                    BillingMode: 'PAY_PER_REQUEST',
+                }));
+                this.logger.info(`DynamoDB table ${tableName} created`);
+            } else {
+                this.logger.error(`Error checking DynamoDB table:`, err.message);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Redis snapshot hot-cache helpers
+    // -----------------------------------------------------------------
+
+    /**
+     * Check if Redis is available for caching
+     */
+    _isRedisAvailable() {
+        return this.redisClient && this.messageRouter && this.messageRouter.redisAvailable !== false;
+    }
+
+    /**
+     * Save a snapshot to Redis hot-cache (key: crdt:snapshot:{channel}, TTL: 1 hour)
+     * @param {string} channelId
+     * @param {string} base64Snapshot - base64-encoded Y.js state
+     */
+    async _saveSnapshotToRedis(channelId, base64Snapshot) {
+        if (!this._isRedisAvailable()) return;
+        try {
+            const key = `crdt:snapshot:${channelId}`;
+            await this.redisClient.setEx(key, 3600, base64Snapshot); // TTL 1 hour
+            this.logger.info(`Redis snapshot cached for channel ${channelId}`);
+        } catch (err) {
+            this.logger.error(`Failed to cache snapshot in Redis for ${channelId}:`, err.message);
+        }
+    }
+
+    /**
+     * Retrieve a snapshot from Redis hot-cache
+     * @param {string} channelId
+     * @returns {Promise<string|null>} base64 snapshot or null
+     */
+    async _getSnapshotFromRedis(channelId) {
+        if (!this._isRedisAvailable()) return null;
+        try {
+            const key = `crdt:snapshot:${channelId}`;
+            const data = await this.redisClient.get(key);
+            if (data) {
+                this.logger.info(`Redis snapshot hit for channel ${channelId}`);
+            }
+            return data;
+        } catch (err) {
+            this.logger.error(`Failed to read snapshot from Redis for ${channelId}:`, err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Schedule a debounced snapshot write for a channel.
+     * Writes after SNAPSHOT_DEBOUNCE_MS of inactivity.
+     */
+    _scheduleDebouncedSnapshot(channelId) {
+        // Clear any pending debounce timer for this channel
+        const existing = this.snapshotDebounceTimers.get(channelId);
+        if (existing) {
+            clearTimeout(existing);
+        }
+        const timer = setTimeout(async () => {
+            this.snapshotDebounceTimers.delete(channelId);
+            const state = this.channelStates.get(channelId);
+            if (state && state.operationsSinceSnapshot > 0) {
+                await this.writeSnapshot(channelId);
+            }
+        }, this.SNAPSHOT_DEBOUNCE_MS);
+        this.snapshotDebounceTimers.set(channelId, timer);
     }
 
     async handleAction(clientId, action, data) {
@@ -59,6 +172,16 @@ class CRDTService {
                     return await this.handleUnsubscribe(clientId, data);
                 case 'getSnapshot':
                     return await this.handleGetSnapshot(clientId, data);
+                case 'awareness':
+                    return await this.handleAwareness(clientId, data);
+                case 'listSnapshots':
+                    return await this.handleListSnapshots(clientId, data);
+                case 'getSnapshotAtVersion':
+                    return await this.handleGetSnapshotAtVersion(clientId, data);
+                case 'restoreSnapshot':
+                    return await this.handleRestoreSnapshot(clientId, data);
+                case 'clearDocument':
+                    return await this.handleClearDocument(clientId, data);
                 default:
                     this.sendError(clientId, `Unknown CRDT action: ${action}`);
             }
@@ -100,11 +223,41 @@ class CRDTService {
             let state = this.channelStates.get(channel);
             if (!state) {
                 state = {
-                    currentSnapshot: Buffer.alloc(0),
+                    ydoc: new Y.Doc(),
                     operationsSinceSnapshot: 0,
                     subscriberCount: 0
                 };
                 this.channelStates.set(channel, state);
+
+                // Hydrate Y.Doc: try Redis hot-cache first, then DynamoDB
+                let hydrated = false;
+                try {
+                    const redisSnapshot = await this._getSnapshotFromRedis(channel);
+                    if (redisSnapshot) {
+                        const snapshotBytes = new Uint8Array(Buffer.from(redisSnapshot, 'base64'));
+                        Y.applyUpdate(state.ydoc, snapshotBytes);
+                        this.logger.info(`Hydrated Y.Doc for channel ${channel} from Redis cache`);
+                        hydrated = true;
+                    }
+                } catch (redisErr) {
+                    this.logger.error(`Redis hydration failed for ${channel}:`, redisErr.message);
+                }
+
+                if (!hydrated) {
+                    try {
+                        const snapshot = await this.retrieveLatestSnapshot(channel);
+                        if (snapshot.data) {
+                            const snapshotBytes = new Uint8Array(Buffer.from(snapshot.data, 'base64'));
+                            Y.applyUpdate(state.ydoc, snapshotBytes);
+                            this.logger.info(`Hydrated Y.Doc for channel ${channel} from DynamoDB snapshot`);
+                            // Warm the Redis cache with the DynamoDB snapshot
+                            await this._saveSnapshotToRedis(channel, snapshot.data);
+                        }
+                    } catch (snapshotError) {
+                        // Non-fatal: Y.Doc starts empty if snapshot retrieval fails
+                        this.logger.error(`Failed to hydrate Y.Doc for ${channel}:`, snapshotError.message);
+                    }
+                }
             }
             state.subscriberCount++;
 
@@ -116,21 +269,22 @@ class CRDTService {
                 timestamp: new Date().toISOString()
             });
 
-            // Push latest snapshot to client on subscribe (CRDT-02: reconnect recovery)
+            // Push current state to client on subscribe (CRDT-02: reconnect recovery)
+            // Send differential sync from in-memory Y.Doc (faster than DynamoDB round-trip)
             try {
-                const snapshot = await this.retrieveLatestSnapshot(channel);
-                if (snapshot.data) {
+                const stateUpdate = Y.encodeStateAsUpdate(state.ydoc);
+                if (stateUpdate.byteLength > 0) {
                     this.sendToClient(clientId, {
                         type: 'crdt:snapshot',
                         channel,
-                        snapshot: snapshot.data,
-                        timestamp: snapshot.timestamp,
+                        snapshot: Buffer.from(stateUpdate).toString('base64'),
+                        timestamp: new Date().toISOString(),
                     });
-                    this.logger.info(`Snapshot pushed to client ${clientId} for channel ${channel}`);
+                    this.logger.info(`Y.Doc state pushed to client ${clientId} for channel ${channel}`);
                 }
-            } catch (snapshotError) {
-                // Non-fatal: client starts with empty doc if snapshot retrieval fails
-                this.logger.error(`Failed to push snapshot for ${channel} to ${clientId}:`, snapshotError.message);
+            } catch (syncError) {
+                // Non-fatal: client starts with empty doc if sync fails
+                this.logger.error(`Failed to push Y.Doc state for ${channel} to ${clientId}:`, syncError.message);
             }
 
             this.logger.info(`Client ${clientId} subscribed to CRDT channel: ${channel}`);
@@ -164,21 +318,31 @@ class CRDTService {
             let state = this.channelStates.get(channel);
             if (!state) {
                 state = {
-                    currentSnapshot: Buffer.alloc(0),
+                    ydoc: new Y.Doc(),
                     operationsSinceSnapshot: 0,
                     subscriberCount: 0
                 };
                 this.channelStates.set(channel, state);
             }
 
-            // Append update to current snapshot (Y.js updates are cumulative)
-            const updateBuffer = Buffer.from(update, 'base64');
-            state.currentSnapshot = Buffer.concat([state.currentSnapshot, updateBuffer]);
+            // Apply update to the channel's Y.Doc (proper CRDT merge)
+            const updateBytes = new Uint8Array(Buffer.from(update, 'base64'));
+            Y.applyUpdate(state.ydoc, updateBytes);
             state.operationsSinceSnapshot++;
 
-            // Check if we should trigger snapshot (after 50 operations)
+            // Check if we should trigger immediate snapshot (after 50 operations)
             if (state.operationsSinceSnapshot >= 50) {
                 await this.writeSnapshot(channel);
+            } else {
+                // Schedule a debounced snapshot write (after 5s of inactivity)
+                this._scheduleDebouncedSnapshot(channel);
+            }
+
+            // Update Redis hot-cache with latest state (non-blocking)
+            const latestState = Y.encodeStateAsUpdate(state.ydoc);
+            if (latestState.byteLength > 0) {
+                this._saveSnapshotToRedis(channel, Buffer.from(latestState).toString('base64'))
+                    .catch(err => this.logger.error(`Non-blocking Redis cache update failed for ${channel}:`, err.message));
             }
 
             // Batch the operation for this channel
@@ -269,6 +433,35 @@ class CRDTService {
         }
     }
 
+    /**
+     * Relay awareness updates to all other channel subscribers (no persistence)
+     * Awareness carries ephemeral state like cursor positions, user names, online status.
+     */
+    async handleAwareness(clientId, { channel, update }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        if (!update || typeof update !== 'string') {
+            this.sendError(clientId, 'Awareness update must be a base64 string');
+            return;
+        }
+
+        try {
+            // Relay awareness to all other subscribers — no persistence, no batching
+            await this.messageRouter.sendToChannel(channel, {
+                type: 'crdt:awareness',
+                channel,
+                update  // base64 awareness state
+            }, clientId);  // exclude sender
+
+            this.logger.debug(`Awareness relayed for channel ${channel} from client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error relaying awareness for channel ${channel}:`, error);
+        }
+    }
+
     async retrieveLatestSnapshot(channelId) {
         try {
             const command = new QueryCommand({
@@ -279,9 +472,10 @@ class CRDTService {
                 },
                 ScanIndexForward: false, // Descending order (newest first)
                 Limit: 1,
-                ProjectionExpression: 'snapshot, #ts',
+                ProjectionExpression: '#snap, #ts',
                 ExpressionAttributeNames: {
-                    '#ts': 'timestamp' // Reserved word workaround
+                    '#ts': 'timestamp',
+                    '#snap': 'snapshot'
                 }
             });
 
@@ -379,13 +573,40 @@ class CRDTService {
      */
     async writeSnapshot(channelId) {
         const state = this.channelStates.get(channelId);
-        if (!state || !state.currentSnapshot || state.currentSnapshot.length === 0) {
+        if (!state || !state.ydoc) {
             return; // No snapshot to write
         }
 
         try {
-            // Gzip compress snapshot (Lambda consumer stores compressed)
-            const compressed = await gzip(state.currentSnapshot);
+            // Encode full state from Y.Doc and gzip compress (Lambda consumer stores compressed)
+            const stateUpdate = Y.encodeStateAsUpdate(state.ydoc);
+            if (stateUpdate.byteLength === 0) {
+                return; // Empty doc, nothing to persist
+            }
+
+            // Always update Redis hot-cache with uncompressed base64
+            const stateBase64 = Buffer.from(stateUpdate).toString('base64');
+            await this._saveSnapshotToRedis(channelId, stateBase64);
+
+            const compressed = await gzip(Buffer.from(stateUpdate));
+
+            // Direct DynamoDB write path (bypasses EventBridge + Lambda)
+            if (process.env.DIRECT_DYNAMO_WRITE === 'true') {
+                const ttl = Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60);
+                await this.dynamoClient.send(new PutItemCommand({
+                    TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                    Item: {
+                        documentId: { S: channelId },
+                        timestamp: { N: String(Date.now()) },
+                        snapshot: { B: compressed },
+                        ttl: { N: String(ttl) },
+                    }
+                }));
+                state.operationsSinceSnapshot = 0;
+                this.logger.info(`Snapshot written directly to DynamoDB for channel ${channelId}`);
+                return;
+            }
+
             const snapshotBase64 = compressed.toString('base64');
 
             const response = await this.eventBridgeClient.send(new PutEventsCommand({
@@ -424,6 +645,246 @@ class CRDTService {
             if (state.operationsSinceSnapshot > 0) {
                 await this.writeSnapshot(channelId);
             }
+        }
+    }
+
+    /**
+     * List recent snapshots for a channel (version history)
+     */
+    async handleListSnapshots(clientId, { channel, limit = 20 }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        try {
+            const command = new QueryCommand({
+                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                KeyConditionExpression: 'documentId = :docId',
+                ExpressionAttributeValues: {
+                    ':docId': { S: channel }
+                },
+                ScanIndexForward: false, // Newest first
+                Limit: limit,
+                ProjectionExpression: 'documentId, #ts',
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp'
+                }
+            });
+
+            const result = await this.dynamoClient.send(command);
+            const now = Date.now();
+            const snapshots = (result.Items || []).map(item => {
+                const timestamp = parseInt(item.timestamp.N, 10);
+                return { timestamp, age: now - timestamp };
+            });
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'snapshotList',
+                channel,
+                snapshots,
+            });
+
+            this.logger.info(`Listed ${snapshots.length} snapshots for channel ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error listing snapshots for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to list snapshots');
+        }
+    }
+
+    /**
+     * Retrieve a specific snapshot by timestamp (version)
+     */
+    async handleGetSnapshotAtVersion(clientId, { channel, timestamp }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        if (!timestamp || typeof timestamp !== 'number') {
+            this.sendError(clientId, 'Timestamp is required and must be a number');
+            return;
+        }
+
+        try {
+            const command = new QueryCommand({
+                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                KeyConditionExpression: 'documentId = :docId AND #ts = :ts',
+                ExpressionAttributeValues: {
+                    ':docId': { S: channel },
+                    ':ts': { N: String(timestamp) }
+                },
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp'
+                },
+                Limit: 1,
+            });
+
+            const result = await this.dynamoClient.send(command);
+
+            if (!result.Items || result.Items.length === 0) {
+                this.sendError(clientId, 'Snapshot not found for the given timestamp');
+                return;
+            }
+
+            const item = result.Items[0];
+            const compressedSnapshot = item.snapshot.B;
+            const decompressed = await gunzip(Buffer.from(compressedSnapshot));
+            const base64 = decompressed.toString('base64');
+
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'snapshot',
+                channel,
+                update: base64,
+                version: true,
+                versionTimestamp: timestamp,
+            });
+
+            this.logger.info(`Retrieved snapshot at version ${timestamp} for channel ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error retrieving snapshot at version for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to retrieve snapshot at version');
+        }
+    }
+
+    /**
+     * Restore a historical snapshot as the current channel state
+     */
+    async handleRestoreSnapshot(clientId, { channel, timestamp }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        if (!timestamp || typeof timestamp !== 'number') {
+            this.sendError(clientId, 'Timestamp is required and must be a number');
+            return;
+        }
+
+        try {
+            // Load the historical snapshot from DynamoDB
+            const command = new QueryCommand({
+                TableName: process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots',
+                KeyConditionExpression: 'documentId = :docId AND #ts = :ts',
+                ExpressionAttributeValues: {
+                    ':docId': { S: channel },
+                    ':ts': { N: String(timestamp) }
+                },
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp'
+                },
+                Limit: 1,
+            });
+
+            const result = await this.dynamoClient.send(command);
+
+            if (!result.Items || result.Items.length === 0) {
+                this.sendError(clientId, 'Snapshot not found for the given timestamp');
+                return;
+            }
+
+            // Decompress to get raw Y.js update bytes
+            const item = result.Items[0];
+            const compressedSnapshot = item.snapshot.B;
+            const decompressed = await gunzip(Buffer.from(compressedSnapshot));
+            const historicalUpdate = new Uint8Array(decompressed);
+
+            // Get or create the channel state
+            let state = this.channelStates.get(channel);
+            if (!state) {
+                state = {
+                    ydoc: new Y.Doc(),
+                    operationsSinceSnapshot: 0,
+                    subscriberCount: 0
+                };
+                this.channelStates.set(channel, state);
+            }
+
+            // Create a fresh Y.Doc and apply the historical update
+            const freshDoc = new Y.Doc();
+            Y.applyUpdate(freshDoc, historicalUpdate);
+            const fullState = Y.encodeStateAsUpdate(freshDoc);
+
+            // Replace the live channel's Y.Doc
+            state.ydoc.destroy();
+            state.ydoc = freshDoc;
+
+            // Broadcast restored state to all channel subscribers
+            const base64State = Buffer.from(fullState).toString('base64');
+            await this.messageRouter.sendToChannel(channel, {
+                type: 'crdt',
+                action: 'snapshot',
+                channel,
+                update: base64State,
+                restored: true,
+                restoredTimestamp: timestamp,
+            });
+
+            // Write a new snapshot for the restored state
+            await this.writeSnapshot(channel);
+
+            this.logger.info(`Restored snapshot at version ${timestamp} for channel ${channel}`);
+        } catch (error) {
+            this.logger.error(`Error restoring snapshot for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to restore snapshot');
+        }
+    }
+
+    /**
+     * Clear all document content — replaces the in-memory Y.Doc with a fresh
+     * empty one and broadcasts the empty state to all subscribers.
+     */
+    async handleClearDocument(clientId, { channel }) {
+        if (!this.validateChannel(channel)) {
+            this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
+            return;
+        }
+
+        try {
+            let state = this.channelStates.get(channel);
+            if (!state) {
+                state = {
+                    ydoc: new Y.Doc(),
+                    operationsSinceSnapshot: 0,
+                    subscriberCount: 0
+                };
+                this.channelStates.set(channel, state);
+            }
+
+            // Replace the live Y.Doc with a fresh empty one
+            const freshDoc = new Y.Doc({ gc: false });
+            state.ydoc.destroy();
+            state.ydoc = freshDoc;
+            state.operationsSinceSnapshot = 0;
+
+            // Broadcast empty state to all subscribers
+            const emptyState = Y.encodeStateAsUpdate(freshDoc);
+            const base64 = Buffer.from(emptyState).toString('base64');
+            await this.messageRouter.sendToChannel(channel, {
+                type: 'crdt',
+                action: 'snapshot',
+                channel,
+                update: base64,
+                cleared: true,
+            });
+
+            // Write the empty snapshot to DynamoDB
+            await this.writeSnapshot(channel);
+
+            // Send confirmation to the requesting client
+            this.sendToClient(clientId, {
+                type: 'crdt',
+                action: 'documentCleared',
+                channel,
+                timestamp: new Date().toISOString(),
+            });
+
+            this.logger.info(`Document cleared for channel ${channel} by client ${clientId}`);
+        } catch (error) {
+            this.logger.error(`Error clearing document for channel ${channel}:`, error);
+            this.sendError(clientId, 'Failed to clear document');
         }
     }
 
@@ -479,6 +940,21 @@ class CRDTService {
             }
         }
         this.operationBatches.clear();
+
+        // Clear debounce timers and flush pending snapshots
+        for (const [channelId, timer] of this.snapshotDebounceTimers.entries()) {
+            clearTimeout(timer);
+            // Write final snapshot for channels with pending operations
+            const state = this.channelStates.get(channelId);
+            if (state && state.operationsSinceSnapshot > 0) {
+                try {
+                    await this.writeSnapshot(channelId);
+                } catch (err) {
+                    this.logger.error(`Failed to write final snapshot for ${channelId} during shutdown:`, err.message);
+                }
+            }
+        }
+        this.snapshotDebounceTimers.clear();
 
         this.logger.info('CRDT service shut down');
     }

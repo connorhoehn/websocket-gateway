@@ -58,7 +58,7 @@ export function useSocialProfile({ idToken }: UseSocialProfileOptions): UseSocia
   // ---- On mount: fetch own profile -----------------------------------------
 
   useEffect(() => {
-    if (!idToken) return;
+    if (!idToken || !baseUrl) return;
 
     let sub: string;
     try {
@@ -88,7 +88,7 @@ export function useSocialProfile({ idToken }: UseSocialProfileOptions): UseSocia
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- updateProfile -------------------------------------------------------
 
@@ -110,7 +110,7 @@ export function useSocialProfile({ idToken }: UseSocialProfileOptions): UseSocia
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl, authHeaders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, authHeaders]);  
 
   // ---- viewProfile ---------------------------------------------------------
 
@@ -126,7 +126,7 @@ export function useSocialProfile({ idToken }: UseSocialProfileOptions): UseSocia
     } catch {
       return null;
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   return { profile, loading, error, updateProfile, viewProfile };
 }

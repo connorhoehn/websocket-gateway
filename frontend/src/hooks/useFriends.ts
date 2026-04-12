@@ -46,7 +46,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
   // ---- On mount: fetch all three lists in parallel -------------------------
 
   useEffect(() => {
-    if (!idToken) return;
+    if (!idToken || !baseUrl) return;
 
     setLoading(true);
     setError(null);
@@ -69,7 +69,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- Refresh following list helper ---------------------------------------
 
@@ -82,7 +82,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       const data = await res.json() as { following: PublicProfile[] };
       setFollowing(data.following ?? []);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- follow --------------------------------------------------------------
 
@@ -100,7 +100,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       setError((err as Error).message);
       throw err;
     }
-  }, [idToken, baseUrl, refreshFollowing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, refreshFollowing]);  
 
   // ---- unfollow ------------------------------------------------------------
 
@@ -118,7 +118,7 @@ export function useFriends({ idToken }: UseFriendsOptions): UseFriendsReturn {
       setError((err as Error).message);
       throw err;
     }
-  }, [idToken, baseUrl, refreshFollowing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl, refreshFollowing]);  
 
   return { followers, following, friends, follow, unfollow, loading, error };
 }

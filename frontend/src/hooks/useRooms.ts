@@ -76,7 +76,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
   // ---- On mount: fetch my rooms --------------------------------------------
 
   useEffect(() => {
-    if (!idToken) return;
+    if (!idToken || !baseUrl) return;
 
     setLoading(true);
     setError(null);
@@ -97,7 +97,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
       .finally(() => {
         setLoading(false);
       });
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- WS handler: member joined / member left (RTIM-04) ------------------
 
@@ -119,7 +119,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     });
 
     return unregister;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // ---- loadMembers (ROOM-06) -----------------------------------------------
 
@@ -135,7 +135,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- setActiveRoom -------------------------------------------------------
 
@@ -150,7 +150,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
   // ---- createRoom ----------------------------------------------------------
 
   const createRoom = useCallback(async (name: string): Promise<void> => {
-    if (!idToken) return;
+    if (!idToken || !baseUrl) { setError('Social API not configured'); return; }
     setLoading(true);
     setError(null);
     try {
@@ -171,7 +171,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- createDM ------------------------------------------------------------
 
@@ -197,7 +197,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- joinRoom ------------------------------------------------------------
 
@@ -213,7 +213,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- leaveRoom -----------------------------------------------------------
 
@@ -230,7 +230,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   // ---- createGroupRoom (ROOM-02) -------------------------------------------
 
@@ -256,7 +256,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     } finally {
       setLoading(false);
     }
-  }, [idToken, baseUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idToken, baseUrl]);  
 
   return {
     rooms,

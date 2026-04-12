@@ -4,59 +4,25 @@
 // and a real-time scrolling event feed for monitoring simulation runs.
 // Wired as a switchable tab in AppLayout alongside existing panels.
 
-import { useState, useEffect, useRef } from 'react';
 import type { PresenceUser } from '../hooks/usePresence';
 import type { RoomItem } from '../hooks/useRooms';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface ActivityItem {
-  eventType: string;
-  timestamp: string;
-  detail: Record<string, unknown>;
-}
-
-interface ActivityResponse {
-  items: ActivityItem[];
-  nextKey: string | null;
-}
-
-type ConnectionState = 'connected' | 'connecting' | 'disconnected';
-type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
-
-interface GatewayMessage {
-  type: string;
-  channel?: string;
-  payload?: unknown;
-  [key: string]: unknown;
-}
+import type { ActivityEvent } from '../hooks/useActivityBus';
 
 export interface BigBrotherPanelProps {
-  idToken: string | null;
   rooms: RoomItem[];
   presenceUsers: PresenceUser[];
-  sendMessage: (msg: Record<string, unknown>) => void;
-  onMessage: OnMessageFn;
-  connectionState: ConnectionState;
+  activityEvents: ActivityEvent[];
+  activityIsLive: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Constants
+// Event type display mapping
 // ---------------------------------------------------------------------------
 
-const SOCIAL_API_URL = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? 'http://localhost:3001';
-
-const MAX_ITEMS = 100;
-
-// ---------------------------------------------------------------------------
-// Event type display mapping (copied from ActivityPanel.tsx)
-// ---------------------------------------------------------------------------
-
-function formatActivity(item: ActivityItem): { icon: string; text: string } {
-  const d = item.detail;
-  switch (item.eventType) {
+function formatActivity(event: ActivityEvent): { icon: string; text: string } {
+  const d = event.detail;
+  switch (event.eventType) {
+    // Social events
     case 'social.room.join':
       return { icon: '\uD83D\uDEAA', text: `Joined room ${(d.roomId as string)?.slice(0, 8) ?? ''}` };
     case 'social.room.leave':
@@ -73,8 +39,19 @@ function formatActivity(item: ActivityItem): { icon: string; text: string } {
       return { icon: '\uD83D\uDCDD', text: `Posted in room ${(d.roomId as string)?.slice(0, 8) ?? ''}` };
     case 'social.comment.created':
       return { icon: '\uD83D\uDCAC', text: `Commented in room ${(d.roomId as string)?.slice(0, 8) ?? ''}` };
+    // Document editor events
+    case 'doc.ack':
+      return { icon: '\u2705', text: `Acknowledged ${(d.itemText as string) ?? 'item'}` };
+    case 'doc.reject':
+      return { icon: '\u274C', text: `Rejected ${(d.itemText as string) ?? 'item'}` };
+    case 'doc.add_item':
+      return { icon: '\u2795', text: `Added task in ${(d.sectionTitle as string) ?? 'section'}` };
+    case 'doc.add_section':
+      return { icon: '\uD83D\uDCC1', text: 'Added new section' };
+    case 'doc.edit_section':
+      return { icon: '\u270F\uFE0F', text: 'Edited section' };
     default:
-      return { icon: '\u2139\uFE0F', text: item.eventType };
+      return { icon: '\u2139\uFE0F', text: event.eventType };
   }
 }
 
@@ -90,92 +67,6 @@ function relativeTime(ts: string): string {
   return ts.slice(0, 10);
 }
 
-// ---------------------------------------------------------------------------
-// extractUserId helper
-// ---------------------------------------------------------------------------
-
-function extractUserId(idToken: string | null): string | null {
-  if (!idToken) return null;
-  try {
-    return (JSON.parse(atob(idToken.split('.')[1])) as { sub: string }).sub;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// useActivityFeed hook (inline, copied from ActivityPanel.tsx pattern)
-// ---------------------------------------------------------------------------
-
-function useActivityFeed({
-  idToken,
-  sendMessage,
-  onMessage,
-  connectionState,
-}: {
-  idToken: string | null;
-  sendMessage: (msg: Record<string, unknown>) => void;
-  onMessage: OnMessageFn;
-  connectionState: ConnectionState;
-}): { items: ActivityItem[]; loading: boolean; isLive: boolean } {
-  const [items, setItems] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
-  const sendMessageRef = useRef(sendMessage);
-  sendMessageRef.current = sendMessage;
-
-  const userId = extractUserId(idToken);
-
-  // 1. Hydrate from REST on mount
-  useEffect(() => {
-    if (!idToken) return;
-    setLoading(true);
-    fetch(`${SOCIAL_API_URL}/api/activity?limit=30`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    })
-      .then(r => r.json())
-      .then((data: ActivityResponse) => setItems(data.items))
-      .catch(err => console.error('[big-brother] fetch failed:', err))
-      .finally(() => setLoading(false));
-  }, [idToken]);
-
-  // 2. Subscribe to WebSocket channel when connected
-  useEffect(() => {
-    if (connectionState !== 'connected' || !userId) {
-      setIsLive(false);
-      return;
-    }
-    const channelId = `activity:${userId}`;
-    sendMessageRef.current({ service: 'activity', action: 'subscribe', channelId });
-    setIsLive(true);
-    return () => {
-      sendMessageRef.current({ service: 'activity', action: 'unsubscribe', channelId });
-      setIsLive(false);
-    };
-  }, [connectionState, userId]);
-
-  // 3. Append live events with dedup
-  useEffect(() => {
-    const unregister = onMessage((msg: GatewayMessage) => {
-      if (msg.type !== 'activity:event') return;
-      const payload = msg.payload as { eventType: string; detail: Record<string, unknown>; timestamp: string } | undefined;
-      if (!payload) return;
-      setItems(prev => {
-        // Dedup: skip if first item already has same timestamp+eventType
-        if (prev.length > 0 && prev[0].timestamp === payload.timestamp && prev[0].eventType === payload.eventType) {
-          return prev;
-        }
-        return [
-          { eventType: payload.eventType, timestamp: payload.timestamp, detail: payload.detail },
-          ...prev,
-        ].slice(0, MAX_ITEMS);
-      });
-    });
-    return unregister;
-  }, [onMessage]);
-
-  return { items, loading, isLive };
-}
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -233,19 +124,11 @@ const typeBadgeStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export function BigBrotherPanel({
-  idToken,
   rooms,
   presenceUsers,
-  sendMessage,
-  onMessage,
-  connectionState,
+  activityEvents,
+  activityIsLive: isLive,
 }: BigBrotherPanelProps) {
-  const { items, loading, isLive } = useActivityFeed({
-    idToken,
-    sendMessage,
-    onMessage,
-    connectionState,
-  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -273,7 +156,7 @@ export function BigBrotherPanel({
           <div style={statLabelStyle}>Rooms</div>
         </div>
         <div style={statBoxStyle}>
-          <div style={statNumberStyle}>{items.length}</div>
+          <div style={statNumberStyle}>{activityEvents.length}</div>
           <div style={statLabelStyle}>Events</div>
         </div>
       </div>
@@ -350,22 +233,17 @@ export function BigBrotherPanel({
               />
             )}
           </h2>
-          {loading ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1rem', justifyContent: 'center', color: '#64748b' }}>
-              <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #e2e8f0', borderTopColor: '#646cff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-              Loading...
-            </div>
-          ) : items.length === 0 ? (
+          {activityEvents.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
               No events yet -- run a simulation to see activity here
             </div>
           ) : (
             <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-              {items.map((item, idx) => {
-                const { icon, text } = formatActivity(item);
+              {activityEvents.map((event, idx) => {
+                const { icon, text } = formatActivity(event);
                 return (
                   <div
-                    key={idx}
+                    key={event.id}
                     style={{
                       display: 'flex',
                       flexDirection: 'row',
@@ -373,13 +251,20 @@ export function BigBrotherPanel({
                       gap: 8,
                       paddingTop: 8,
                       paddingBottom: 8,
-                      borderBottom: idx < items.length - 1 ? '1px solid #f1f5f9' : 'none',
+                      borderBottom: idx < activityEvents.length - 1 ? '1px solid #f1f5f9' : 'none',
                     }}
                   >
                     <span style={{ width: 24, flexShrink: 0, textAlign: 'center' }}>{icon}</span>
-                    <span style={{ flex: 1, fontSize: 14, color: '#374151' }}>{text}</span>
+                    <span style={{ flex: 1, fontSize: 14, color: '#374151' }}>
+                      {event.displayName && (
+                        <span style={{ fontWeight: 600, color: event.color ?? '#6366f1', marginRight: 4 }}>
+                          {event.displayName}
+                        </span>
+                      )}
+                      {text}
+                    </span>
                     <span style={{ fontSize: 12, color: '#9ca3af', flexShrink: 0 }}>
-                      {relativeTime(item.timestamp)}
+                      {relativeTime(event.timestamp)}
                     </span>
                   </div>
                 );

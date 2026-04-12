@@ -69,8 +69,12 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
   // ---- State ---------------------------------------------------------------
   const [connectionState, setConnectionState] = useState<ConnectionState>('idle');
   const [lastError, setLastError] = useState<GatewayError | null>(null);
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(
+    () => sessionStorage.getItem('ws_session_token'),
+  );
+  const [clientId, setClientId] = useState<string | null>(
+    () => sessionStorage.getItem('ws_client_id'),
+  );
   const [currentChannel, setCurrentChannel] = useState<string>(config.defaultChannel);
 
   // ---- Refs (survive re-renders without triggering them) -------------------
@@ -87,12 +91,17 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
 
   // We need to read sessionToken inside the WebSocket close handler, so keep
   // a ref that is always current.
-  const sessionTokenRef = useRef<string | null>(null);
+  const sessionTokenRef = useRef<string | null>(
+    sessionStorage.getItem('ws_session_token'),
+  );
   useEffect(() => {
     sessionTokenRef.current = sessionToken;
   }, [sessionToken]);
 
   // ---- connect -------------------------------------------------------------
+  // Use a ref so the onclose handler can call connect() without violating
+  // the "accessed before declaration" rule (connectRef is declared first).
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     // Guard: don't create a second socket if one is already open/connecting.
@@ -129,6 +138,9 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         setClientId(sessionMsg.clientId);
         // Keep ref in sync immediately (useState is async)
         sessionTokenRef.current = sessionMsg.sessionToken;
+        // Persist for page refresh recovery
+        sessionStorage.setItem('ws_session_token', sessionMsg.sessionToken);
+        sessionStorage.setItem('ws_client_id', sessionMsg.clientId);
       }
 
       if (msg.type === 'error' && msg.error) {
@@ -144,7 +156,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         const delay = BASE_BACKOFF_MS * Math.pow(2, retryCountRef.current);
         retryCountRef.current += 1;
         retryTimerRef.current = setTimeout(() => {
-          connect();
+          connectRef.current();
         }, delay);
       } else {
         setConnectionState('disconnected');
@@ -164,12 +176,15 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         });
       }
     };
-  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config]);
+
+  // Keep connectRef in sync so the onclose retry always calls the latest connect.
+  useEffect(() => { connectRef.current = connect; }, [connect]);  
 
   // ---- Lifecycle -----------------------------------------------------------
 
   useEffect(() => {
-    connect();
+    connect(); // eslint-disable-line react-hooks/set-state-in-effect
 
     return () => {
       // Cancel any pending reconnect timer
@@ -215,6 +230,9 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     wsRef.current?.close();
     wsRef.current = null;
     setConnectionState('disconnected');
+    // Clear persisted session on intentional disconnect
+    sessionStorage.removeItem('ws_session_token');
+    sessionStorage.removeItem('ws_client_id');
   }, []);
 
   const reconnect = useCallback(() => {
