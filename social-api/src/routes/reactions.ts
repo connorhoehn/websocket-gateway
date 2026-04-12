@@ -9,10 +9,10 @@ import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient } from '../lib/aws-clients';
 import { getCachedRoom, setCachedRoom } from '../lib/cache';
+import { roomRepo } from '../repositories';
+import { requireRoomMembership } from '../middleware/require-membership';
 const LIKES_TABLE = 'social-likes';
 const POSTS_TABLE = 'social-posts';
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
 const OUTBOX_TABLE = 'social-outbox';
 
 const VALID_EMOJI = new Set(['❤️', '😂', '👍', '👎', '😮', '😢', '😡', '🎉', '🔥', '⚡', '💯', '🚀']);
@@ -22,7 +22,7 @@ export const reactionsRouter = Router({ mergeParams: true });
 
 // POST /api/rooms/:roomId/posts/:postId/reactions — add an emoji reaction to a post (REAC-05)
 // Body: { emoji: string }
-reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<void> => {
+reactionsRouter.post('/reactions', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId } = req.params;
     const { emoji } = req.body as { emoji?: string };
@@ -31,16 +31,6 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
     // Validate emoji
     if (!emoji || !VALID_EMOJI.has(emoji)) {
       res.status(400).json({ error: 'Invalid emoji. Must be one of the 12 supported types' });
-      return;
-    }
-
-    // Membership gate — caller must be a member of the room
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to react' });
       return;
     }
 
@@ -98,13 +88,10 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
     // Broadcast social:like (reaction) to room channel (non-fatal if Redis unavailable)
     let roomData = await getCachedRoom<{ channelId: string }>(roomId);
     if (!roomData) {
-      const roomForBroadcast = await docClient.send(new GetCommand({
-        TableName: ROOMS_TABLE,
-        Key: { roomId },
-      }));
-      if (roomForBroadcast.Item) {
-        roomData = roomForBroadcast.Item as { channelId: string };
-        void setCachedRoom(roomId, roomForBroadcast.Item);
+      const room = await roomRepo.getRoom(roomId);
+      if (room) {
+        roomData = room as { channelId: string };
+        void setCachedRoom(roomId, room);
       }
     }
     if (roomData) {
@@ -122,25 +109,15 @@ reactionsRouter.post('/reactions', async (req: Request, res: Response): Promise<
 });
 
 // DELETE /api/rooms/:roomId/posts/:postId/reactions/:emoji — remove an emoji reaction from a post (REAC-05)
-reactionsRouter.delete('/reactions/:emoji', async (req: Request, res: Response): Promise<void> => {
+reactionsRouter.delete('/reactions/:emoji', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomId, postId } = req.params;
+    const { postId } = req.params;
     const emoji = decodeURIComponent(req.params.emoji);
     const userId = req.user!.sub;
 
     // Validate emoji
     if (!VALID_EMOJI.has(emoji)) {
       res.status(400).json({ error: 'Invalid emoji' });
-      return;
-    }
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to remove a reaction' });
       return;
     }
 

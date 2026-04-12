@@ -5,7 +5,7 @@
  * callback fires to write a final snapshot and evict the Y.Doc from memory.
  */
 
-const IDLE_EVICTION_MS = parseInt(process.env.IDLE_EVICTION_MS || '600000', 10); // 10 minutes
+const { IDLE_EVICTION_MS } = require('./config');
 
 class IdleEvictionManager {
     /**

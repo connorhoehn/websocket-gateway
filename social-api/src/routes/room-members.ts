@@ -1,41 +1,12 @@
-import {
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-  ScanCommand,
-  BatchGetCommand,
-  DeleteCommand,
-  TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
-import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { publishSocialEvent } from '../lib/aws-clients';
 import { getCachedRoom, setCachedRoom } from '../lib/cache';
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
-const OUTBOX_TABLE = 'social-outbox';
+import { roomRepo } from '../repositories';
+import type { RoomItem, RoomMemberItem } from '../repositories';
 
 export const roomMembersRouter = Router({ mergeParams: true });
-
-interface RoomItem {
-  roomId: string;
-  channelId: string;
-  name: string;
-  type: 'standalone' | 'group' | 'dm';
-  ownerId: string;
-  groupId?: string;
-  dmPeerUserId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface RoomMemberItem {
-  roomId: string;
-  userId: string;
-  role: 'owner' | 'member';
-  joinedAt: string;
-}
 
 // POST /api/rooms/:roomId/join — join a room (ROOM-04)
 roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<void> => {
@@ -43,24 +14,17 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
     // Verify room exists (check cache first)
     let roomItem = await getCachedRoom<RoomItem>(req.params.roomId);
     if (!roomItem) {
-      const roomResult = await docClient.send(new GetCommand({
-        TableName: ROOMS_TABLE,
-        Key: { roomId: req.params.roomId },
-      }));
-      if (!roomResult.Item) {
+      roomItem = await roomRepo.getRoom(req.params.roomId);
+      if (!roomItem) {
         res.status(404).json({ error: 'Room not found' });
         return;
       }
-      roomItem = roomResult.Item as RoomItem;
       void setCachedRoom(req.params.roomId, roomItem);
     }
 
     // Check if caller is already a member
-    const existing = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId: req.params.roomId, userId: req.user!.sub },
-    }));
-    if (existing.Item) {
+    const existing = await roomRepo.getMembership(req.params.roomId, req.user!.sub);
+    if (existing) {
       res.status(409).json({ error: 'Already a member of this room' });
       return;
     }
@@ -69,34 +33,21 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
     const outboxId = ulid();
     const now = new Date().toISOString();
 
-    await docClient.send(new TransactWriteCommand({
-      TransactItems: [
-        {
-          Put: {
-            TableName: ROOM_MEMBERS_TABLE,
-            Item: {
-              roomId: req.params.roomId,
-              userId: req.user!.sub,
-              role: 'member',
-              joinedAt: now,
-            },
-          },
-        },
-        {
-          Put: {
-            TableName: OUTBOX_TABLE,
-            Item: {
-              outboxId,
-              status: 'UNPROCESSED',
-              eventType: 'social.room.join',
-              queueName: 'social-rooms',
-              payload: JSON.stringify({ roomId: req.params.roomId, userId: req.user!.sub, timestamp: now }),
-              createdAt: now,
-            },
-          },
-        },
-      ],
-    }));
+    const memberItem: RoomMemberItem = {
+      roomId: req.params.roomId,
+      userId: req.user!.sub,
+      role: 'member',
+      joinedAt: now,
+    };
+
+    await roomRepo.addMemberWithOutbox(memberItem, {
+      outboxId,
+      status: 'UNPROCESSED',
+      eventType: 'social.room.join',
+      queueName: 'social-rooms',
+      payload: JSON.stringify({ roomId: req.params.roomId, userId: req.user!.sub, timestamp: now }),
+      createdAt: now,
+    });
 
     res.status(201).json({ roomId: req.params.roomId, userId: req.user!.sub, role: 'member', joinedAt: now });
 
@@ -117,41 +68,32 @@ roomMembersRouter.post('/join', async (req: Request, res: Response): Promise<voi
 roomMembersRouter.delete('/leave', async (req: Request, res: Response): Promise<void> => {
   try {
     // Verify room exists and get channelId for broadcast
-    const roomResult = await docClient.send(new GetCommand({
-      TableName: ROOMS_TABLE,
-      Key: { roomId: req.params.roomId },
-    }));
-    if (!roomResult.Item) {
+    const roomItem = await roomRepo.getRoom(req.params.roomId);
+    if (!roomItem) {
       res.status(404).json({ error: 'Room not found' });
       return;
     }
 
     // Verify caller is a member
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId: req.params.roomId, userId: req.user!.sub },
-    }));
-    if (!membership.Item) {
+    const membership = await roomRepo.getMembership(req.params.roomId, req.user!.sub);
+    if (!membership) {
       res.status(404).json({ error: 'You are not a member of this room' });
       return;
     }
 
     // Owners cannot leave their own room (prevents orphaned rooms)
-    if ((membership.Item as RoomMemberItem).role === 'owner') {
+    if (membership.role === 'owner') {
       res.status(403).json({ error: 'Room owners cannot leave their own room' });
       return;
     }
 
     // Delete member record
-    await docClient.send(new DeleteCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId: req.params.roomId, userId: req.user!.sub },
-    }));
+    await roomRepo.removeMember(req.params.roomId, req.user!.sub);
 
     res.status(200).json({ roomId: req.params.roomId, userId: req.user!.sub, left: true });
 
     // Broadcast social:member_left to room channel (non-fatal if Redis unavailable)
-    void broadcastService.emit(roomResult.Item['channelId'] as string, 'social:member_left', {
+    void broadcastService.emit(roomItem.channelId, 'social:member_left', {
       roomId: req.params.roomId, userId: req.user!.sub, leftAt: new Date().toISOString(),
     });
     // Publish social.room.leave event to EventBridge (log-and-continue)
@@ -169,40 +111,30 @@ roomMembersRouter.delete('/leave', async (req: Request, res: Response): Promise<
 roomMembersRouter.get('/members', async (req: Request, res: Response): Promise<void> => {
   try {
     // Verify room exists
-    const roomResult = await docClient.send(new GetCommand({
-      TableName: ROOMS_TABLE,
-      Key: { roomId: req.params.roomId },
-    }));
-    if (!roomResult.Item) {
+    const roomItem = await roomRepo.getRoom(req.params.roomId);
+    if (!roomItem) {
       res.status(404).json({ error: 'Room not found' });
       return;
     }
 
     // Check caller is a member (authorization gate)
-    const callerMembership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId: req.params.roomId, userId: req.user!.sub },
-    }));
-    if (!callerMembership.Item) {
+    const callerMembership = await roomRepo.getMembership(req.params.roomId, req.user!.sub);
+    if (!callerMembership) {
       res.status(403).json({ error: 'You are not a member of this room' });
       return;
     }
 
     // Query all members of this room
-    const membersResult = await docClient.send(new QueryCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      KeyConditionExpression: 'roomId = :rid',
-      ExpressionAttributeValues: { ':rid': req.params.roomId },
+    const members = await roomRepo.getRoomMembers(req.params.roomId);
+
+    const result = members.map(item => ({
+      roomId: item.roomId,
+      userId: item.userId,
+      role: item.role,
+      joinedAt: item.joinedAt,
     }));
 
-    const members = (membersResult.Items ?? []).map(item => ({
-      roomId: item['roomId'] as string,
-      userId: item['userId'] as string,
-      role: item['role'] as string,
-      joinedAt: item['joinedAt'] as string,
-    }));
-
-    res.status(200).json({ members });
+    res.status(200).json({ members: result });
   } catch (err) {
     console.error('[room-members] GET /members error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -210,44 +142,15 @@ roomMembersRouter.get('/members', async (req: Request, res: Response): Promise<v
 });
 
 // GET /api/rooms — list all rooms the caller belongs to (ROOM-08)
+// Uses GSI userId-roomId-index on social-room-members to avoid full-table Scan
 // NOTE: Mounted as a separate top-level router at /rooms in index.ts
-// roomMembersRouter (mergeParams: true) is mounted at /rooms/:roomId — it cannot handle /rooms (no roomId)
 export const myRoomsRouter = Router();
 
 myRoomsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    // Step 1: Scan social-room-members for all rooms this user belongs to
-    const membershipScan = await docClient.send(new ScanCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      FilterExpression: 'userId = :uid',
-      ExpressionAttributeValues: { ':uid': req.user!.sub },
-    }));
-    const memberships = membershipScan.Items ?? [];
-    const roomIds = memberships.map(m => m['roomId'] as string);
+    const rooms = await roomRepo.getRoomsByUser(req.user!.sub);
 
-    if (roomIds.length === 0) {
-      res.status(200).json({ rooms: [] });
-      return;
-    }
-
-    // Step 2: BatchGetCommand to enrich with room details
-    const batchResult = await docClient.send(new BatchGetCommand({
-      RequestItems: {
-        [ROOMS_TABLE]: {
-          Keys: roomIds.map(id => ({ roomId: id })),
-        },
-      },
-    }));
-    const rooms = (batchResult.Responses?.[ROOMS_TABLE] ?? []) as RoomItem[];
-
-    // Step 3: Merge membership role into each room result
-    const membershipMap = new Map(memberships.map(m => [m['roomId'] as string, m['role'] as string]));
-    const result = rooms.map(room => ({
-      ...room,
-      role: membershipMap.get(room.roomId) ?? 'member',
-    }));
-
-    res.status(200).json({ rooms: result });
+    res.status(200).json({ rooms });
   } catch (err) {
     console.error('[room-members] GET /rooms error:', err);
     res.status(500).json({ error: 'Internal server error' });

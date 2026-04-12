@@ -1,6 +1,7 @@
 // validators/message-validator.js
 
 const { ErrorCodes } = require('../utils/error-codes');
+const { MAX_PAYLOAD_SIZE_BYTES } = require('../config/constants');
 
 /**
  * Custom validation error with code and message
@@ -22,8 +23,8 @@ class MessageValidator {
         // Service whitelist - only these services are allowed
         this.allowedServices = ['chat', 'presence', 'cursor', 'reaction', 'social', 'activity', 'crdt'];
 
-        // Payload size limit (64KB)
-        this.maxPayloadSize = 65536;
+        // Payload size limit
+        this.maxPayloadSize = MAX_PAYLOAD_SIZE_BYTES;
 
         // Channel name validation pattern
         this.channelNamePattern = /^[a-zA-Z0-9_:-]{1,50}$/;

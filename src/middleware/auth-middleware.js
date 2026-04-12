@@ -3,6 +3,7 @@
 const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
 const { ErrorCodes } = require('../utils/error-codes');
+const { JWKS_CACHE_MAX_AGE_MS, JWKS_REQUESTS_PER_MINUTE } = require('../config/constants');
 
 /**
  * Custom error class for authentication failures
@@ -40,9 +41,9 @@ class AuthMiddleware {
         this.jwksClient = jwksClient({
             jwksUri: `https://cognito-idp.${region}.amazonaws.com/${userPoolId}/.well-known/jwks.json`,
             cache: true,
-            cacheMaxAge: 3600000, // 1 hour
+            cacheMaxAge: JWKS_CACHE_MAX_AGE_MS,
             rateLimit: true,
-            jwksRequestsPerMinute: 10
+            jwksRequestsPerMinute: JWKS_REQUESTS_PER_MINUTE
         });
 
         this.logger.info(`AuthMiddleware initialized for region: ${region}, userPoolId: ${userPoolId}`);

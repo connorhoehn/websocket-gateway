@@ -6,9 +6,15 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
-
-const MAX_METADATA_KEYS = 20;
-const MAX_METADATA_SIZE = 4096; // 4KB
+const {
+    MAX_METADATA_KEYS,
+    MAX_METADATA_SIZE,
+    PRESENCE_HEARTBEAT_INTERVAL_MS,
+    PRESENCE_TIMEOUT_MS,
+    PRESENCE_STALE_THRESHOLD_MS,
+    PRESENCE_CLEANUP_INTERVAL_MS,
+    PRESENCE_DISCONNECT_DELAY_MS,
+} = require('../config/constants');
 
 function validateMetadata(metadata, logger) {
     if (!metadata || typeof metadata !== 'object') return {};
@@ -48,12 +54,12 @@ class PresenceService {
         this.presenceHeartbeatInterval = null;
         this.isCleaningUp = false; // Mutex flag for cleanup/heartbeat race
         this.disconnectTimers = new Map(); // clientId -> timer ID for disconnect delays
-        this.heartbeatInterval = 30000; // 30 seconds
-        this.presenceTimeout = 60000; // 60 seconds before marking as offline
+        this.heartbeatInterval = PRESENCE_HEARTBEAT_INTERVAL_MS;
+        this.presenceTimeout = PRESENCE_TIMEOUT_MS;
 
         // Memory leak fix: TTL cleanup for stale clients
-        this.STALE_THRESHOLD = 90000; // 90 seconds
-        this.CLEANUP_INTERVAL = 30000; // 30 seconds
+        this.STALE_THRESHOLD = PRESENCE_STALE_THRESHOLD_MS;
+        this.CLEANUP_INTERVAL = PRESENCE_CLEANUP_INTERVAL_MS;
 
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
@@ -67,6 +73,7 @@ class PresenceService {
     }
 
     async handleAction(clientId, action, data) {
+        const startTime = Date.now();
         try {
             switch (action) {
                 case 'set':
@@ -85,6 +92,12 @@ class PresenceService {
         } catch (error) {
             this.logger.error(`Error handling presence action ${action} for client ${clientId}:`, error);
             this.sendError(clientId, 'Internal server error');
+        } finally {
+            const duration = Date.now() - startTime;
+            this.logger.info(`[presence] ${action}`, { clientId, channel: data.channel, duration });
+            if (duration > 500) {
+                this.logger.warn(`Slow message handler: presence/${action} took ${duration}ms`, { clientId });
+            }
         }
     }
 
@@ -479,7 +492,7 @@ class PresenceService {
                 this.clientPresence.delete(clientId);
                 this.removeClientFromAllChannels(clientId);
                 this.disconnectTimers.delete(clientId);
-            }, 5000); // 5 second delay
+            }, PRESENCE_DISCONNECT_DELAY_MS);
             this.disconnectTimers.set(clientId, timerId);
         }
 

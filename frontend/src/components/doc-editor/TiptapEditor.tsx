@@ -20,6 +20,13 @@ import type { Awareness } from 'y-protocols/awareness';
 import { ySyncPluginKey, absolutePositionToRelativePosition, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap';
 import EditorToolbar from './EditorToolbar';
 
+// Suppress known Tiptap compat warning (collaboration has its own undo/redo)
+const origWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('extension-collaboration')) return;
+  origWarn(...args);
+};
+
 /** Minimal provider shape needed by awareness. */
 export interface CollaborationProvider {
   awareness: Awareness;

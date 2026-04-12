@@ -7,9 +7,16 @@
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { LRUCache } = require('lru-cache');
-
-const MAX_METADATA_KEYS = 20;
-const MAX_METADATA_SIZE = 4096; // 4KB
+const {
+    MAX_METADATA_KEYS,
+    MAX_METADATA_SIZE,
+    CHAT_MAX_MESSAGES_PER_CHANNEL,
+    CHAT_CACHE_CLEANUP_INTERVAL_MS,
+    CHAT_DEFAULT_HISTORY_LIMIT,
+    CHAT_JOIN_HISTORY_LIMIT,
+    CHAT_MAX_MESSAGE_LENGTH,
+    MAX_CHANNEL_NAME_LENGTH,
+} = require('../config/constants');
 
 function validateMetadata(metadata, logger) {
     if (!metadata || typeof metadata !== 'object') return {};
@@ -44,7 +51,7 @@ class ChatService {
         // Local state management
         this.clientChannels = new Map(); // clientId -> Set of channels
         this.channelCaches = new Map(); // channelId -> LRU cache
-        this.MAX_MESSAGES_PER_CHANNEL = 100;
+        this.MAX_MESSAGES_PER_CHANNEL = CHAT_MAX_MESSAGES_PER_CHANNEL;
 
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
@@ -56,10 +63,11 @@ class ChatService {
                     this.channelCaches.delete(channelId);
                 }
             }
-        }, 300000); // Every 5 minutes
+        }, CHAT_CACHE_CLEANUP_INTERVAL_MS);
     }
 
     async handleAction(clientId, action, data) {
+        const startTime = Date.now();
         try {
             switch (action) {
                 case 'join':
@@ -76,6 +84,12 @@ class ChatService {
         } catch (error) {
             this.logger.error(`Error handling chat action ${action} for client ${clientId}:`, error);
             this.sendError(clientId, 'Internal server error');
+        } finally {
+            const duration = Date.now() - startTime;
+            this.logger.info(`[chat] ${action}`, { clientId, channel: data.channel, duration });
+            if (duration > 500) {
+                this.logger.warn(`Slow message handler: chat/${action} took ${duration}ms`, { clientId });
+            }
         }
     }
 
@@ -86,7 +100,7 @@ class ChatService {
         }
 
         // Validate channel name
-        if (typeof channel !== 'string' || channel.length === 0 || channel.length > 50) {
+        if (typeof channel !== 'string' || channel.length === 0 || channel.length > MAX_CHANNEL_NAME_LENGTH) {
             this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
             return;
         }
@@ -180,7 +194,7 @@ class ChatService {
         }
 
         // Validate message
-        if (typeof message !== 'string' || message.length === 0 || message.length > 1000) {
+        if (typeof message !== 'string' || message.length === 0 || message.length > CHAT_MAX_MESSAGE_LENGTH) {
             this.sendError(clientId, 'Message must be a string between 1 and 1000 characters');
             return;
         }
@@ -227,7 +241,7 @@ class ChatService {
         }
     }
 
-    async handleGetHistory(clientId, { channel, limit = 50 }) {
+    async handleGetHistory(clientId, { channel, limit = CHAT_DEFAULT_HISTORY_LIMIT }) {
         if (!channel) {
             this.sendError(clientId, 'Channel name is required');
             return;
@@ -268,14 +282,14 @@ class ChatService {
         cache.set(messageData.id, messageData);
     }
 
-    getChannelHistory(channel, limit = 50) {
+    getChannelHistory(channel, limit = CHAT_DEFAULT_HISTORY_LIMIT) {
         const cache = this.getChannelCache(channel);
         const allMessages = Array.from(cache.values());
         return allMessages.slice(-limit); // Return last 'limit' messages
     }
 
     async sendChannelHistory(clientId, channel) {
-        const history = this.getChannelHistory(channel, 20); // Send last 20 messages by default
+        const history = this.getChannelHistory(channel, CHAT_JOIN_HISTORY_LIMIT);
         if (history.length > 0) {
             this.sendToClient(clientId, {
                 type: 'chat',

@@ -1,6 +1,11 @@
 // core/node-manager.js
 const crypto = require('crypto');
 const os = require('os');
+const {
+    HEARTBEAT_INTERVAL_MS,
+    HEARTBEAT_EXPIRE_SEC,
+    CHANNEL_NODES_CACHE_TTL_MS,
+} = require('../config/constants');
 
 /**
  * Manages node registration, client mapping, and message routing in a distributed WebSocket system
@@ -28,7 +33,11 @@ class NodeManager {
         // Local in-memory cache for channel -> nodes mapping to reduce Redis SMEMBERS calls.
         // At 50 concurrent users, awareness messages generate ~3,000 Redis ops/sec without this.
         this.channelNodesCache = new Map(); // channel -> { nodes: string[], expiry: number }
-        this.CHANNEL_NODES_CACHE_TTL_MS = 5000; // 5-second TTL
+        this.CHANNEL_NODES_CACHE_TTL_MS = CHANNEL_NODES_CACHE_TTL_MS;
+
+        // Reverse index: channel -> Set<clientId> for O(1) lookups during broadcasting.
+        // Maintained alongside localClients in message-router via subscribeClientToChannel/unsubscribeClientFromChannel.
+        this.channelToClients = new Map();
     }
 
     generateNodeId() {
@@ -123,7 +132,7 @@ class NodeManager {
             } catch (error) {
                 this.logger.error('Heartbeat failed:', error);
             }
-        }, 30000); // 30 second heartbeat
+        }, HEARTBEAT_INTERVAL_MS);
     }
 
     async updateHeartbeat() {
@@ -137,7 +146,7 @@ class NodeManager {
         };
 
         await this.redis.hSet(this.keys.nodeHeartbeat(this.nodeId), heartbeatData);
-        await this.redis.expire(this.keys.nodeHeartbeat(this.nodeId), 90); // Expire in 90 seconds
+        await this.redis.expire(this.keys.nodeHeartbeat(this.nodeId), HEARTBEAT_EXPIRE_SEC);
     }
 
     /**
@@ -199,15 +208,21 @@ class NodeManager {
      * Subscribe a client to a channel and track which nodes serve this channel
      */
     async subscribeClientToChannel(clientId, channel) {
+        // Update local reverse index regardless of Redis availability
+        if (!this.channelToClients.has(channel)) {
+            this.channelToClients.set(channel, new Set());
+        }
+        this.channelToClients.get(channel).add(clientId);
+
         if (!this.redis) return;
 
         try {
             // Add this node to the channel's node set
             await this.redis.sAdd(this.keys.channelNodes(channel), this.nodeId);
-            
+
             // Add channel to this node's channel set
             await this.redis.sAdd(this.keys.nodeChannels(this.nodeId), channel);
-            
+
             // Store client's channel subscription
             await this.redis.sAdd(`websocket:client:${clientId}:channels`, channel);
 
@@ -221,31 +236,37 @@ class NodeManager {
     }
 
     /**
-     * Unsubscribe a client from a channel
+     * Unsubscribe a client from a channel.
+     * Uses the local channelToClients reverse index to avoid O(N*M) Redis SMEMBERS scans.
+     * Batches Redis operations into a single pipeline when removing node-channel mappings.
      */
     async unsubscribeClientFromChannel(clientId, channel) {
+        // Update local reverse index regardless of Redis availability
+        const clientsInChannel = this.channelToClients.get(channel);
+        if (clientsInChannel) {
+            clientsInChannel.delete(clientId);
+            if (clientsInChannel.size === 0) {
+                this.channelToClients.delete(channel);
+            }
+        }
+
         if (!this.redis) return;
 
         try {
-            // Remove client's channel subscription
-            await this.redis.sRem(`websocket:client:${clientId}:channels`, channel);
-            
-            // Check if this node still has any clients for this channel
-            const nodeClients = await this.redis.sMembers(this.keys.nodeClients(this.nodeId));
-            let hasChannelClients = false;
-            
-            for (const client of nodeClients) {
-                const clientChannels = await this.redis.sMembers(`websocket:client:${client}:channels`);
-                if (clientChannels.includes(channel)) {
-                    hasChannelClients = true;
-                    break;
-                }
-            }
-            
-            // If no clients on this node are subscribed to the channel, remove node from channel
+            // Check local reverse index to determine if this node still serves the channel.
+            // This replaces the old O(N*M) Redis SMEMBERS scan.
+            const hasChannelClients = this.channelToClients.has(channel);
+
             if (!hasChannelClients) {
-                await this.redis.sRem(this.keys.channelNodes(channel), this.nodeId);
-                await this.redis.sRem(this.keys.nodeChannels(this.nodeId), channel);
+                // No local clients left for this channel — batch all Redis cleanup into a pipeline
+                const pipeline = this.redis.multi();
+                pipeline.sRem(`websocket:client:${clientId}:channels`, channel);
+                pipeline.sRem(this.keys.channelNodes(channel), this.nodeId);
+                pipeline.sRem(this.keys.nodeChannels(this.nodeId), channel);
+                await pipeline.exec();
+            } else {
+                // Other local clients still use this channel — only remove the client's subscription
+                await this.redis.sRem(`websocket:client:${clientId}:channels`, channel);
             }
 
             // Invalidate local cache since this node's channel membership may have changed
@@ -293,6 +314,30 @@ class NodeManager {
      */
     invalidateChannelNodesCache(channel) {
         this.channelNodesCache.delete(channel);
+    }
+
+    /**
+     * Get the Set of local client IDs subscribed to a channel.
+     * O(1) lookup via the channelToClients reverse index.
+     * @param {string} channel
+     * @returns {Set<string>} Set of clientIds (empty set if none)
+     */
+    getClientsForChannel(channel) {
+        return this.channelToClients.get(channel) || new Set();
+    }
+
+    /**
+     * Remove a client from ALL channels in the reverse index.
+     * Called during client unregistration to keep the index consistent.
+     * @param {string} clientId
+     */
+    removeClientFromAllChannels(clientId) {
+        for (const [channel, clients] of this.channelToClients) {
+            clients.delete(clientId);
+            if (clients.size === 0) {
+                this.channelToClients.delete(channel);
+            }
+        }
     }
 
     /**
@@ -437,6 +482,7 @@ class NodeManager {
 
                 // Clear local caches
                 this.channelNodesCache.clear();
+                this.channelToClients.clear();
 
                 this.logger.info(`Node ${this.nodeId} cleanup completed`);
             } catch (error) {

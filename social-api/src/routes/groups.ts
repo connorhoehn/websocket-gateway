@@ -1,36 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-import {
-  GetCommand,
-  DeleteCommand,
-  UpdateCommand,
-  QueryCommand,
-  TransactWriteCommand,
-} from '@aws-sdk/lib-dynamodb';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { Router, Request, Response } from 'express';
-import { docClient } from '../lib/aws-clients';
 import { getCachedGroup, setCachedGroup, invalidateGroupCache } from '../lib/cache';
-const GROUPS_TABLE = 'social-groups';
-const MEMBERS_TABLE = 'social-group-members';
+import { groupRepo } from '../repositories';
+import type { GroupItem, GroupMemberItem } from '../repositories';
 
 export const groupsRouter = Router();
-
-interface GroupItem {
-  groupId: string;
-  name: string;
-  description: string;
-  visibility: 'public' | 'private';
-  ownerId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface GroupMemberItem {
-  groupId: string;
-  userId: string;
-  role: 'owner' | 'admin' | 'member';
-  joinedAt: string;
-}
 
 // POST /api/groups — create a group (GRUP-01)
 groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -69,7 +44,6 @@ groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       updatedAt: now,
     };
 
-    // Write owner membership record
     const memberItem: GroupMemberItem = {
       groupId,
       userId: callerId,
@@ -77,25 +51,8 @@ groupsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       joinedAt: now,
     };
 
-    // Atomic group + owner membership creation (GRUP-01)
     try {
-      await docClient.send(new TransactWriteCommand({
-        TransactItems: [
-          {
-            Put: {
-              TableName: GROUPS_TABLE,
-              Item: groupItem,
-              ConditionExpression: 'attribute_not_exists(groupId)',
-            },
-          },
-          {
-            Put: {
-              TableName: MEMBERS_TABLE,
-              Item: memberItem,
-            },
-          },
-        ],
-      }));
+      await groupRepo.createGroupWithOwner(groupItem, memberItem);
     } catch (err) {
       if (err instanceof TransactionCanceledException) {
         res.status(409).json({ error: 'Group creation conflict — please retry' });
@@ -124,30 +81,20 @@ groupsRouter.get('/:groupId', async (req: Request, res: Response): Promise<void>
     let group = await getCachedGroup<GroupItem>(groupId);
 
     if (!group) {
-      const groupResult = await docClient.send(new GetCommand({
-        TableName: GROUPS_TABLE,
-        Key: { groupId },
-      }));
+      group = await groupRepo.getGroup(groupId);
 
-      if (!groupResult.Item) {
+      if (!group) {
         res.status(404).json({ error: 'Group not found' });
         return;
       }
-
-      group = groupResult.Item as GroupItem;
 
       // Populate cache on miss
       void setCachedGroup(groupId, group);
     }
 
     // Check caller membership
-    const memberResult = await docClient.send(new GetCommand({
-      TableName: MEMBERS_TABLE,
-      Key: { groupId, userId: callerId },
-    }));
-
-    const memberItem = memberResult.Item as GroupMemberItem | undefined;
-    const isMember = memberItem !== undefined;
+    const memberItem = await groupRepo.getMembership(groupId, callerId);
+    const isMember = memberItem !== null;
 
     // Private group gate: non-members cannot see it
     if (group.visibility === 'private' && !isMember) {
@@ -168,27 +115,19 @@ groupsRouter.delete('/:groupId', async (req: Request, res: Response): Promise<vo
     const { groupId } = req.params;
     const callerId = req.user!.sub;
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
+    const group = await groupRepo.getGroup(groupId);
 
-    if (!groupResult.Item) {
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
-
-    const group = groupResult.Item as GroupItem;
 
     if (group.ownerId !== callerId) {
       res.status(403).json({ error: 'Only the group owner can delete this group' });
       return;
     }
 
-    await docClient.send(new DeleteCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
+    await groupRepo.deleteGroup(groupId);
 
     // Invalidate cache for deleted group
     void invalidateGroupCache(groupId);
@@ -213,38 +152,24 @@ groupsRouter.patch('/:groupId/visibility', async (req: Request, res: Response): 
       return;
     }
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
+    const group = await groupRepo.getGroup(groupId);
 
-    if (!groupResult.Item) {
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
-
-    const group = groupResult.Item as GroupItem;
 
     if (group.ownerId !== callerId) {
       res.status(403).json({ error: 'Only the group owner can change visibility' });
       return;
     }
 
-    const result = await docClient.send(new UpdateCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-      UpdateExpression: 'SET visibility = :v, updatedAt = :u',
-      ExpressionAttributeValues: {
-        ':v': visibility,
-        ':u': new Date().toISOString(),
-      },
-      ReturnValues: 'ALL_NEW',
-    }));
+    const updated = await groupRepo.updateGroupVisibility(groupId, visibility as 'public' | 'private');
 
     // Invalidate stale cache; next GET will re-populate
     void invalidateGroupCache(groupId);
 
-    res.status(200).json(result.Attributes as GroupItem);
+    res.status(200).json(updated);
   } catch (err) {
     console.error('PATCH /groups/:groupId/visibility error:', err);
     res.status(500).json({ error: 'Internal server error' });

@@ -3,37 +3,25 @@ import {
   PutCommand,
   DeleteCommand,
   QueryCommand,
-  BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
 import { getCachedRoom, setCachedRoom } from '../lib/cache';
+import { roomRepo, profileRepo } from '../repositories';
+import { requireRoomMembership } from '../middleware/require-membership';
 const LIKES_TABLE = 'social-likes';
-const PROFILES_TABLE = 'social-profiles';
 const POSTS_TABLE = 'social-posts';
 const COMMENTS_TABLE = 'social-comments';
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 // postLikesRouter is mounted at /rooms/:roomId/posts/:postId — mergeParams:true exposes :roomId and :postId
 export const postLikesRouter = Router({ mergeParams: true });
 
 // POST /api/rooms/:roomId/posts/:postId/likes — like a post (REAC-01)
-postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
+postLikesRouter.post('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId } = req.params;
     const userId = req.user!.sub;
-
-    // Membership gate — caller must be a member of the room
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to like a post' });
-      return;
-    }
 
     // Post existence check
     const postResult = await docClient.send(new GetCommand({
@@ -58,13 +46,10 @@ postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => 
     // Broadcast social:like to room channel (non-fatal if Redis unavailable)
     let roomData = await getCachedRoom<{ channelId: string }>(roomId);
     if (!roomData) {
-      const roomForBroadcast = await docClient.send(new GetCommand({
-        TableName: ROOMS_TABLE,
-        Key: { roomId },
-      }));
-      if (roomForBroadcast.Item) {
-        roomData = roomForBroadcast.Item as { channelId: string };
-        void setCachedRoom(roomId, roomForBroadcast.Item);
+      const room = await roomRepo.getRoom(roomId);
+      if (room) {
+        roomData = room as { channelId: string };
+        void setCachedRoom(roomId, room);
       }
     }
     if (roomData) {
@@ -93,20 +78,10 @@ postLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => 
 });
 
 // DELETE /api/rooms/:roomId/posts/:postId/likes — unlike a post (REAC-02)
-postLikesRouter.delete('/', async (req: Request, res: Response): Promise<void> => {
+postLikesRouter.delete('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomId, postId } = req.params;
+    const { postId } = req.params;
     const userId = req.user!.sub;
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to unlike a post' });
-      return;
-    }
 
     const targetId = `post:${postId}`;
 
@@ -133,20 +108,9 @@ postLikesRouter.delete('/', async (req: Request, res: Response): Promise<void> =
 });
 
 // GET /api/rooms/:roomId/posts/:postId/likes — who liked a post with display names and count (REAC-06)
-postLikesRouter.get('/', async (req: Request, res: Response): Promise<void> => {
+postLikesRouter.get('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId } = req.params;
-    const callerId = req.user!.sub;
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId: callerId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to view likes' });
-      return;
-    }
 
     // Post existence check
     const postResult = await docClient.send(new GetCommand({
@@ -171,24 +135,13 @@ postLikesRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const userIds = (queryResult.Items ?? []).map((item) => item['userId'] as string);
 
-    // Enrich with display names via BatchGetCommand
+    // Enrich with display names via ProfileRepository
     let likedBy: { userId: string; displayName: string }[] = [];
     if (userIds.length > 0) {
-      const batchResult = await docClient.send(new BatchGetCommand({
-        RequestItems: {
-          [PROFILES_TABLE]: {
-            Keys: userIds.map((uid) => ({ userId: uid })),
-          },
-        },
-      }));
-
-      const profileItems = batchResult.Responses?.[PROFILES_TABLE] ?? [];
+      const profiles = await profileRepo.batchGetProfiles(userIds);
       const profileMap = new Map<string, string>();
-      for (const profile of profileItems) {
-        profileMap.set(
-          profile['userId'] as string,
-          (profile['displayName'] as string | undefined) ?? (profile['userId'] as string),
-        );
+      for (const profile of profiles) {
+        profileMap.set(profile.userId, profile.displayName ?? profile.userId);
       }
 
       likedBy = userIds.map((uid) => ({
@@ -208,20 +161,10 @@ postLikesRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 export const commentLikesRouter = Router({ mergeParams: true });
 
 // POST /api/rooms/:roomId/posts/:postId/comments/:commentId/likes — like a comment (REAC-03)
-commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
+commentLikesRouter.post('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId, commentId } = req.params;
     const userId = req.user!.sub;
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to like a comment' });
-      return;
-    }
 
     // Comment existence check
     const commentResult = await docClient.send(new GetCommand({
@@ -246,13 +189,10 @@ commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> 
     // Broadcast social:like (comment like) to room channel (non-fatal if Redis unavailable)
     let roomData = await getCachedRoom<{ channelId: string }>(roomId);
     if (!roomData) {
-      const roomForBroadcast = await docClient.send(new GetCommand({
-        TableName: ROOMS_TABLE,
-        Key: { roomId },
-      }));
-      if (roomForBroadcast.Item) {
-        roomData = roomForBroadcast.Item as { channelId: string };
-        void setCachedRoom(roomId, roomForBroadcast.Item);
+      const room = await roomRepo.getRoom(roomId);
+      if (room) {
+        roomData = room as { channelId: string };
+        void setCachedRoom(roomId, room);
       }
     }
     if (roomData) {
@@ -281,20 +221,10 @@ commentLikesRouter.post('/', async (req: Request, res: Response): Promise<void> 
 });
 
 // DELETE /api/rooms/:roomId/posts/:postId/comments/:commentId/likes — unlike a comment (REAC-04)
-commentLikesRouter.delete('/', async (req: Request, res: Response): Promise<void> => {
+commentLikesRouter.delete('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { roomId, postId, commentId } = req.params;
+    const { commentId } = req.params;
     const userId = req.user!.sub;
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to unlike a comment' });
-      return;
-    }
 
     const targetId = `comment:${commentId}`;
 

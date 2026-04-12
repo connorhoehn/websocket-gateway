@@ -12,6 +12,13 @@ const MessageRouter = require("./core/message-router");
 const Logger = require("./utils/logger");
 const MetricsCollector = require("./utils/metrics-collector");
 const AuthMiddleware = require("./middleware/auth-middleware");
+const {
+    KEEPALIVE_INTERVAL_MS,
+    METRICS_FLUSH_INTERVAL_MS,
+    REDIS_RETRY_DELAY_MS,
+    REDIS_RECONNECT_BASE_MS,
+    REDIS_RECONNECT_MAX_MS,
+} = require("./config/constants");
 
 // Service modules - Unified services supporting both local and distributed modes
 const ChatService = require("./services/chat-service");
@@ -72,6 +79,15 @@ class DistributedWebSocketServer {
         // Connection tracking
         this.connections = new Map(); // clientId -> { ws, metadata }
 
+        // Observability counters
+        this._metrics = {
+            peakConnections: 0,
+            messagesReceived: 0,
+            messagesSent: 0,
+            messageErrors: 0,
+            startTime: Date.now(),
+        };
+
         // Connection limits (configurable via environment variables)
         this.connectionsByIp = new Map(); // IP -> count
         this.totalConnections = 0;
@@ -125,11 +141,11 @@ class DistributedWebSocketServer {
         // Setup WebSocket server
         this.setupWebSocketServer();
 
-        // Start metrics emission (every 60 seconds)
+        // Start metrics emission
         this.metricsInterval = setInterval(() => {
             this.metricsCollector.flush();
             this.logger.info('Metrics emitted to CloudWatch', this.metricsCollector.getMetricsSummary());
-        }, 60000);
+        }, METRICS_FLUSH_INTERVAL_MS);
 
         // Add cleanup handler to node manager
         this.nodeManager.addShutdownHandler(() => this.cleanup());
@@ -144,14 +160,14 @@ class DistributedWebSocketServer {
             this.redisPublisher = redis.createClient({
                 url: config.redis.url,
                 socket: {
-                    reconnectStrategy: (retries) => Math.min(retries * 50, 1000)
+                    reconnectStrategy: (retries) => Math.min(retries * REDIS_RECONNECT_BASE_MS, REDIS_RECONNECT_MAX_MS)
                 }
             });
 
             this.redisSubscriber = redis.createClient({
                 url: config.redis.url,
                 socket: {
-                    reconnectStrategy: (retries) => Math.min(retries * 50, 1000)
+                    reconnectStrategy: (retries) => Math.min(retries * REDIS_RECONNECT_BASE_MS, REDIS_RECONNECT_MAX_MS)
                 }
             });
 
@@ -186,7 +202,7 @@ class DistributedWebSocketServer {
 
             if (retries > 0) {
                 this.logger.info(`🔄 Retrying in 2 seconds... (${retries} attempts left)`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, REDIS_RETRY_DELAY_MS));
                 return this.initializeRedis(retries - 1);
             } else {
                 this.logger.warn('🔄 Max retries reached. Running in standalone mode');
@@ -267,6 +283,8 @@ class DistributedWebSocketServer {
                 this.handleClusterInfo(req, res);
             } else if (req.url === '/stats' && req.method === 'GET') {
                 this.handleStats(req, res);
+            } else if (req.url === '/metrics' && req.method === 'GET') {
+                this.handleMetrics(req, res);
             } else if (req.method === 'GET') {
                 // Static file serving for the React SPA
                 this.serveStatic(req, res, publicDir, MIME_TYPES);
@@ -412,6 +430,12 @@ class DistributedWebSocketServer {
                 // Record connection in metrics
                 this.metricsCollector.recordConnection(1);
 
+                // Track peak connections
+                const currentCount = this.connections.size + 1;
+                if (currentCount > this._metrics.peakConnections) {
+                    this._metrics.peakConnections = currentCount;
+                }
+
                 this.logger.info('Client connected', {
                     clientId,
                     ip: clientIP,
@@ -448,13 +472,13 @@ class DistributedWebSocketServer {
                     }
                 }
 
-                // WebSocket ping/pong keepalive (every 30 seconds)
+                // WebSocket ping/pong keepalive
                 const pingInterval = setInterval(() => {
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.ping();
                         this.logger.debug(`[keepalive] Ping sent to client ${clientId}`);
                     }
-                }, 30000); // 30 seconds
+                }, KEEPALIVE_INTERVAL_MS);
 
                 ws.on('pong', () => {
                     this.logger.debug(`[keepalive] Pong received from client ${clientId}`);
@@ -530,6 +554,7 @@ class DistributedWebSocketServer {
         try {
             // Record message start time for latency tracking
             const startTime = Date.now();
+            this._metrics.messagesReceived++;
 
             // Validate and rate-limit message using message router
             const message = await this.messageRouter.validateAndRateLimit(clientId, rawMessage);
@@ -567,6 +592,7 @@ class DistributedWebSocketServer {
                 const latency = Date.now() - startTime;
                 this.metricsCollector.recordMessage(latency);
             } catch (error) {
+                this._metrics.messageErrors++;
                 correlatedLogger.error('Message routing failed', {
                     error: error.message,
                     clientId,
@@ -631,6 +657,7 @@ class DistributedWebSocketServer {
     }
 
     sendToClient(clientId, message) {
+        this._metrics.messagesSent++;
         return this.messageRouter.sendToClient(clientId, message);
     }
 
@@ -683,6 +710,48 @@ class DistributedWebSocketServer {
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(stats, null, 2));
+    }
+
+    async handleMetrics(req, res) {
+        // Gather CRDT-specific stats
+        const crdtService = this.services.get('crdt');
+        const crdtStats = crdtService ? crdtService.getStats() : {};
+        let totalYDocMemoryMB = 0;
+        if (crdtService && crdtService.channelStates) {
+            const Y = require('yjs');
+            for (const state of crdtService.channelStates.values()) {
+                if (state.ydoc) {
+                    try {
+                        const encoded = Y.encodeStateAsUpdate(state.ydoc);
+                        totalYDocMemoryMB += encoded.byteLength;
+                    } catch (_) { /* ignore encoding errors */ }
+                }
+            }
+            totalYDocMemoryMB = Math.round((totalYDocMemoryMB / (1024 * 1024)) * 100) / 100;
+        }
+
+        const metrics = {
+            connections: {
+                current: this.connections.size,
+                peak: this._metrics.peakConnections,
+            },
+            messages: {
+                received: this._metrics.messagesReceived,
+                sent: this._metrics.messagesSent,
+                errors: this._metrics.messageErrors,
+            },
+            crdt: {
+                activeDocuments: crdtStats.activeChannels || 0,
+                totalYDocMemoryMB,
+            },
+            redis: {
+                status: this.redisConnected ? 'connected' : 'disconnected',
+            },
+            uptime: Math.round((Date.now() - this._metrics.startTime) / 1000),
+        };
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(metrics, null, 2));
     }
 
     async cleanup() {

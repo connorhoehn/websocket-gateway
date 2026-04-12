@@ -1,43 +1,8 @@
-import {
-  GetCommand,
-  PutCommand,
-  DeleteCommand,
-  UpdateCommand,
-  QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
-import { docClient } from '../lib/aws-clients';
-const GROUPS_TABLE = 'social-groups';
-const MEMBERS_TABLE = 'social-group-members';
+import { groupRepo } from '../repositories';
+import type { GroupItem, GroupMemberItem } from '../repositories';
 
 export const groupMembersRouter = Router({ mergeParams: true });
-
-interface GroupItem {
-  groupId: string;
-  name: string;
-  description: string;
-  visibility: 'public' | 'private';
-  ownerId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface GroupMemberItem {
-  groupId: string;
-  userId: string;
-  role: 'owner' | 'admin' | 'member';
-  status: 'invited' | 'active';
-  joinedAt: string;
-  invitedAt?: string;
-}
-
-async function getCallerMembership(groupId: string, userId: string): Promise<GroupMemberItem | undefined> {
-  const result = await docClient.send(new GetCommand({
-    TableName: MEMBERS_TABLE,
-    Key: { groupId, userId },
-  }));
-  return result.Item as GroupMemberItem | undefined;
-}
 
 // POST /api/groups/:groupId/invite — invite a user (GRUP-03)
 groupMembersRouter.post('/invite', async (req: Request, res: Response): Promise<void> => {
@@ -56,40 +21,32 @@ groupMembersRouter.post('/invite', async (req: Request, res: Response): Promise<
       return;
     }
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
-
-    if (!groupResult.Item) {
+    const group = await groupRepo.getGroup(groupId);
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
 
-    const callerMembership = await getCallerMembership(groupId, callerId);
-
+    const callerMembership = await groupRepo.getMembership(groupId, callerId);
     if (!callerMembership || (callerMembership.role !== 'owner' && callerMembership.role !== 'admin')) {
       res.status(403).json({ error: 'Only group owners and admins can invite members' });
       return;
     }
 
-    const targetMembership = await getCallerMembership(groupId, userId);
+    const targetMembership = await groupRepo.getMembership(groupId, userId);
     if (targetMembership && (targetMembership.status === 'active' || targetMembership.status === undefined)) {
       res.status(409).json({ error: 'User is already a member' });
       return;
     }
 
-    await docClient.send(new PutCommand({
-      TableName: MEMBERS_TABLE,
-      Item: {
-        groupId,
-        userId,
-        role: 'member',
-        status: 'invited',
-        invitedAt: new Date().toISOString(),
-        joinedAt: '',
-      },
-    }));
+    await groupRepo.addMember({
+      groupId,
+      userId,
+      role: 'member',
+      status: 'invited',
+      invitedAt: new Date().toISOString(),
+      joinedAt: '',
+    });
 
     res.status(201).json({ groupId, userId, status: 'invited' });
   } catch (err) {
@@ -109,42 +66,23 @@ groupMembersRouter.post('/invitations/:action', async (req: Request, res: Respon
       return;
     }
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
-
-    if (!groupResult.Item) {
+    const group = await groupRepo.getGroup(groupId);
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
 
-    const membership = await getCallerMembership(groupId, callerId);
-
+    const membership = await groupRepo.getMembership(groupId, callerId);
     if (!membership || membership.status !== 'invited') {
       res.status(404).json({ error: 'No pending invitation found' });
       return;
     }
 
     if (action === 'accept') {
-      await docClient.send(new UpdateCommand({
-        TableName: MEMBERS_TABLE,
-        Key: { groupId, userId: callerId },
-        UpdateExpression: 'SET #s = :s, joinedAt = :j',
-        ExpressionAttributeNames: { '#s': 'status' },
-        ExpressionAttributeValues: {
-          ':s': 'active',
-          ':j': new Date().toISOString(),
-        },
-      }));
-
+      await groupRepo.updateMemberStatus(groupId, callerId, 'active', new Date().toISOString());
       res.status(200).json({ message: 'Invitation accepted', groupId });
     } else {
-      await docClient.send(new DeleteCommand({
-        TableName: MEMBERS_TABLE,
-        Key: { groupId, userId: callerId },
-      }));
-
+      await groupRepo.removeMember(groupId, callerId);
       res.status(200).json({ message: 'Invitation declined' });
     }
   } catch (err) {
@@ -159,39 +97,30 @@ groupMembersRouter.post('/join', async (req: Request, res: Response): Promise<vo
     const { groupId } = req.params;
     const callerId = req.user!.sub;
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
-
-    if (!groupResult.Item) {
+    const group = await groupRepo.getGroup(groupId);
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
-
-    const group = groupResult.Item as GroupItem;
 
     if (group.visibility === 'private') {
       res.status(403).json({ error: 'This group is private. You must be invited to join.' });
       return;
     }
 
-    const existing = await getCallerMembership(groupId, callerId);
+    const existing = await groupRepo.getMembership(groupId, callerId);
     if (existing && (existing.status === 'active' || existing.status === undefined)) {
       res.status(409).json({ error: 'Already a member of this group' });
       return;
     }
 
-    await docClient.send(new PutCommand({
-      TableName: MEMBERS_TABLE,
-      Item: {
-        groupId,
-        userId: callerId,
-        role: 'member',
-        status: 'active',
-        joinedAt: new Date().toISOString(),
-      },
-    }));
+    await groupRepo.addMember({
+      groupId,
+      userId: callerId,
+      role: 'member',
+      status: 'active',
+      joinedAt: new Date().toISOString(),
+    });
 
     res.status(201).json({ groupId, userId: callerId, role: 'member' });
   } catch (err) {
@@ -206,18 +135,13 @@ groupMembersRouter.delete('/leave', async (req: Request, res: Response): Promise
     const { groupId } = req.params;
     const callerId = req.user!.sub;
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
-
-    if (!groupResult.Item) {
+    const group = await groupRepo.getGroup(groupId);
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
 
-    const membership = await getCallerMembership(groupId, callerId);
-
+    const membership = await groupRepo.getMembership(groupId, callerId);
     if (!membership || membership.status === 'invited') {
       res.status(404).json({ error: 'You are not a member of this group' });
       return;
@@ -228,10 +152,7 @@ groupMembersRouter.delete('/leave', async (req: Request, res: Response): Promise
       return;
     }
 
-    await docClient.send(new DeleteCommand({
-      TableName: MEMBERS_TABLE,
-      Key: { groupId, userId: callerId },
-    }));
+    await groupRepo.removeMember(groupId, callerId);
 
     res.status(200).json({ message: 'Left group successfully' });
   } catch (err) {
@@ -246,20 +167,14 @@ groupMembersRouter.get('/members', async (req: Request, res: Response): Promise<
     const { groupId } = req.params;
     const callerId = req.user!.sub;
 
-    const groupResult = await docClient.send(new GetCommand({
-      TableName: GROUPS_TABLE,
-      Key: { groupId },
-    }));
-
-    if (!groupResult.Item) {
+    const group = await groupRepo.getGroup(groupId);
+    if (!group) {
       res.status(404).json({ error: 'Group not found' });
       return;
     }
 
-    const group = groupResult.Item as GroupItem;
-
-    const callerMembership = await getCallerMembership(groupId, callerId);
-    const isActiveMember = callerMembership !== undefined &&
+    const callerMembership = await groupRepo.getMembership(groupId, callerId);
+    const isActiveMember = callerMembership !== null &&
       (callerMembership.status === 'active' || callerMembership.status === undefined);
 
     if (group.visibility === 'private' && !isActiveMember) {
@@ -267,24 +182,15 @@ groupMembersRouter.get('/members', async (req: Request, res: Response): Promise<
       return;
     }
 
-    const queryResult = await docClient.send(new QueryCommand({
-      TableName: MEMBERS_TABLE,
-      KeyConditionExpression: 'groupId = :gid',
-      FilterExpression: '#s = :active OR attribute_not_exists(#s)',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: {
-        ':gid': groupId,
-        ':active': 'active',
-      },
+    const members = await groupRepo.getGroupMembers(groupId);
+
+    const result = members.map((item) => ({
+      userId: item.userId,
+      role: item.role,
+      joinedAt: item.joinedAt,
     }));
 
-    const members = (queryResult.Items ?? []).map((item) => ({
-      userId: item['userId'] as string,
-      role: item['role'] as string,
-      joinedAt: item['joinedAt'] as string,
-    }));
-
-    res.status(200).json({ members });
+    res.status(200).json({ members: result });
   } catch (err) {
     console.error('GET /groups/:groupId/members error:', err);
     res.status(500).json({ error: 'Internal server error' });

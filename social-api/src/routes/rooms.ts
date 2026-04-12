@@ -1,36 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
-import {
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
 import { setCachedRoom } from '../lib/cache';
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
+import { roomRepo } from '../repositories';
+import type { RoomItem, RoomMemberItem } from '../repositories';
 const REL_TABLE = 'social-relationships';
 
 export const roomsRouter = Router();
-
-interface RoomItem {
-  roomId: string;
-  channelId: string;
-  name: string;
-  type: 'standalone' | 'group' | 'dm';
-  ownerId: string;
-  groupId?: string;
-  dmPeerUserId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface RoomMemberItem {
-  roomId: string;
-  userId: string;
-  role: 'owner' | 'member';
-  joinedAt: string;
-}
 
 // POST /api/rooms/dm — create DM room (ROOM-03, ROOM-05)
 // IMPORTANT: defined BEFORE /:roomId to avoid Express matching '/dm' as a roomId value
@@ -80,20 +57,16 @@ roomsRouter.post('/dm', async (req: Request, res: Response): Promise<void> => {
 
     // Write room item with ConditionExpression to prevent duplicate DM rooms (TOCTOU-safe)
     try {
-      await docClient.send(new PutCommand({
-        TableName: ROOMS_TABLE,
-        Item: {
-          roomId: dmRoomId,
-          channelId,
-          name: `dm-${callerId.slice(-6)}-${targetUserId.slice(-6)}`,
-          type: 'dm',
-          ownerId: callerId,
-          dmPeerUserId: targetUserId,
-          createdAt: now,
-          updatedAt: now,
-        } as RoomItem,
-        ConditionExpression: 'attribute_not_exists(roomId)',
-      }));
+      await roomRepo.createRoomConditional({
+        roomId: dmRoomId,
+        channelId,
+        name: `dm-${callerId.slice(-6)}-${targetUserId.slice(-6)}`,
+        type: 'dm',
+        ownerId: callerId,
+        dmPeerUserId: targetUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
     } catch (err: unknown) {
       if (
         err !== null &&
@@ -108,14 +81,8 @@ roomsRouter.post('/dm', async (req: Request, res: Response): Promise<void> => {
     }
 
     // Auto-enroll BOTH users: caller as 'owner', peer as 'member'
-    await docClient.send(new PutCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Item: { roomId: dmRoomId, userId: callerId, role: 'owner', joinedAt: now } as RoomMemberItem,
-    }));
-    await docClient.send(new PutCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Item: { roomId: dmRoomId, userId: targetUserId, role: 'member', joinedAt: now } as RoomMemberItem,
-    }));
+    await roomRepo.addMember({ roomId: dmRoomId, userId: callerId, role: 'owner', joinedAt: now });
+    await roomRepo.addMember({ roomId: dmRoomId, userId: targetUserId, role: 'member', joinedAt: now });
 
     // Populate cache with newly created DM room
     void setCachedRoom(dmRoomId, {
@@ -144,36 +111,29 @@ roomsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const channelId = uuidv4();
     const now = new Date().toISOString();
 
-    // Write room item to social-rooms
-    await docClient.send(new PutCommand({
-      TableName: ROOMS_TABLE,
-      Item: {
-        roomId,
-        channelId,
-        name: req.body.name,
-        type: 'standalone',
-        ownerId: req.user!.sub,
-        createdAt: now,
-        updatedAt: now,
-      } as RoomItem,
-    }));
+    const roomItem: RoomItem = {
+      roomId,
+      channelId,
+      name: req.body.name,
+      type: 'standalone',
+      ownerId: req.user!.sub,
+      createdAt: now,
+      updatedAt: now,
+    };
 
-    // Auto-enroll creator in social-room-members as owner
-    await docClient.send(new PutCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Item: {
-        roomId,
-        userId: req.user!.sub,
-        role: 'owner',
-        joinedAt: now,
-      } as RoomMemberItem,
-    }));
+    // Write room item
+    await roomRepo.createRoom(roomItem);
+
+    // Auto-enroll creator as owner
+    await roomRepo.addMember({
+      roomId,
+      userId: req.user!.sub,
+      role: 'owner',
+      joinedAt: now,
+    });
 
     // Populate cache with newly created room
-    void setCachedRoom(roomId, {
-      roomId, channelId, name: req.body.name, type: 'standalone',
-      ownerId: req.user!.sub, createdAt: now, updatedAt: now,
-    });
+    void setCachedRoom(roomId, roomItem);
 
     res.status(201).json({ roomId, channelId, name: req.body.name, type: 'standalone', ownerId: req.user!.sub, role: 'owner', createdAt: now });
   } catch (err) {

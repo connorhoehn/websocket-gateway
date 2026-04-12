@@ -4,7 +4,7 @@
 // Pure presentational component — no hook calls, all data flows in via props.
 // Replaces the monolithic vertical stack in GatewayDemo.
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import type { GatewayError, GatewayMessage } from '../types/gateway';
 import type { EphemeralReaction } from '../hooks/useReactions';
 import type { ChatMessage } from '../hooks/useChat';
@@ -36,8 +36,8 @@ import { GroupPanel } from './GroupPanel';
 import { RoomList } from './RoomList';
 import { PostFeed } from './PostFeed';
 import { ActivityPanel } from './ActivityPanel';
-import { BigBrotherPanel } from './BigBrotherPanel';
-import DocumentEditorPage from './doc-editor/DocumentEditorPage';
+const BigBrotherPanel = lazy(() => import('./BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
+const DocumentEditorPage = lazy(() => import('./doc-editor/DocumentEditorPage'));
 import DocumentListPage from './doc-editor/DocumentListPage';
 import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
@@ -674,12 +674,14 @@ export function AppLayout({
           )}
 
           {activeView === 'dashboard' && (
+            <Suspense fallback={<div>Loading...</div>}>
             <BigBrotherPanel
               rooms={rooms}
               presenceUsers={presenceUsers}
               activityEvents={activityEvents}
               activityIsLive={activityIsLive}
             />
+            </Suspense>
           )}
 
           {activeView === 'doc-editor' && !activeDocumentId && (
@@ -704,6 +706,7 @@ export function AppLayout({
 
           {activeView === 'doc-editor' && activeDocumentId && (
             <ErrorBoundary name="DocumentEditor">
+              <Suspense fallback={<div>Loading...</div>}>
               <div style={{ flex: 1, minHeight: 0 }}>
                 <DocumentEditorPage
                   documentId={activeDocumentId}
@@ -717,6 +720,7 @@ export function AppLayout({
                   onBack={() => { setActiveDocumentId(null); setActiveDocumentType(undefined); }}
                 />
               </div>
+              </Suspense>
             </ErrorBoundary>
           )}
 

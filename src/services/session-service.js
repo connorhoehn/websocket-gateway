@@ -1,6 +1,7 @@
 // src/services/session-service.js
 const crypto = require('crypto');
 const { LRUCache } = require('lru-cache');
+const { SESSION_TTL_SEC, SESSION_LRU_MAX } = require('../config/constants');
 
 /**
  * SessionService manages client session tokens for reconnection support
@@ -16,10 +17,10 @@ class SessionService {
     this.redis = redisClient;
     this.logger = logger;
     this.messageRouter = messageRouter; // For redisAvailable check
-    this.sessionTTL = 24 * 60 * 60; // 24 hours in seconds
+    this.sessionTTL = SESSION_TTL_SEC;
     this.localSessionStore = new LRUCache({
-      max: 10000, // Max 10K sessions in memory
-      ttl: this.sessionTTL * 1000, // Auto-expire after 24hrs (same as Redis TTL)
+      max: SESSION_LRU_MAX,
+      ttl: this.sessionTTL * 1000,
       updateAgeOnGet: true, // Accessing a session refreshes its TTL
     });
   }

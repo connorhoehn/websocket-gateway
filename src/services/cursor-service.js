@@ -7,36 +7,31 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
+const {
+    CURSOR_THROTTLE_INTERVAL_MS,
+    CURSOR_TTL_MS,
+    CURSOR_CLEANUP_INTERVAL_MS,
+} = require('../config/constants');
 
 class CursorService {
     constructor(messageRouter, logger, metricsCollector = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
         this.metricsCollector = metricsCollector;
-        this.redisClient = null; // Legacy parameter, not used
-
-        // Local state management (fallback when Redis is not available)
+        // Local state management
         this.clientCursors = new Map(); // clientId -> cursor data
         this.channelCursors = new Map(); // channel -> Map of clientId -> cursor data
         this.cursorUpdateThrottle = new Map(); // clientId -> last update timestamp
-        this.throttleInterval = 250; // 250ms throttle for updates
+        this.throttleInterval = CURSOR_THROTTLE_INTERVAL_MS;
 
         // TTL mechanism for cursor cleanup
-        this.cursorTTL = 30000; // 30 seconds TTL for cursor data
-        this.cleanupInterval = 10000; // Run cleanup every 10 seconds
+        this.cursorTTL = CURSOR_TTL_MS;
+        this.cleanupInterval = CURSOR_CLEANUP_INTERVAL_MS;
         this.startCleanupTimer();
 
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
-        this.useRedis = !!this.redisClient; // Use Redis if available (fixed: was referencing undefined redisClient)
-        
-        // Redis keys
-        this.redisKeys = {
-            clientCursor: (clientId) => `cursor:client:${clientId}`,
-            channelCursors: (channel) => `cursor:channel:${channel}`,
-            cursorList: (channel) => `cursor:list:${channel}`
-        };
-        
+
         // Supported cursor modes
         this.supportedModes = {
             'freeform': {
@@ -67,6 +62,7 @@ class CursorService {
     }
 
     async handleAction(clientId, action, data) {
+        const startTime = Date.now();
         try {
             switch (action) {
                 case 'update':
@@ -85,6 +81,12 @@ class CursorService {
         } catch (error) {
             this.logger.error(`Error handling cursor action ${action} for client ${clientId}:`, error);
             this.sendError(clientId, 'Internal server error');
+        } finally {
+            const duration = Date.now() - startTime;
+            this.logger.info(`[cursor] ${action}`, { clientId, channel: data.channel, duration });
+            if (duration > 500) {
+                this.logger.warn(`Slow message handler: cursor/${action} took ${duration}ms`, { clientId });
+            }
         }
     }
 
@@ -138,42 +140,7 @@ class CursorService {
     }
 
     async storeCursorData(clientId, channel, cursorData) {
-        // ALWAYS write to local cache first (cache-aside pattern)
         this.storeLocalCursorData(clientId, channel, cursorData);
-
-        // Check if Redis is available via messageRouter
-        const redisAvailable = this.messageRouter && this.messageRouter.redisAvailable !== false;
-
-        // Then try to write to Redis if available
-        if (this.useRedis && redisAvailable) {
-            try {
-                // Store client cursor data with TTL
-                await this.redisClient.setEx(
-                    this.redisKeys.clientCursor(clientId),
-                    Math.ceil(this.cursorTTL / 1000), // Convert to seconds
-                    JSON.stringify(cursorData)
-                );
-
-                // Add to channel cursor list with TTL
-                await this.redisClient.hSet(
-                    this.redisKeys.channelCursors(channel),
-                    clientId,
-                    JSON.stringify(cursorData)
-                );
-
-                // Set TTL for channel cursor list
-                await this.redisClient.expire(
-                    this.redisKeys.channelCursors(channel),
-                    Math.ceil(this.cursorTTL / 1000)
-                );
-
-                this.logger.debug(`Stored cursor data in Redis for client ${clientId} in channel ${channel}`);
-            } catch (error) {
-                this.logger.warn(`Redis write failed for client ${clientId}, using local cache only: ${error.message}`);
-            }
-        } else if (!redisAvailable) {
-            this.logger.debug(`Redis unavailable, cursor cached locally only for client ${clientId}`);
-        }
     }
 
     storeLocalCursorData(clientId, channel, cursorData) {
@@ -341,29 +308,7 @@ class CursorService {
     }
 
     async getChannelCursors(channel) {
-        if (this.useRedis) {
-            try {
-                const cursorsData = await this.redisClient.hGetAll(this.redisKeys.channelCursors(channel));
-                const cursors = [];
-                
-                for (const [clientId, cursorDataStr] of Object.entries(cursorsData)) {
-                    try {
-                        const cursorData = JSON.parse(cursorDataStr);
-                        cursors.push(cursorData);
-                    } catch (error) {
-                        this.logger.warn(`Failed to parse cursor data for client ${clientId}:`, error);
-                    }
-                }
-                
-                return cursors;
-            } catch (error) {
-                this.logger.error(`Failed to get channel cursors from Redis for channel ${channel}:`, error);
-                // Fallback to local storage
-                return this.getLocalChannelCursors(channel);
-            }
-        } else {
-            return this.getLocalChannelCursors(channel);
-        }
+        return this.getLocalChannelCursors(channel);
     }
 
     getLocalChannelCursors(channel) {
@@ -445,39 +390,7 @@ class CursorService {
     }
 
     async removeCursorData(clientId) {
-        if (this.useRedis) {
-            try {
-                // Get client cursor data first to know which channel to clean
-                const cursorDataStr = await this.redisClient.get(this.redisKeys.clientCursor(clientId));
-                if (cursorDataStr) {
-                    const cursorData = JSON.parse(cursorDataStr);
-                    const { channel } = cursorData;
-                    
-                    // Remove client cursor data
-                    await this.redisClient.del(this.redisKeys.clientCursor(clientId));
-                    
-                    // Remove from channel cursor list
-                    await this.redisClient.hDel(this.redisKeys.channelCursors(channel), clientId);
-                    
-                    // Check if channel is empty and clean up if necessary
-                    const channelSize = await this.redisClient.hLen(this.redisKeys.channelCursors(channel));
-                    if (channelSize === 0) {
-                        await this.redisClient.del(this.redisKeys.channelCursors(channel));
-                    }
-                    
-                    // Broadcast cursor removal to channel
-                    await this.broadcastCursorRemoval(channel, clientId);
-                    
-                    this.logger.debug(`Removed cursor data from Redis for client ${clientId} in channel ${channel}`);
-                }
-            } catch (error) {
-                this.logger.error(`Failed to remove cursor data from Redis for client ${clientId}:`, error);
-                // Fallback to local cleanup
-                this.removeLocalCursorData(clientId);
-            }
-        } else {
-            this.removeLocalCursorData(clientId);
-        }
+        await this.removeLocalCursorData(clientId);
     }
 
     async removeLocalCursorData(clientId) {

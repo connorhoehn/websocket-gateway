@@ -3,16 +3,15 @@ import {
   DeleteCommand,
   GetCommand,
   QueryCommand,
-  BatchGetCommand,
-  ScanCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { ulid } from 'ulid';
 import { Router, Request, Response } from 'express';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
+import { profileRepo } from '../repositories';
+import type { ProfileItem } from '../repositories';
 const REL_TABLE = 'social-relationships';
-const PROF_TABLE = 'social-profiles';
 const OUTBOX_TABLE = 'social-outbox';
 
 export const socialRouter = Router();
@@ -28,22 +27,12 @@ interface PublicProfile {
 async function enrichWithProfiles(userIds: string[]): Promise<PublicProfile[]> {
   if (userIds.length === 0) return [];
 
-  const batchResult = await docClient.send(
-    new BatchGetCommand({
-      RequestItems: {
-        [PROF_TABLE]: {
-          Keys: userIds.map((id) => ({ userId: id })),
-        },
-      },
-    }),
-  );
-
-  const items = batchResult.Responses?.[PROF_TABLE] ?? [];
-  return items.map((item) => ({
-    userId: item['userId'] as string,
-    displayName: item['displayName'] as string,
-    avatarUrl: item['avatarUrl'] as string,
-    visibility: item['visibility'] as string,
+  const profiles = await profileRepo.batchGetProfiles(userIds);
+  return profiles.map((item) => ({
+    userId: item.userId,
+    displayName: item.displayName,
+    avatarUrl: item.avatarUrl,
+    visibility: item.visibility,
   }));
 }
 
@@ -143,20 +132,21 @@ socialRouter.delete('/follow/:userId', async (req: Request, res: Response): Prom
 });
 
 // GET /api/social/followers — list users who follow the caller (SOCL-04)
-// NOTE: social-relationships has no GSI on followeeId; scan with FilterExpression
+// Uses GSI followeeId-followerId-index to avoid full-table Scan
 socialRouter.get('/followers', async (req: Request, res: Response): Promise<void> => {
   try {
     const callerId = req.user!.sub;
 
-    const scanResult = await docClient.send(
-      new ScanCommand({
+    const queryResult = await docClient.send(
+      new QueryCommand({
         TableName: REL_TABLE,
-        FilterExpression: 'followeeId = :fid',
+        IndexName: 'followeeId-followerId-index',
+        KeyConditionExpression: 'followeeId = :fid',
         ExpressionAttributeValues: { ':fid': callerId },
       }),
     );
 
-    const followerIds = (scanResult.Items ?? []).map((i) => i['followerId'] as string);
+    const followerIds = (queryResult.Items ?? []).map((i) => i['followerId'] as string);
 
     if (followerIds.length === 0) {
       res.status(200).json({ followers: [] });
@@ -217,11 +207,12 @@ socialRouter.get('/friends', async (req: Request, res: Response): Promise<void> 
       (followingResult.Items ?? []).map((i) => i['followeeId'] as string),
     );
 
-    // 2. Get everyone who follows caller (scan — no GSI available)
+    // 2. Get everyone who follows caller (GSI query — no Scan needed)
     const followersResult = await docClient.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: REL_TABLE,
-        FilterExpression: 'followeeId = :fid',
+        IndexName: 'followeeId-followerId-index',
+        KeyConditionExpression: 'followeeId = :fid',
         ExpressionAttributeValues: { ':fid': callerId },
       }),
     );

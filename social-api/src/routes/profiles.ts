@@ -1,20 +1,9 @@
-import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
-import { docClient } from '../lib/aws-clients';
 import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '../lib/cache';
-const TABLE = 'social-profiles';
+import { profileRepo } from '../repositories';
+import type { ProfileItem } from '../repositories';
 
 export const profilesRouter = Router();
-
-interface ProfileItem {
-  userId: string;
-  displayName: string;
-  bio: string;
-  avatarUrl: string;
-  visibility: 'public' | 'private';
-  createdAt: string;
-  updatedAt: string;
-}
 
 // POST /api/profiles — create own profile (PROF-01)
 profilesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -43,11 +32,8 @@ profilesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
 
     // Check if profile already exists
-    const existing = await docClient.send(new GetCommand({
-      TableName: TABLE,
-      Key: { userId },
-    }));
-    if (existing.Item) {
+    const existing = await profileRepo.getProfile(userId);
+    if (existing) {
       res.status(409).json({ error: 'Profile already exists. Use PUT to update.' });
       return;
     }
@@ -63,10 +49,7 @@ profilesRouter.post('/', async (req: Request, res: Response): Promise<void> => {
       updatedAt: now,
     };
 
-    await docClient.send(new PutCommand({
-      TableName: TABLE,
-      Item: item,
-    }));
+    await profileRepo.createProfile(item);
 
     // Populate cache with newly created profile
     void setCachedProfile(userId, item);
@@ -87,17 +70,12 @@ profilesRouter.get('/:userId', async (req: Request, res: Response): Promise<void
     let item = await getCachedProfile<ProfileItem>(userId);
 
     if (!item) {
-      const result = await docClient.send(new GetCommand({
-        TableName: TABLE,
-        Key: { userId },
-      }));
+      item = await profileRepo.getProfile(userId);
 
-      if (!result.Item) {
+      if (!item) {
         res.status(404).json({ error: 'Profile not found' });
         return;
       }
-
-      item = result.Item as ProfileItem;
 
       // Populate cache on miss
       void setCachedProfile(userId, item);
@@ -143,47 +121,18 @@ profilesRouter.put('/', async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
 
     // Check profile exists
-    const existing = await docClient.send(new GetCommand({
-      TableName: TABLE,
-      Key: { userId },
-    }));
-    if (!existing.Item) {
+    const existing = await profileRepo.getProfile(userId);
+    if (!existing) {
       res.status(404).json({ error: 'Profile not found. Use POST to create.' });
       return;
     }
 
-    // Build dynamic UpdateExpression
-    const updates: string[] = [];
-    const exprValues: Record<string, unknown> = {};
-
-    if (displayName !== undefined) {
-      updates.push('displayName = :displayName');
-      exprValues[':displayName'] = displayName;
-    }
-    if (bio !== undefined) {
-      updates.push('bio = :bio');
-      exprValues[':bio'] = bio;
-    }
-    if (avatarUrl !== undefined) {
-      updates.push('avatarUrl = :avatarUrl');
-      exprValues[':avatarUrl'] = avatarUrl;
-    }
-    if (visibility !== undefined) {
-      updates.push('visibility = :visibility');
-      exprValues[':visibility'] = visibility;
-    }
-    updates.push('updatedAt = :updatedAt');
-    exprValues[':updatedAt'] = new Date().toISOString();
-
-    const result = await docClient.send(new UpdateCommand({
-      TableName: TABLE,
-      Key: { userId },
-      UpdateExpression: 'SET ' + updates.join(', '),
-      ExpressionAttributeValues: exprValues,
-      ReturnValues: 'ALL_NEW',
-    }));
-
-    const updated = result.Attributes as ProfileItem;
+    const updated = await profileRepo.updateProfile(userId, {
+      ...(displayName !== undefined ? { displayName } : {}),
+      ...(bio !== undefined ? { bio } : {}),
+      ...(avatarUrl !== undefined ? { avatarUrl } : {}),
+      ...(visibility !== undefined ? { visibility: visibility as 'public' | 'private' } : {}),
+    });
 
     // Invalidate stale cache; next GET will re-populate
     void invalidateProfileCache(userId);

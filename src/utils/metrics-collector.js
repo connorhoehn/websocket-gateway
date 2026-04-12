@@ -2,6 +2,7 @@
 
 const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch');
 const os = require('os');
+const { METRICS_FLUSH_INTERVAL_MS } = require('../config/constants');
 
 /**
  * MetricsCollector - Collects and emits metrics to AWS CloudWatch
@@ -42,7 +43,7 @@ class MetricsCollector {
         // Configuration
         this.namespace = 'WebSocketGateway';
         this.nodeId = process.env.NODE_ID || os.hostname();
-        this.flushIntervalSeconds = 60; // Metrics are flushed every 60 seconds
+        this.flushIntervalSeconds = METRICS_FLUSH_INTERVAL_MS / 1000;
 
         // Track consecutive flush failures for health monitoring
         this.consecutiveFlushFailures = 0;

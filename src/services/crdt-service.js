@@ -178,6 +178,7 @@ class CRDTService {
     // ===================================================================
 
     async handleAction(clientId, action, data) {
+        const startTime = Date.now();
         try {
             switch (action) {
                 case 'subscribe':
@@ -201,11 +202,13 @@ class CRDTService {
                         (cid, msg) => this.sendToClient(cid, msg),
                         (cid, msg) => this.sendError(cid, msg));
                 case 'restoreSnapshot':
+                    if (!this._requireAuth(clientId, 'restoreSnapshot')) return;
                     return await this.snapshotManager.handleRestoreSnapshot(clientId, data,
                         this.channelStates,
                         (cid, msg) => this.sendToClient(cid, msg),
                         (cid, msg) => this.sendError(cid, msg));
                 case 'clearDocument':
+                    if (!this._requireAuth(clientId, 'clearDocument')) return;
                     return await this.snapshotManager.handleClearDocument(clientId, data,
                         this.channelStates,
                         (cid, msg) => this.sendToClient(cid, msg),
@@ -226,6 +229,7 @@ class CRDTService {
                         (cid, msg) => this.sendToClient(cid, msg),
                         (cid, msg) => this.sendError(cid, msg));
                 case 'deleteDocument':
+                    if (!this._requireAuth(clientId, 'deleteDocument')) return;
                     return await this.metadataService.handleDeleteDocument(clientId, data,
                         this.channelStates, this.snapshotManager,
                         (cid, msg) => this.sendToClient(cid, msg),
@@ -248,6 +252,12 @@ class CRDTService {
         } catch (error) {
             this.logger.error(`Error handling CRDT action ${action} for client ${clientId}:`, error);
             this.sendError(clientId, 'Internal server error');
+        } finally {
+            const duration = Date.now() - startTime;
+            this.logger.info(`[crdt] ${action}`, { clientId, channel: data.channel, duration });
+            if (duration > 500) {
+                this.logger.warn(`Slow message handler: crdt/${action} took ${duration}ms`, { clientId });
+            }
         }
     }
 
@@ -594,6 +604,24 @@ class CRDTService {
 
     _validateChannel(channel) {
         return typeof channel === 'string' && channel.length > 0 && channel.length <= 50;
+    }
+
+    /**
+     * Require that the requesting client is authenticated (has userContext).
+     * Returns true if authorized, false if not (and sends an error to the client).
+     *
+     * @param {string} clientId
+     * @param {string} actionName - for logging
+     * @returns {boolean}
+     */
+    _requireAuth(clientId, actionName) {
+        const clientData = this.messageRouter.getClientData(clientId);
+        if (!clientData || !clientData.userContext) {
+            this.logger.warn(`Unauthorized ${actionName} attempt from client ${clientId} — no userContext`);
+            this.sendError(clientId, `Authentication required for ${actionName}`, ErrorCodes.AUTH_FAILED);
+            return false;
+        }
+        return true;
     }
 
     sendToClient(clientId, message) {

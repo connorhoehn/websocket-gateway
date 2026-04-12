@@ -13,10 +13,15 @@
  *
  * On connect, clients are auto-subscribed to 'activity:broadcast' for global activity events.
  */
+const {
+    ACTIVITY_MAX_HISTORY_ITEMS,
+    ACTIVITY_HISTORY_TTL_SEC,
+} = require('../config/constants');
+
 class ActivityService {
   static BROADCAST_CHANNEL = 'activity:broadcast';
   static HISTORY_KEY_PREFIX = 'activity:history:';
-  static MAX_HISTORY_ITEMS = 200;
+  static MAX_HISTORY_ITEMS = ACTIVITY_MAX_HISTORY_ITEMS;
 
   constructor(messageRouter, logger, metricsCollector = null, redisClient = null) {
     this.messageRouter = messageRouter;
@@ -199,8 +204,8 @@ class ActivityService {
       const serialized = JSON.stringify(enrichedPayload);
       await this.redisClient.lPush(key, serialized);
       await this.redisClient.lTrim(key, 0, ActivityService.MAX_HISTORY_ITEMS - 1);
-      // Set a TTL so old history eventually expires (24 hours)
-      await this.redisClient.expire(key, 86400);
+      // Set a TTL so old history eventually expires
+      await this.redisClient.expire(key, ACTIVITY_HISTORY_TTL_SEC);
     } catch (err) {
       this.logger.error(`Failed to persist activity event:`, err.message);
     }

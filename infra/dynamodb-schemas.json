@@ -22,7 +22,15 @@
       "tableName": "social-relationships",
       "hashKey": { "name": "followerId", "type": "S" },
       "rangeKey": { "name": "followeeId", "type": "S" },
-      "billing": "PAY_PER_REQUEST"
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "followeeId-followerId-index",
+          "hashKey": { "name": "followeeId", "type": "S" },
+          "rangeKey": { "name": "followerId", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
     },
     {
       "tableName": "social-groups",
@@ -44,13 +52,29 @@
       "tableName": "social-room-members",
       "hashKey": { "name": "roomId", "type": "S" },
       "rangeKey": { "name": "userId", "type": "S" },
-      "billing": "PAY_PER_REQUEST"
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "userId-roomId-index",
+          "hashKey": { "name": "userId", "type": "S" },
+          "rangeKey": { "name": "roomId", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
     },
     {
       "tableName": "social-posts",
       "hashKey": { "name": "roomId", "type": "S" },
       "rangeKey": { "name": "postId", "type": "S" },
-      "billing": "PAY_PER_REQUEST"
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "authorId-postId-index",
+          "hashKey": { "name": "authorId", "type": "S" },
+          "rangeKey": { "name": "postId", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
     },
     {
       "tableName": "social-comments",

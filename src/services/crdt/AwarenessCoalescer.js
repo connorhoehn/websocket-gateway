@@ -5,7 +5,7 @@
  * Reduces Redis pub/sub volume significantly at scale.
  */
 
-const AWARENESS_BATCH_WINDOW_MS = 50;
+const { AWARENESS_BATCH_WINDOW_MS } = require('./config');
 
 class AwarenessCoalescer {
     /**

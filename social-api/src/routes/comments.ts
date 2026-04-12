@@ -9,10 +9,10 @@ import { Router, Request, Response } from 'express';
 import { broadcastService } from '../services/broadcast';
 import { docClient, publishSocialEvent } from '../lib/aws-clients';
 import { getCachedRoom, setCachedRoom } from '../lib/cache';
+import { roomRepo } from '../repositories';
+import { requireRoomMembership } from '../middleware/require-membership';
 const COMMENTS_TABLE = 'social-comments';
 const POSTS_TABLE = 'social-posts';
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
 
 // commentsRouter is mounted at /rooms/:roomId/posts/:postId — mergeParams:true exposes :roomId and :postId
 export const commentsRouter = Router({ mergeParams: true });
@@ -30,7 +30,7 @@ interface CommentItem {
 // Body: { content: string, parentCommentId?: string }
 // - If parentCommentId is omitted: creates top-level comment (CONT-06)
 // - If parentCommentId is provided: creates reply to that comment (CONT-07)
-commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
+commentsRouter.post('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId } = req.params;
     const { content, parentCommentId } = req.body as { content?: string; parentCommentId?: string };
@@ -39,16 +39,6 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const trimmedContent = (content ?? '').trim();
     if (!trimmedContent || trimmedContent.length > 10000) {
       res.status(400).json({ error: 'content is required (max 10000 chars)' });
-      return;
-    }
-
-    // Membership gate — caller must be a member of the room
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId: authorId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to comment' });
       return;
     }
 
@@ -94,13 +84,10 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     // Broadcast social:comment to room channel (non-fatal if Redis unavailable)
     let roomData = await getCachedRoom<{ channelId: string }>(roomId);
     if (!roomData) {
-      const roomForBroadcast = await docClient.send(new GetCommand({
-        TableName: ROOMS_TABLE,
-        Key: { roomId },
-      }));
-      if (roomForBroadcast.Item) {
-        roomData = roomForBroadcast.Item as { channelId: string };
-        void setCachedRoom(roomId, roomForBroadcast.Item);
+      const room = await roomRepo.getRoom(roomId);
+      if (room) {
+        roomData = room as { channelId: string };
+        void setCachedRoom(roomId, room);
       }
     }
     if (roomData) {
@@ -127,20 +114,9 @@ commentsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/rooms/:roomId/posts/:postId/comments — list all comments for a post (flat array; clients group by parentCommentId)
-commentsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
+commentsRouter.get('/', requireRoomMembership, async (req: Request, res: Response): Promise<void> => {
   try {
     const { roomId, postId } = req.params;
-    const callerId = req.user!.sub;
-
-    // Membership gate
-    const membership = await docClient.send(new GetCommand({
-      TableName: ROOM_MEMBERS_TABLE,
-      Key: { roomId, userId: callerId },
-    }));
-    if (!membership.Item) {
-      res.status(403).json({ error: 'You must be a member of this room to view comments' });
-      return;
-    }
 
     // Verify post exists
     const postResult = await docClient.send(new GetCommand({

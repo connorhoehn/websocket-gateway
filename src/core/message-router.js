@@ -2,6 +2,7 @@
 
 const { ValidationError, MessageValidator } = require('../validators/message-validator');
 const RateLimiter = require('../middleware/rate-limiter');
+const { BROADCAST_BATCH_SIZE } = require('../config/constants');
 
 /**
  * Handles intelligent message routing in a distributed WebSocket system
@@ -15,7 +16,7 @@ class MessageRouter {
         this.logger = logger;
         this.sessionService = sessionService; // Optional session service for subscription tracking
         this.validator = new MessageValidator();
-        this.rateLimiter = new RateLimiter(redisPublisher, logger);
+        this.rateLimiter = new RateLimiter(logger);
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
         this.channelSequences = new Map(); // channel -> monotonic sequence counter
@@ -102,6 +103,14 @@ class MessageRouter {
                     failures.push({ channel, error: error.message });
                     // Force-remove from local tracking even if Redis unsubscribe fails
                     client.channels.delete(channel);
+                    // Also clean the reverse index for this channel
+                    const reverseSet = this.nodeManager.getClientsForChannel(channel);
+                    if (reverseSet.size > 0) {
+                        reverseSet.delete(clientId);
+                        if (reverseSet.size === 0) {
+                            this.nodeManager.channelToClients.delete(channel);
+                        }
+                    }
                 }
             }
 
@@ -110,6 +119,7 @@ class MessageRouter {
             }
 
             this.localClients.delete(clientId);
+            this.rateLimiter.removeClient(clientId);
 
             try {
                 await this.nodeManager.unregisterClient(clientId);
@@ -605,18 +615,20 @@ class MessageRouter {
      * to avoid blocking the event loop.
      */
     broadcastToLocalChannel(channel, message, excludeClientId = null) {
+        // Use the nodeManager reverse index for O(1) channel -> clients lookup
+        // instead of iterating all local clients.
+        const channelClients = this.nodeManager.getClientsForChannel(channel);
         const recipients = [];
 
-        for (const [clientId, client] of this.localClients) {
+        for (const clientId of channelClients) {
             if (clientId === excludeClientId) continue;
-            if (!client.channels.has(channel)) continue;
             recipients.push(clientId);
         }
 
         if (recipients.length === 0) return 0;
 
-        // For small recipient lists (<=50), send synchronously (no overhead)
-        if (recipients.length <= 50) {
+        // For small recipient lists, send synchronously (no overhead)
+        if (recipients.length <= BROADCAST_BATCH_SIZE) {
             let sentCount = 0;
             for (const clientId of recipients) {
                 if (this.sendToLocalClient(clientId, message)) {
@@ -628,12 +640,11 @@ class MessageRouter {
         }
 
         // For large recipient lists, batch with setImmediate to yield event loop
-        const BATCH_SIZE = 50;
         let sentCount = 0;
         let index = 0;
 
         const sendBatch = () => {
-            const end = Math.min(index + BATCH_SIZE, recipients.length);
+            const end = Math.min(index + BROADCAST_BATCH_SIZE, recipients.length);
             for (; index < end; index++) {
                 if (this.sendToLocalClient(recipients[index], message)) {
                     sentCount++;
@@ -666,8 +677,8 @@ class MessageRouter {
 
         if (recipients.length === 0) return 0;
 
-        // For small recipient lists (<=50), send synchronously (no overhead)
-        if (recipients.length <= 50) {
+        // For small recipient lists, send synchronously (no overhead)
+        if (recipients.length <= BROADCAST_BATCH_SIZE) {
             let sentCount = 0;
             for (const clientId of recipients) {
                 if (this.sendToLocalClient(clientId, message)) {
@@ -679,12 +690,11 @@ class MessageRouter {
         }
 
         // For large recipient lists, batch with setImmediate to yield event loop
-        const BATCH_SIZE = 50;
         let sentCount = 0;
         let index = 0;
 
         const sendBatch = () => {
-            const end = Math.min(index + BATCH_SIZE, recipients.length);
+            const end = Math.min(index + BROADCAST_BATCH_SIZE, recipients.length);
             for (; index < end; index++) {
                 if (this.sendToLocalClient(recipients[index], message)) {
                     sentCount++;
@@ -720,13 +730,7 @@ class MessageRouter {
      * @returns {string[]} Array of clientIds subscribed to the channel
      */
     getChannelClients(channel) {
-        const clients = [];
-        for (const [clientId, client] of this.localClients) {
-            if (client.channels.has(channel)) {
-                clients.push(clientId);
-            }
-        }
-        return clients;
+        return Array.from(this.nodeManager.getClientsForChannel(channel));
     }
 
     /**

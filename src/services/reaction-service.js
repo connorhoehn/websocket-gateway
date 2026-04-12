@@ -6,6 +6,7 @@
 
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
+const { REACTION_MAX_HISTORY, MAX_CHANNEL_NAME_LENGTH } = require('../config/constants');
 
 class ReactionService {
     constructor(messageRouter, logger, metricsCollector = null) {
@@ -16,7 +17,7 @@ class ReactionService {
         // Local state management
         this.clientChannels = new Map(); // clientId -> Set of channels
         this.reactionHistory = new Map(); // channel -> Array of recent reactions
-        this.maxHistorySize = 50; // Maximum reactions to keep in memory
+        this.maxHistorySize = REACTION_MAX_HISTORY;
         
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
@@ -65,7 +66,7 @@ class ReactionService {
         }
 
         // Validate channel name
-        if (typeof channel !== 'string' || channel.length === 0 || channel.length > 50) {
+        if (typeof channel !== 'string' || channel.length === 0 || channel.length > MAX_CHANNEL_NAME_LENGTH) {
             this.sendError(clientId, 'Channel name must be a string between 1 and 50 characters');
             return;
         }
