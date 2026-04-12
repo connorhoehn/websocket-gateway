@@ -5,14 +5,16 @@
 // Replaces the monolithic vertical stack in GatewayDemo.
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type { ConnectionState, GatewayError, GatewayMessage } from '../types/gateway';
-import type { PresenceUser } from '../hooks/usePresence';
+import type { GatewayError, GatewayMessage } from '../types/gateway';
 import type { EphemeralReaction } from '../hooks/useReactions';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CursorMode, RemoteCursor, TextSelectionData } from '../hooks/useCursors';
 import type { LogEntry } from './EventLog';
 import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
+import { useWebSocketContext } from '../contexts/WebSocketContext';
+import { useIdentityContext } from '../contexts/IdentityContext';
+import { usePresenceContext } from '../contexts/PresenceContext';
 
 import { ConnectionStatus } from './ConnectionStatus';
 import { PresencePanel } from './PresencePanel';
@@ -40,13 +42,10 @@ import DocumentListPage from './doc-editor/DocumentListPage';
 import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
 import { ErrorBoundary } from './ErrorBoundary';
-import type { UseWebSocketReturn } from '../hooks/useWebSocket';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
 
 interface Notification {
   id: string;
@@ -137,18 +136,11 @@ function NotificationBanner({ notifications, onDismiss, onClick }: {
 // ---------------------------------------------------------------------------
 
 export interface AppLayoutProps {
-  // Connection/header
-  connectionState: ConnectionState;
+  // Channel routing
   currentChannel: string;
   onSwitchChannel: (channel: string) => void;
   onDisconnect: () => void;
   onReconnect: () => void;
-  userEmail: string | null;
-  onSignOut: () => void;
-
-  // Presence sidebar
-  presenceUsers: PresenceUser[];
-  currentClientId: string | null;
 
   // Reactions overlay + buttons
   activeReactions: EphemeralReaction[];
@@ -157,7 +149,6 @@ export interface AppLayoutProps {
   // Chat
   chatMessages: ChatMessage[];
   onChatSend: (content: string) => void;
-  onTyping?: (isTyping: boolean) => void;
 
   // Cursors
   cursors: Map<string, RemoteCursor>;
@@ -179,19 +170,6 @@ export interface AppLayoutProps {
   logEntries: LogEntry[];
   errors: GatewayError[];
   lastError: GatewayError | null;
-  clientId: string | null;
-  sessionToken: string | null;
-
-  // Social layer
-  idToken: string | null;
-  onMessage: OnMessageFn;
-  sendMessage: (msg: Record<string, unknown>) => void;
-
-  // WebSocket return object (needed for collaborative doc editor)
-  ws: UseWebSocketReturn;
-  // Identity
-  userId: string;
-  displayName: string;
 
   // Unified activity bus (lifted to GatewayDemo so it persists across tab switches)
   activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
@@ -224,20 +202,14 @@ const sectionHeaderStyle: React.CSSProperties = {
 // ---------------------------------------------------------------------------
 
 export function AppLayout({
-  connectionState,
   currentChannel,
   onSwitchChannel,
   onDisconnect,
   onReconnect,
-  userEmail,
-  onSignOut,
-  presenceUsers,
-  currentClientId,
   activeReactions,
   onReact,
   chatMessages,
   onChatSend,
-  onTyping,
   cursors,
   localCursor,
   activeMode,
@@ -253,18 +225,14 @@ export function AppLayout({
   logEntries,
   errors,
   lastError,
-  clientId,
-  sessionToken,
-  idToken,
-  onMessage,
-  sendMessage,
-  ws,
-  userId,
-  displayName,
   activityEvents,
   activityPublish,
   activityIsLive,
 }: AppLayoutProps) {
+  // Pull shared state from contexts
+  const { connectionState, sendMessage, onMessage, ws, clientId, sessionToken } = useWebSocketContext();
+  const { userId, displayName, userEmail, idToken, onSignOut } = useIdentityContext();
+  const { presenceUsers, currentClientId, setTyping: onTyping } = usePresenceContext();
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'panels' | 'social' | 'dashboard' | 'doc-editor'>('panels');
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);

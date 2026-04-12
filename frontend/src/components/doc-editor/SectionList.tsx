@@ -28,6 +28,8 @@ export interface SectionListProps {
   onAddComment?: (sectionId: string, text: string, parentCommentId?: string | null) => void;
   onResolveThread?: (sectionId: string, commentId: string) => void;
   onUnresolveThread?: (sectionId: string, commentId: string) => void;
+  /** Merge-safe awareness updater for Tiptap cursor info. */
+  onUpdateCursorInfo?: (name: string, color: string) => void;
 }
 
 const containerStyle: React.CSSProperties = {
@@ -69,6 +71,7 @@ export default function SectionList({
   onAddComment,
   onResolveThread,
   onUnresolveThread,
+  onUpdateCursorInfo,
 }: SectionListProps) {
   return (
     <div style={containerStyle}>
@@ -92,6 +95,7 @@ export default function SectionList({
           onAddComment={(text, parentCommentId) => onAddComment?.(section.id, text, parentCommentId)}
           onResolveThread={(commentId) => onResolveThread?.(section.id, commentId)}
           onUnresolveThread={(commentId) => onUnresolveThread?.(section.id, commentId)}
+          onUpdateCursorInfo={onUpdateCursorInfo}
         />
       ))}
 

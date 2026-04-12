@@ -12,6 +12,9 @@ import { getGatewayConfig } from '../config/gateway';
 import { LoginForm } from '../components/LoginForm';
 import { SignupForm } from '../components/SignupForm';
 import { AppLayout } from '../components/AppLayout';
+import { WebSocketProvider } from '../contexts/WebSocketContext';
+import { IdentityProvider } from '../contexts/IdentityContext';
+import { PresenceProvider } from '../contexts/PresenceContext';
 import type { LogEntry } from '../components/EventLog';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
@@ -248,47 +251,56 @@ function GatewayDemo({
   });
 
   return (
-    <AppLayout
-      connectionState={connectionState}
-      currentChannel={currentChannel}
-      onSwitchChannel={switchChannel}
-      onDisconnect={disconnect}
-      onReconnect={reconnect}
-      userEmail={auth.email}
-      onSignOut={auth.signOut}
-      presenceUsers={presenceUsers}
-      currentClientId={clientId}
-      activeReactions={activeReactions}
-      onReact={react}
-      chatMessages={chatMessages}
-      onChatSend={sendChat}
-      onTyping={setTyping}
-      cursors={cursors}
-      localCursor={localCursor}
-      activeMode={activeMode}
-      onModeChange={switchMode}
-      onFreeformMove={sendFreeformUpdate}
-      onTableClick={sendTableUpdate}
-      onTextChange={sendTextUpdate}
-      onCanvasMove={sendCanvasUpdate}
-      crdtContent={content}
-      applyLocalEdit={applyLocalEdit}
-      hasConflict={hasConflict}
-      onDismissConflict={dismissConflict}
-      logEntries={logEntries}
-      errors={errors}
-      lastError={lastError}
-      clientId={clientId}
-      sessionToken={sessionToken}
-      idToken={auth.idToken}
-      onMessage={onMessage}
-      sendMessage={loggedSendMessage}
-      ws={wsReturn}
-      userId={clientId ?? 'anonymous'}
-      displayName={displayName}
-      activityEvents={activityBus.events}
-      activityPublish={activityBus.publish}
-      activityIsLive={activityBus.isLive}
-    />
+    <WebSocketProvider value={{
+      connectionState,
+      sendMessage: loggedSendMessage,
+      onMessage,
+      ws: wsReturn,
+      clientId,
+      sessionToken,
+    }}>
+      <IdentityProvider value={{
+        userId: clientId ?? 'anonymous',
+        displayName,
+        userEmail: auth.email,
+        idToken: auth.idToken,
+        onSignOut: auth.signOut,
+      }}>
+        <PresenceProvider value={{
+          presenceUsers,
+          currentClientId: clientId,
+          setTyping,
+        }}>
+          <AppLayout
+            currentChannel={currentChannel}
+            onSwitchChannel={switchChannel}
+            onDisconnect={disconnect}
+            onReconnect={reconnect}
+            activeReactions={activeReactions}
+            onReact={react}
+            chatMessages={chatMessages}
+            onChatSend={sendChat}
+            cursors={cursors}
+            localCursor={localCursor}
+            activeMode={activeMode}
+            onModeChange={switchMode}
+            onFreeformMove={sendFreeformUpdate}
+            onTableClick={sendTableUpdate}
+            onTextChange={sendTextUpdate}
+            onCanvasMove={sendCanvasUpdate}
+            crdtContent={content}
+            applyLocalEdit={applyLocalEdit}
+            hasConflict={hasConflict}
+            onDismissConflict={dismissConflict}
+            logEntries={logEntries}
+            errors={errors}
+            lastError={lastError}
+            activityEvents={activityBus.events}
+            activityPublish={activityBus.publish}
+            activityIsLive={activityBus.isLive}
+          />
+        </PresenceProvider>
+      </IdentityProvider>
+    </WebSocketProvider>
   );
 }

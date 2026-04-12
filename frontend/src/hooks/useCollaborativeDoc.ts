@@ -7,7 +7,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Y from 'yjs';
 import { GatewayProvider } from '../providers/GatewayProvider';
-import { useIdleDetector } from './useIdleDetector';
+import { useAwarenessState } from './useAwarenessState';
+import type { AwarenessUpdaters } from './useAwarenessState';
 import type { UseWebSocketReturn } from './useWebSocket';
 import type {
   DocumentMeta,
@@ -90,6 +91,9 @@ export interface UseCollaborativeDocReturn {
 
   /** Unresolve a previously resolved thread. */
   unresolveThread: (sectionId: string, commentId: string) => void;
+
+  /** Awareness state updaters — single source of truth for all awareness writes. */
+  awareness: AwarenessUpdaters;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,9 +182,6 @@ export function useCollaborativeDoc(
 ): UseCollaborativeDocReturn {
   const { documentId, mode, ws, userId, displayName, color, onMessage } = options;
 
-  // ---- Idle detection -------------------------------------------------------
-  const { isIdle } = useIdleDetector();
-
   // ---- Reactive state (drives re-renders) ---------------------------------
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -201,16 +202,8 @@ export function useCollaborativeDoc(
     const provider = new GatewayProvider(ydoc, channel, ws.sendMessage);
     providerRef.current = provider;
 
-    // Set awareness local state
-    provider.awareness.setLocalStateField('user', {
-      userId,
-      displayName,
-      color,
-      mode,
-      currentSectionId: null,
-      lastSeen: Date.now(),
-      idle: false,
-    });
+    // NOTE: Initial awareness state is now set by useAwarenessState hook
+    // (called below). No direct setLocalStateField here.
 
     // Subscribe to the document channel
     ws.sendMessage({
@@ -310,20 +303,14 @@ export function useCollaborativeDoc(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId]);
 
-  // ---- Broadcast idle state changes via awareness ---------------------------
-  useEffect(() => {
-    const provider = providerRef.current;
-    if (!provider) return;
-    const currentState = provider.awareness.getLocalState();
-    const currentUser = currentState?.user as Record<string, unknown> | undefined;
-    if (currentUser) {
-      provider.awareness.setLocalStateField('user', {
-        ...currentUser,
-        idle: isIdle,
-        lastSeen: Date.now(),
-      });
-    }
-  }, [isIdle]);
+  // ---- Centralized awareness state (single source of truth) -----------------
+  const awarenessUpdaters = useAwarenessState(providerRef.current, {
+    userId,
+    displayName,
+    color,
+    mode,
+    currentSectionId: null,
+  });
 
   // ---- Re-subscribe on WebSocket reconnect ----------------------------------
   // When the gateway restarts, the WS auto-reconnects but doc channel
@@ -715,5 +702,6 @@ export function useCollaborativeDoc(
     addComment,
     resolveThread,
     unresolveThread,
+    awareness: awarenessUpdaters,
   };
 }

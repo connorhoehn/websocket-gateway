@@ -34,6 +34,9 @@ export interface TiptapEditorProps {
   placeholder?: string;
   /** Section ID — used to filter cursor overlay to only show cursors in this section */
   sectionId?: string;
+  /** Merge-safe awareness updater for cursor display info (name + color).
+   *  When provided, replaces the direct setLocalStateField write. */
+  onUpdateCursorInfo?: (name: string, color: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +281,7 @@ export default function TiptapEditor({
   editable = true,
   placeholder: placeholderText = 'Start typing...',
   sectionId,
+  onUpdateCursorInfo,
 }: TiptapEditorProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const extensions = useMemo(() => [
@@ -298,17 +302,22 @@ export default function TiptapEditor({
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursorInfo[]>([]);
   const editorAreaRef = useRef<HTMLDivElement>(null);
 
-  // Merge local awareness user info (preserve existing fields like currentSectionId)
+  // Merge local awareness user info via the centralized updater (if provided)
+  // or fall back to a merge-safe direct write.
   useEffect(() => {
-    if (!provider?.awareness) return;
-    const currentState = provider.awareness.getLocalState();
-    const existingUser = (currentState?.user as Record<string, unknown>) || {};
-    provider.awareness.setLocalStateField('user', {
-      ...existingUser,
-      name: user.name,
-      color: user.color,
-    });
-  }, [provider, user]);
+    if (onUpdateCursorInfo) {
+      onUpdateCursorInfo(user.name, user.color);
+    } else if (provider?.awareness) {
+      // Fallback for standalone usage (e.g. ReaderMode) — merge, don't overwrite.
+      const currentState = provider.awareness.getLocalState();
+      const existingUser = (currentState?.user as Record<string, unknown>) || {};
+      provider.awareness.setLocalStateField('user', {
+        ...existingUser,
+        name: user.name,
+        color: user.color,
+      });
+    }
+  }, [provider, user, onUpdateCursorInfo]);
 
   // Listen for awareness changes and extract cursor positions
   const updateCursors = useCallback(() => {

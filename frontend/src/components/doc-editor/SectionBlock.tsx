@@ -31,6 +31,8 @@ export interface SectionBlockProps {
   onAddComment?: (text: string, parentCommentId?: string | null) => void;
   onResolveThread?: (commentId: string) => void;
   onUnresolveThread?: (commentId: string) => void;
+  /** Merge-safe awareness updater for Tiptap cursor info. */
+  onUpdateCursorInfo?: (name: string, color: string) => void;
 }
 
 const typeColors: Record<Section['type'], string> = {
@@ -229,6 +231,7 @@ export default function SectionBlock({
   onAddComment,
   onResolveThread,
   onUnresolveThread,
+  onUpdateCursorInfo,
 }: SectionBlockProps) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
 
@@ -322,6 +325,7 @@ export default function SectionBlock({
               editable={editable}
               placeholder={editorPlaceholder}
               sectionId={section.id}
+              onUpdateCursorInfo={onUpdateCursorInfo}
             />
           )}
 

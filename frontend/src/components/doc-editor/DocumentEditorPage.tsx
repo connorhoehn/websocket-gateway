@@ -10,12 +10,11 @@ import type { UseWebSocketReturn } from '../../hooks/useWebSocket';
 import type { GatewayMessage } from '../../types/gateway';
 import { useCollaborativeDoc } from '../../hooks/useCollaborativeDoc';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
-import { parseMarkdownToSections } from '../../utils/markdownParser';
-import { exportToMarkdown } from '../../utils/documentExport';
-import { DEMO_MARKDOWN } from '../../utils/demoDocument';
 import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
+import { useDocumentActions } from './useDocumentActions';
 import DocumentHeader from './DocumentHeader';
+import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import MyMentionsPanel from './MyMentionsPanel';
 import AckMode from './AckMode';
@@ -58,41 +57,6 @@ export interface DocumentEditorPageProps {
   onBack?: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal markdown-to-HTML converter for PDF export.
- * Handles headers, bold, italic, inline code, blockquotes, and list items.
- */
-function simpleMarkdownToHtml(md: string): string {
-  return md
-    .split('\n')
-    .map(line => {
-      // Headers
-      if (line.startsWith('### ')) return `<h3>${line.slice(4)}</h3>`;
-      if (line.startsWith('## ')) return `<h2>${line.slice(3)}</h2>`;
-      if (line.startsWith('# ')) return `<h1>${line.slice(2)}</h1>`;
-      // Blockquotes
-      if (line.startsWith('> ')) return `<blockquote>${line.slice(2)}</blockquote>`;
-      // Task list items
-      if (line.startsWith('- [x] ')) return `<li>&#9745; ${line.slice(6)}</li>`;
-      if (line.startsWith('- [ ] ')) return `<li>&#9744; ${line.slice(6)}</li>`;
-      // Unordered list items
-      if (line.startsWith('- ')) return `<li>${line.slice(2)}</li>`;
-      // Empty lines
-      if (line.trim() === '') return '<br/>';
-      // Paragraph
-      return `<p>${line}</p>`;
-    })
-    .join('\n')
-    // Inline formatting
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-}
-
 function getInitialMode(): ViewMode {
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
@@ -122,7 +86,6 @@ export default function DocumentEditorPage({
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
-  const cleanupFollowRef = useRef<(() => void) | null>(null);
 
   const {
     meta,
@@ -144,6 +107,7 @@ export default function DocumentEditorPage({
     addComment: addYjsComment,
     resolveThread,
     unresolveThread,
+    awareness,
   } = useCollaborativeDoc({
     documentId,
     mode,
@@ -152,6 +116,19 @@ export default function DocumentEditorPage({
     displayName,
     color,
     onMessage,
+  });
+
+  // ------ Document actions (demo, clear, export) ----------------------------
+
+  const { demoLoaded, handleLoadDemo, handleClearDocument, handleExport } = useDocumentActions({
+    documentId,
+    userId,
+    ws,
+    updateMeta,
+    addSection,
+    exportJSON,
+    getSectionFragment,
+    comments,
   });
 
   // ------ Focus tracking + jump-to-user ------------------------------------
@@ -278,29 +255,9 @@ export default function DocumentEditorPage({
     }, 100);
   }, [followingUserId, participants, mode, sections]);
 
-  // Auto-unlock follow on local user interaction in the editor area
-  // Delay listener registration to avoid the "Follow" click itself triggering it
-  useEffect(() => {
-    if (!followingUserId) return;
-    const timerId = setTimeout(() => {
-      const handler = () => setFollowingUserId(null);
-      const events: (keyof WindowEventMap)[] = ['mousedown', 'keydown', 'wheel'];
-      for (const evt of events) {
-        window.addEventListener(evt, handler, { once: true, passive: true });
-      }
-      // Store cleanup ref
-      cleanupFollowRef.current = () => {
-        for (const evt of events) {
-          window.removeEventListener(evt, handler);
-        }
-      };
-    }, 500); // delay so the Follow click doesn't immediately cancel
-    return () => {
-      clearTimeout(timerId);
-      cleanupFollowRef.current?.();
-      cleanupFollowRef.current = null;
-    };
-  }, [followingUserId]);
+  const handleStopFollow = useCallback(() => {
+    setFollowingUserId(null);
+  }, []);
 
   // ------ Activity helpers --------------------------------------------------
 
@@ -344,40 +301,20 @@ export default function DocumentEditorPage({
     if (sections.length === 0 || focusedSectionId) return;
     // Delay to ensure provider is ready (Y.Doc sync may still be in progress)
     const timer = setTimeout(() => {
-      if (provider?.awareness) {
-        const firstId = sections[0].id;
-        setFocusedSectionId(firstId);
-        const currentState = provider.awareness.getLocalState();
-        const currentUser = (currentState?.user as Record<string, unknown>) || {};
-        provider.awareness.setLocalStateField('user', {
-          ...currentUser,
-          currentSectionId: firstId,
-          lastSeen: Date.now(),
-        });
-        console.log('[auto-focus] Set initial section:', firstId);
-      }
+      const firstId = sections[0].id;
+      setFocusedSectionId(firstId);
+      awareness.updateSection(firstId);
+      console.log('[auto-focus] Set initial section:', firstId);
     }, 500);
     return () => clearTimeout(timer);
-  }, [sections, focusedSectionId, provider]);
+  }, [sections, focusedSectionId, awareness]);
 
   // ------ Section focus (awareness) ----------------------------------------
 
   const handleSectionFocus = useCallback((sectionId: string) => {
     setFocusedSectionId(sectionId);
-    if (provider?.awareness) {
-      const currentState = provider.awareness.getLocalState();
-      const currentUser = (currentState?.user as Record<string, unknown>) || {};
-      provider.awareness.setLocalStateField('user', {
-        ...currentUser,
-        userId,
-        displayName,
-        color,
-        mode: mode === 'ack' ? 'ack' : mode,
-        currentSectionId: sectionId,
-        lastSeen: Date.now(),
-      });
-    }
-  }, [provider, userId, displayName, color, mode]);
+    awareness.updateSection(sectionId);
+  }, [awareness]);
 
   // ------ Section comments (Y.js-persisted) --------------------------------
 
@@ -499,104 +436,6 @@ export default function DocumentEditorPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentType, sections.length]);
 
-  // ------ Demo document loading -------------------------------------------
-
-  const [demoLoaded, setDemoLoaded] = useState(false);
-
-  const handleLoadDemo = () => {
-    const parsed = parseMarkdownToSections(DEMO_MARKDOWN);
-
-    // Set document metadata
-    updateMeta({
-      id: documentId,
-      title: parsed.meta.title || 'Untitled',
-      sourceType: 'notes',
-      sourceId: '',
-      createdBy: userId,
-      createdAt: new Date().toISOString(),
-      aiModel: '',
-      status: 'draft',
-    });
-
-    // Add each parsed section to the Y.Doc
-    for (const section of parsed.sections) {
-      addSection({
-        id: section.id,
-        type: section.type,
-        title: section.title,
-        collapsed: false,
-        items: section.items,
-      });
-    }
-
-    setDemoLoaded(true);
-  };
-
-  // ------ Clear document --------------------------------------------------
-
-  const handleClearDocument = useCallback(() => {
-    ws.sendMessage({
-      service: 'crdt',
-      action: 'clearDocument',
-      channel: `doc:${documentId}`,
-    });
-    setDemoLoaded(false);
-  }, [ws, documentId]);
-
-  // ------ Export ----------------------------------------------------------
-
-  const handleExport = (format: 'markdown' | 'pdf' | 'json') => {
-    const data = exportJSON();
-    if (!data) return;
-
-    // Enrich sections with rich-text content and comments
-    for (const section of data.sections) {
-      const frag = getSectionFragment(section.id);
-      if (frag) {
-        (section as any).contentText = xmlFragmentToText(frag);
-      }
-      const sectionComments = comments[section.id];
-      if (sectionComments && sectionComments.length > 0) {
-        (section as any).comments = sectionComments;
-      }
-    }
-
-    if (format === 'json') {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      downloadBlob(blob, `${data.meta.title || 'document'}.json`);
-    } else if (format === 'markdown') {
-      const md = exportToMarkdown(data);
-      const blob = new Blob([md], { type: 'text/markdown' });
-      downloadBlob(blob, `${data.meta.title || 'document'}.md`);
-    } else if (format === 'pdf') {
-      const md = exportToMarkdown(data);
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-          <head>
-            <title>${data.meta.title || 'Document'}</title>
-            <style>
-              body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1e293b; line-height: 1.6; }
-              h1 { font-size: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
-              h2 { font-size: 18px; margin-top: 24px; }
-              h3 { font-size: 14px; color: #64748b; }
-              ul { padding-left: 20px; }
-              li { margin: 4px 0; }
-              blockquote { border-left: 3px solid #e2e8f0; margin: 8px 0; padding: 4px 12px; color: #64748b; }
-              code { background: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-size: 13px; }
-              @media print { body { margin: 0; } }
-            </style>
-          </head>
-          <body>${simpleMarkdownToHtml(md)}</body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
-      }
-    }
-  };
-
   // ------ Mode switching -------------------------------------------------
 
   const handleModeChange = (newMode: ViewMode) => {
@@ -645,44 +484,11 @@ export default function DocumentEditorPage({
         onFollowUser={handleFollowUser}
         followingUserId={followingUserId}
       />
-      {/* Following banner */}
-      {followingUserId && (() => {
-        const followed = participants.find(p => (p.userId || p.clientId) === followingUserId);
-        if (!followed) return null;
-        return (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            padding: '6px 16px',
-            background: '#eff6ff',
-            borderBottom: '1px solid #bfdbfe',
-            fontSize: 13,
-            fontWeight: 500,
-            color: '#1d4ed8',
-            flexShrink: 0,
-          }}>
-            <span>Following {followed.displayName}</span>
-            <button
-              onClick={() => setFollowingUserId(null)}
-              style={{
-                background: 'none',
-                border: '1px solid #93c5fd',
-                borderRadius: 4,
-                padding: '2px 8px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#1d4ed8',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Stop
-            </button>
-          </div>
-        );
-      })()}
+      <FollowModeBar
+        followingUserId={followingUserId}
+        participants={participants}
+        onStopFollow={handleStopFollow}
+      />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
         {/* Show demo loader when document is empty */}
@@ -739,6 +545,7 @@ export default function DocumentEditorPage({
               onAddComment={handleAddComment}
               onResolveThread={handleResolveThread}
               onUnresolveThread={handleUnresolveThread}
+              onUpdateCursorInfo={awareness.updateCursorInfo}
             />
           </div>
         )}
@@ -823,13 +630,4 @@ export default function DocumentEditorPage({
       )}
     </div>
   );
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
