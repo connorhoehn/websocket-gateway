@@ -1,4 +1,4 @@
-import { ContainerImage, CpuArchitecture, FargateTaskDefinition, LogDriver, OperatingSystemFamily, ContainerDependencyCondition } from 'aws-cdk-lib/aws-ecs';
+import { ContainerImage, CpuArchitecture, FargateTaskDefinition, LogDriver, OperatingSystemFamily } from 'aws-cdk-lib/aws-ecs';
 import { Construct } from 'constructs';
 import { Role, ServicePrincipal, ManagedPolicy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
@@ -9,9 +9,10 @@ interface TaskDefinitionProps {
   imageUri?: string;
   cognitoUserPoolId?: string;
   cognitoRegion?: string;
+  redisEndpoint: string;
 }
 
-export function createTaskDefinition(scope: Construct, props?: TaskDefinitionProps): FargateTaskDefinition {
+export function createTaskDefinition(scope: Construct, props: TaskDefinitionProps): FargateTaskDefinition {
   const executionRole = new Role(scope, 'TaskExecutionRole', {
     assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
     managedPolicies: [
@@ -31,7 +32,21 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/crdt-snapshots`],
   }));
 
-  // 512 cpu / 1024 MB — split between Redis sidecar + app container
+  // EventBridge permissions — allow publishing social events
+  taskRole.addToPolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['events:PutEvents'],
+    resources: ['*'],
+  }));
+
+  // SQS permissions — allow sending to social queues
+  taskRole.addToPolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['sqs:SendMessage'],
+    resources: [`arn:aws:sqs:${stack.region}:${stack.account}:social-*`],
+  }));
+
+  // 512 cpu / 1024 MB — all allocated to the app container (Redis is a separate service)
   const taskDef = new FargateTaskDefinition(scope, 'TaskDef', {
     executionRole,
     taskRole,
@@ -43,20 +58,8 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
     },
   });
 
-  // Redis sidecar — app connects to localhost:6379, same as local docker-compose
-  const redisContainer = taskDef.addContainer('RedisContainer', {
-    image: ContainerImage.fromRegistry('264161986065.dkr.ecr.us-east-1.amazonaws.com/redis:7-alpine'),
-    memoryLimitMiB: 128,
-    cpu: 128,
-    essential: true,
-    logging: LogDriver.awsLogs({
-      streamPrefix: 'redis',
-      logRetention: RetentionDays.ONE_WEEK,
-    }),
-  });
-
   const environment: { [key: string]: string } = {
-    REDIS_ENDPOINT: 'localhost',
+    REDIS_ENDPOINT: props.redisEndpoint,
     REDIS_PORT: '6379',
   };
 
@@ -74,22 +77,16 @@ export function createTaskDefinition(scope: Construct, props?: TaskDefinitionPro
 
   const imageUri = props?.imageUri || process.env.IMAGE_URI || '264161986065.dkr.ecr.us-east-1.amazonaws.com/websocket-gateway:latest';
 
-  const appContainer = taskDef.addContainer('WebSocketContainer', {
+  taskDef.addContainer('WebSocketContainer', {
     image: ContainerImage.fromRegistry(imageUri),
-    memoryLimitMiB: 896,
-    cpu: 384,
+    memoryLimitMiB: 1024,
+    cpu: 512,
     portMappings: [{ containerPort: 8080 }],
     environment,
     logging: LogDriver.awsLogs({
       streamPrefix: 'websocket-gateway',
       logRetention: RetentionDays.ONE_WEEK,
     }),
-  });
-
-  // Wait for Redis to start before launching the app
-  appContainer.addContainerDependencies({
-    container: redisContainer,
-    condition: ContainerDependencyCondition.START,
   });
 
   return taskDef;

@@ -2,13 +2,11 @@ import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { IService, ICluster } from 'aws-cdk-lib/aws-ecs';
-import { CfnReplicationGroup } from 'aws-cdk-lib/aws-elasticache';
 import { ApplicationLoadBalancer } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 
 export interface DashboardProps {
   ecsService: IService;
   ecsCluster: ICluster;
-  redisCluster?: CfnReplicationGroup;
   alb: ApplicationLoadBalancer;
 }
 
@@ -163,55 +161,7 @@ export function createDashboard(
 
   dashboard.addWidgets(cpuWidget, memoryWidget);
 
-  // Row 5: Redis Health (only if Redis is enabled)
-  if (props.redisCluster) {
-    const redisConnectionsWidget = new cloudwatch.GraphWidget({
-      title: 'Redis Connections',
-      left: [
-        new cloudwatch.Metric({
-          namespace: 'AWS/ElastiCache',
-          metricName: 'CurrConnections',
-          statistic: 'Average',
-          period: cdk.Duration.minutes(5),
-          dimensionsMap: {
-            ReplicationGroupId: props.redisCluster.replicationGroupId || 'websocket-redis',
-          },
-        }),
-      ],
-      width: 12,
-    });
-
-    const redisNetworkWidget = new cloudwatch.GraphWidget({
-      title: 'Redis Network Throughput',
-      left: [
-        new cloudwatch.Metric({
-          namespace: 'AWS/ElastiCache',
-          metricName: 'NetworkBytesIn',
-          statistic: 'Sum',
-          period: cdk.Duration.minutes(5),
-          dimensionsMap: {
-            ReplicationGroupId: props.redisCluster.replicationGroupId || 'websocket-redis',
-          },
-          label: 'Bytes In',
-        }),
-        new cloudwatch.Metric({
-          namespace: 'AWS/ElastiCache',
-          metricName: 'NetworkBytesOut',
-          statistic: 'Sum',
-          period: cdk.Duration.minutes(5),
-          dimensionsMap: {
-            ReplicationGroupId: props.redisCluster.replicationGroupId || 'websocket-redis',
-          },
-          label: 'Bytes Out',
-        }),
-      ],
-      width: 12,
-    });
-
-    dashboard.addWidgets(redisConnectionsWidget, redisNetworkWidget);
-  }
-
-  // Row 6: ALB Health
+  // Row 5: ALB Health
   const albResponseTimeWidget = new cloudwatch.GraphWidget({
     title: 'ALB Response Time',
     left: [

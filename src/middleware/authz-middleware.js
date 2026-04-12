@@ -49,6 +49,11 @@ function checkChannelPermission(userContext, channelId, logger = null, metricsCo
         return true;
     }
 
+    // Admins can access all channels
+    if (userContext.isAdmin) {
+        return true;
+    }
+
     // Check if channel is in user's channels array
     if (!userContext.channels.includes(channelId)) {
         // Emit authorization denial metric for CloudWatch alarm

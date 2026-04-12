@@ -1,7 +1,7 @@
 version: '3.8'
 
 # Self-contained local development environment.
-# Includes Redis — no external services or env vars required.
+# Includes Redis + DynamoDB Local — no external services or env vars required.
 # Usage: make dev-local
 
 services:
@@ -10,6 +10,17 @@ services:
     container_name: local-redis
     ports:
       - "6379:6379"
+    networks:
+      - local-network
+
+  dynamodb:
+    image: amazon/dynamodb-local:1.25.0
+    container_name: dynamodb
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
     networks:
       - local-network
 
@@ -26,16 +37,25 @@ services:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=development
       - LOG_LEVEL=debug
-      - ENABLED_SERVICES=chat,presence,cursor,reaction
+      - ENABLED_SERVICES=chat,presence,cursor,reaction,crdt
       - PORT=8080
-      # Fake Cognito values for local dev — auth will reject all tokens,
-      # but the server starts and logs are observable.
+      # Fake Cognito values for local dev
       - COGNITO_REGION=us-east-1
       - COGNITO_USER_POOL_ID=us-east-1_localdev000
+      - SKIP_AUTH=true
+      # DynamoDB Local for CRDT snapshot persistence
+      - LOCALSTACK_ENDPOINT=http://dynamodb:8000
+      - DYNAMODB_CRDT_TABLE=crdt-snapshots
+      - DIRECT_DYNAMO_WRITE=true
+      - SNAPSHOT_INTERVAL_MS=30000
+      - AWS_ACCESS_KEY_ID=DUMMYIDEXAMPLE
+      - AWS_SECRET_ACCESS_KEY=DUMMYEXAMPLEKEY0000000000000000000000000
+      - AWS_REGION=us-east-1
     networks:
       - local-network
     depends_on:
       - redis
+      - dynamodb
     volumes:
       - ./src:/app/src:ro
     command: node src/server.js
@@ -43,3 +63,6 @@ services:
 networks:
   local-network:
     driver: bridge
+
+volumes:
+  dynamodb-data:

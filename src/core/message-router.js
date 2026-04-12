@@ -1,6 +1,7 @@
 // core/message-router.js
 
-const { ValidationError } = require('../validators/message-validator');
+const { ValidationError, MessageValidator } = require('../validators/message-validator');
+const RateLimiter = require('../middleware/rate-limiter');
 
 /**
  * Handles intelligent message routing in a distributed WebSocket system
@@ -13,6 +14,8 @@ class MessageRouter {
         this.redisSubscriber = redisSubscriber;
         this.logger = logger;
         this.sessionService = sessionService; // Optional session service for subscription tracking
+        this.validator = new MessageValidator();
+        this.rateLimiter = new RateLimiter(redisPublisher, logger);
         this.localClients = new Map(); // clientId -> WebSocket connection
         this.subscribedChannels = new Set();
         this.channelSequences = new Map(); // channel -> monotonic sequence counter
@@ -252,7 +255,7 @@ class MessageRouter {
                 });
                 this.sendError(clientId, 'INVALID_JSON', 'Message must be valid JSON');
             } else {
-                this.logger.error(`Message validation error for ${clientId}:`, error);
+                this.logger.error(`Message validation error for ${clientId}:`, { message: error.message, stack: error.stack, rawPreview: typeof rawMessage === 'string' ? rawMessage.slice(0, 200) : 'binary' });
                 this.sendError(clientId, 'INTERNAL_ERROR', 'Failed to process message');
             }
             return null;

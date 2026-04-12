@@ -11,12 +11,16 @@
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.1000.0",
     "@aws-sdk/client-dynamodb": "^3.1000.0",
+    "@aws-sdk/client-eventbridge": "^3.1029.0",
     "@aws-sdk/client-ivschat": "^3.1000.0",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
+    "lib0": "^0.2.117",
     "lru-cache": "^10.4.3",
     "redis": "^4.6.0",
-    "ws": "^8.14.0"
+    "ws": "^8.14.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.30"
   },
   "engines": {
     "node": ">=18.0.0"

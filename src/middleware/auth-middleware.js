@@ -67,6 +67,19 @@ class AuthMiddleware {
      * @returns {Object} User context extracted from token
      */
     async validateToken(req) {
+        // Local dev bypass — skip Cognito validation entirely
+        if (process.env.SKIP_AUTH === 'true') {
+            const url = new URL(req.url, 'http://localhost');
+            const userId = url.searchParams.get('userId') || `dev-user-${Math.random().toString(36).slice(2, 8)}`;
+            this.logger.info(`[SKIP_AUTH] Accepting connection for user: ${userId}`);
+            return {
+                userId,
+                email: `${userId}@local.dev`,
+                channels: [],
+                isAdmin: true
+            };
+        }
+
         try {
             // Extract token from query parameter
             const url = new URL(req.url, 'http://localhost');

@@ -17,7 +17,7 @@ interface FargateServiceProps {
   vpc: Vpc;
   cluster: Cluster;
   taskDef: FargateTaskDefinition;
-  redisSecurityGroup?: SecurityGroup;
+  redisSecurityGroup: SecurityGroup;
 }
 
 interface FargateServiceResult {
@@ -70,17 +70,19 @@ export function createFargateService(
     'Allow HTTPS for VPC endpoints (ECR, CloudWatch)'
   );
 
-  // If Redis security group is provided, allow ECS to connect to Redis
-  if (props.redisSecurityGroup) {
-    props.redisSecurityGroup.addIngressRule(
-      ecsSecurityGroup,
-      Port.tcp(6379),
-      'Allow ECS to connect to Redis'
-    );
-    console.log('Redis connectivity enabled');
-  } else {
-    console.log('Running without Redis - standalone mode');
-  }
+  // Allow ECS tasks to reach the shared Redis service
+  ecsSecurityGroup.addEgressRule(
+    props.redisSecurityGroup,
+    Port.tcp(6379),
+    'Allow outbound to Redis service'
+  );
+
+  // Allow Redis service to accept connections from ECS tasks
+  props.redisSecurityGroup.addIngressRule(
+    ecsSecurityGroup,
+    Port.tcp(6379),
+    'Allow inbound from ECS tasks to Redis'
+  );
 
   const service = new FargateService(scope, 'FargateWebSocketService', {
     cluster: props.cluster,
