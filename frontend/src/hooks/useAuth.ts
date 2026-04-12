@@ -78,21 +78,31 @@ function scheduleTokenRefresh(
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS_AUTH === 'true';
 
 // Each browser tab gets a unique dev identity (persisted in sessionStorage).
-const DEV_NAMES = ['Alice', 'Bob', 'Carol', 'Dave', 'Eve', 'Frank', 'Grace', 'Hank'];
+const DEV_NAMES = [
+  { first: 'Alice', last: 'Chen' },
+  { first: 'Bob', last: 'Martinez' },
+  { first: 'Carol', last: 'Johnson' },
+  { first: 'Dave', last: 'Williams' },
+  { first: 'Eve', last: 'Thompson' },
+  { first: 'Frank', last: 'Davis' },
+  { first: 'Grace', last: 'Wilson' },
+  { first: 'Hank', last: 'Anderson' },
+];
 function getDevIdentity(): { token: string; email: string } {
   const KEY = 'dev_identity';
   const stored = sessionStorage.getItem(KEY);
   if (stored) return JSON.parse(stored);
 
   const idx = Math.floor(Math.random() * DEV_NAMES.length);
-  const name = DEV_NAMES[idx];
+  const { first, last } = DEV_NAMES[idx];
   const suffix = Math.random().toString(36).slice(2, 6);
-  const userId = `dev-${name.toLowerCase()}-${suffix}`;
-  const email = `${name.toLowerCase()}@local.dev`;
+  const userId = `dev-${first.toLowerCase()}-${suffix}`;
+  const email = `${first.toLowerCase()}.${last.toLowerCase()}@local.dev`;
   const payload = btoa(JSON.stringify({
     sub: userId,
     email,
-    given_name: name,
+    given_name: first,
+    family_name: last,
     exp: 9999999999,
   })).replace(/=/g, '');
   const token = `eyJhbGciOiJub25lIn0.${payload}.dev`;

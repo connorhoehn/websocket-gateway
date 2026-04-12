@@ -184,12 +184,17 @@ export const MentionDropdown = forwardRef<MentionDropdownHandle, MentionDropdown
               }}
             >
               <div style={styles.avatar(user.color)}>
-                {getInitials(user.displayName)}
+                {user.type === 'group' ? '#' : getInitials(user.displayName)}
               </div>
               <div style={styles.nameContainer as React.CSSProperties}>
-                <span style={styles.name}>{user.displayName}</span>
-                <span style={styles.onlineDot(user.online)} />
-                {user.mode && <span style={styles.mode}>{user.mode}</span>}
+                <span style={styles.name}>
+                  {user.type === 'group' ? `@${user.displayName.toLowerCase()}` : user.displayName}
+                </span>
+                {user.type === 'user' && <span style={styles.onlineDot(user.online)} />}
+                {user.type === 'user' && user.mode && <span style={styles.mode}>{user.mode}</span>}
+                {user.type === 'group' && user.memberCount != null && (
+                  <span style={styles.mode}>{user.memberCount} members</span>
+                )}
               </div>
             </div>
           ))

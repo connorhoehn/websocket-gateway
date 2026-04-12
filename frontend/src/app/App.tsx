@@ -29,7 +29,8 @@ function decodeDisplayName(idToken: string | null, email: string | null): string
     try {
       const payload = JSON.parse(atob(idToken.split('.')[1])) as Record<string, unknown>;
       if (typeof payload.given_name === 'string' && payload.given_name) {
-        return payload.given_name;
+        const last = typeof payload.family_name === 'string' ? ` ${payload.family_name}` : '';
+        return `${payload.given_name}${last}`;
       }
     } catch { /* ignore decode errors */ }
   }
