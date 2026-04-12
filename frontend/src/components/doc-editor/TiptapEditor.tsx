@@ -329,31 +329,27 @@ export default function TiptapEditor({
       }
     };
 
+    // Only listen to selectionUpdate — NOT 'update' which fires for remote
+    // changes too and creates a feedback loop (remote update → cursor send →
+    // server broadcast → all editors react → repeat).
     editor.on('selectionUpdate', handleTransaction);
-    editor.on('update', handleTransaction);
     // Send initial position
     handleTransaction();
 
     return () => {
       editor.off('selectionUpdate', handleTransaction);
-      editor.off('update', handleTransaction);
     };
-  }, [editor, provider]);
+  }, [editor, provider, sectionId]);
 
-  // Listen for remote awareness changes
+  // Listen for remote awareness changes — only on awareness 'change', NOT editor 'update'
   useEffect(() => {
     if (!provider?.awareness) return;
     const handler = () => updateCursors();
     provider.awareness.on('change', handler);
-    // Also update on editor transactions (scroll, resize)
-    if (editor) {
-      editor.on('update', handler);
-    }
     return () => {
       provider.awareness.off('change', handler);
-      if (editor) editor.off('update', handler);
     };
-  }, [provider, editor, updateCursors]);
+  }, [provider, updateCursors]);
 
   return (
     <div style={wrapperStyle}>

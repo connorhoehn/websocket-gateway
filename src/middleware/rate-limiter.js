@@ -14,6 +14,7 @@ class RateLimiter {
         // Rate limits (messages per second)
         this.limits = {
             cursor: 40,
+            crdt: 500,      // Y.js CRDT updates + awareness need high throughput
             general: 100
         };
     }
@@ -75,7 +76,9 @@ class RateLimiter {
      * @returns {string} - 'cursor' or 'general'
      */
     detectMessageType(message) {
-        return message.service === 'cursor' ? 'cursor' : 'general';
+        if (message.service === 'cursor') return 'cursor';
+        if (message.service === 'crdt') return 'crdt';
+        return 'general';
     }
 }
 

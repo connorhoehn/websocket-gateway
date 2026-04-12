@@ -18,6 +18,7 @@ export class GatewayProvider extends Observable<string> {
 
   private readonly _sendMessage: SendMessage;
   private _synced = false;
+  private _awarenessTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(doc: Y.Doc, channel: string, sendMessage: SendMessage) {
     super();
@@ -40,21 +41,27 @@ export class GatewayProvider extends Observable<string> {
       });
     });
 
-    // Forward local awareness changes to the gateway.
+    // Forward local awareness changes to the gateway (debounced to avoid flooding).
     this.awareness.on('update', ({ added, updated, removed }: {
       added: number[];
       updated: number[];
       removed: number[];
     }) => {
       const changedClients = added.concat(updated, removed);
-      const encoded = encodeAwarenessUpdate(this.awareness, changedClients);
-      const b64 = toBase64(encoded);
-      this._sendMessage({
-        service: 'crdt',
-        action: 'awareness',
-        channel: this.channel,
-        update: b64,
-      });
+      // Only send if local client changed (not remote echoes)
+      if (!changedClients.includes(this.awareness.clientID)) return;
+
+      if (this._awarenessTimer) clearTimeout(this._awarenessTimer);
+      this._awarenessTimer = setTimeout(() => {
+        const encoded = encodeAwarenessUpdate(this.awareness, [this.awareness.clientID]);
+        const b64 = toBase64(encoded);
+        this._sendMessage({
+          service: 'crdt',
+          action: 'awareness',
+          channel: this.channel,
+          update: b64,
+        });
+      }, 50); // 50ms debounce — max 20 awareness updates/second
     });
   }
 
