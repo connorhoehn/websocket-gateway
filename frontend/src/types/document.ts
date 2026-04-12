@@ -45,6 +45,7 @@ export interface Participant {
   color: string;
   mode: 'editor' | 'reviewer' | 'reader';
   currentSectionId: string | null;
+  lastSeen?: number; // Unix ms timestamp of last activity
 }
 
 export type ViewMode = 'editor' | 'ack' | 'reader';

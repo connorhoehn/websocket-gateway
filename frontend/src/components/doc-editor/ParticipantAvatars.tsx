@@ -45,6 +45,15 @@ function modeText(mode: Participant['mode']): string {
   }
 }
 
+function lastSeenText(lastSeen?: number): string {
+  if (!lastSeen) return '';
+  const diff = Math.floor((Date.now() - lastSeen) / 1000);
+  if (diff < 5) return '';  // Active right now — don't show timer
+  if (diff < 60) return `, ${diff}s`;
+  if (diff < 3600) return `, ${Math.floor(diff / 60)}m`;
+  return `, ${Math.floor(diff / 3600)}h`;
+}
+
 function modeBadgeColor(mode: Participant['mode']): { bg: string; text: string } {
   switch (mode) {
     case 'editor':
@@ -155,7 +164,7 @@ function AvatarItem({
       {hovered && (
         <div style={tooltipStyle}>
           <div style={{ fontWeight: 600, marginBottom: 2 }}>{participant.displayName}</div>
-          <div style={{ color: '#94a3b8', fontSize: 11 }}>{modeText(participant.mode)}</div>
+          <div style={{ color: '#94a3b8', fontSize: 11 }}>{modeText(participant.mode)}{lastSeenText(participant.lastSeen)}</div>
           {sectionTitle && (
             <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
               &sect; {sectionTitle}
@@ -214,7 +223,7 @@ function AvatarItem({
           lineHeight: '16px',
         }}
       >
-        {modeText(participant.mode)}
+        {modeText(participant.mode)}{lastSeenText(participant.lastSeen)}
       </span>
 
       {/* Section indicator */}

@@ -198,6 +198,7 @@ export function useCollaborativeDoc(
       color,
       mode,
       currentSectionId: null,
+      lastSeen: Date.now(),
     });
 
     // Subscribe to the document channel
@@ -256,6 +257,7 @@ export function useCollaborativeDoc(
           color: (user.color as string) ?? '#3b82f6',
           mode: user.mode === 'ack' ? 'reviewer' : user.mode === 'reader' ? 'reader' : 'editor',
           currentSectionId: (user.currentSectionId as string | null) ?? null,
+          lastSeen: (user.lastSeen as number) ?? Date.now(),
         });
       });
       // Deduplicate by userId — keep the most recent entry per user

@@ -172,6 +172,7 @@ export default function DocumentEditorPage({
         color,
         mode: mode === 'ack' ? 'ack' : mode,
         currentSectionId: sectionId,
+        lastSeen: Date.now(),
       });
     }
   }, [provider, userId, displayName, color, mode]);
