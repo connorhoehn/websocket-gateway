@@ -443,11 +443,36 @@ class PresenceService {
         this.logger.debug(`Client ${clientId} connected to presence service`);
     }
 
+    // Alias for server.js handleClientDisconnect which calls service.handleDisconnect()
+    async handleDisconnect(clientId) {
+        return this.onClientDisconnect(clientId);
+    }
+
     async onClientDisconnect(clientId) {
-        // Set client as offline
+        // Set client as offline and broadcast to remaining users
         const presenceData = this.clientPresence.get(clientId);
         if (presenceData) {
             await this.setClientOffline(clientId);
+
+            // Broadcast offline status to all channel subscribers
+            const channels = this.clientChannels.get(clientId);
+            if (channels) {
+                const offlineMsg = {
+                    type: 'presence',
+                    action: 'offline',
+                    clientId,
+                    timestamp: new Date().toISOString()
+                };
+                for (const channel of channels) {
+                    if (this.messageRouter) {
+                        await this.messageRouter.sendToChannel(
+                            `presence:${channel}`,
+                            offlineMsg,
+                            clientId
+                        );
+                    }
+                }
+            }
 
             // Clean up after a delay to allow for reconnections
             const timerId = setTimeout(() => {

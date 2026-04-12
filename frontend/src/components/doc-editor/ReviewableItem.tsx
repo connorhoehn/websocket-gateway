@@ -196,7 +196,18 @@ export default function ReviewableItem({ item, onAck, onReject }: ReviewableItem
               <textarea
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Add notes or rejection reason..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (noteText.trim()) handleAck();
+                  }
+                  if (e.key === 'Escape') {
+                    setShowNotes(false);
+                    setNoteText('');
+                  }
+                }}
+                placeholder="Add notes or rejection reason... (Enter to submit, Esc to cancel)"
+                autoFocus
                 style={{
                   width: '100%',
                   minHeight: 60,
@@ -206,8 +217,37 @@ export default function ReviewableItem({ item, onAck, onReject }: ReviewableItem
                   borderRadius: 6,
                   resize: 'vertical',
                   fontFamily: 'inherit',
+                  background: '#fff',
+                  color: '#1e293b',
+                  outline: 'none',
                 }}
               />
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <button
+                  type="button"
+                  style={{ ...btnStyle('#22c55e'), fontSize: 12, padding: '5px 12px' }}
+                  onClick={handleAck}
+                  tabIndex={0}
+                >
+                  Submit & Acknowledge
+                </button>
+                <button
+                  type="button"
+                  style={{ ...btnStyle('#ef4444'), fontSize: 12, padding: '5px 12px' }}
+                  onClick={handleReject}
+                  tabIndex={0}
+                >
+                  Submit & Reject
+                </button>
+                <button
+                  type="button"
+                  style={{ ...btnStyle('#6b7280'), background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', fontSize: 12, padding: '5px 12px' }}
+                  onClick={() => { setShowNotes(false); setNoteText(''); }}
+                  tabIndex={0}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>
