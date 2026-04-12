@@ -1,4 +1,4 @@
-import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { createVpc } from './vpc';
 import { createCluster } from './cluster';
@@ -9,6 +9,18 @@ import { createDashboard } from './dashboard';
 import { createAlarmTopic } from './sns';
 import { createAlarms } from './alarms';
 import { createCognito } from './cognito';
+import {
+  ContainerImage,
+  CpuArchitecture,
+  FargateTaskDefinition,
+  FargateService as EcsFargateService,
+  LogDriver,
+  OperatingSystemFamily,
+} from 'aws-cdk-lib/aws-ecs';
+import { SecurityGroup, Port, SubnetType } from 'aws-cdk-lib/aws-ec2';
+import { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { DnsRecordType, PrivateDnsNamespace } from 'aws-cdk-lib/aws-servicediscovery';
+import { Role, ServicePrincipal, ManagedPolicy } from 'aws-cdk-lib/aws-iam';
 
 export class WebsocketGatewayStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -21,11 +33,81 @@ export class WebsocketGatewayStack extends Stack {
     // Create DynamoDB table for CRDT snapshots
     const crdtTable = createCrdtSnapshotsTable(this, vpc);
 
-    // Task definition includes a Redis sidecar — app connects to localhost:6379
+    // ---- Shared Redis ECS Service with CloudMap discovery ----
+
+    // CloudMap private DNS namespace for service discovery
+    const namespace = new PrivateDnsNamespace(this, 'ServiceNamespace', {
+      name: 'ws.local',
+      vpc,
+    });
+
+    // Redis task definition (standalone service, not a sidecar)
+    const redisExecutionRole = new Role(this, 'RedisExecutionRole', {
+      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
+      managedPolicies: [
+        ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+      ],
+    });
+
+    const redisTaskDef = new FargateTaskDefinition(this, 'RedisTaskDef', {
+      cpu: 256,
+      memoryLimitMiB: 512,
+      executionRole: redisExecutionRole,
+      runtimePlatform: {
+        cpuArchitecture: CpuArchitecture.ARM64,
+        operatingSystemFamily: OperatingSystemFamily.LINUX,
+      },
+    });
+
+    redisTaskDef.addContainer('RedisContainer', {
+      image: ContainerImage.fromRegistry('264161986065.dkr.ecr.us-east-1.amazonaws.com/redis:7-alpine'),
+      memoryLimitMiB: 512,
+      portMappings: [{ containerPort: 6379 }],
+      essential: true,
+      healthCheck: {
+        command: ['CMD', 'redis-cli', 'ping'],
+        interval: Duration.seconds(10),
+        timeout: Duration.seconds(5),
+        retries: 3,
+        startPeriod: Duration.seconds(10),
+      },
+      logging: LogDriver.awsLogs({
+        streamPrefix: 'redis',
+        logRetention: RetentionDays.ONE_WEEK,
+      }),
+    });
+
+    // Security group for the Redis service
+    const redisSecurityGroup = new SecurityGroup(this, 'RedisSecurityGroup', {
+      vpc,
+      description: 'Security group for shared Redis ECS service',
+      allowAllOutbound: true,
+    });
+
+    // Redis Fargate service with CloudMap registration
+    const redisService = new EcsFargateService(this, 'RedisFargateService', {
+      cluster,
+      taskDefinition: redisTaskDef,
+      desiredCount: 1,
+      assignPublicIp: false,
+      vpcSubnets: {
+        subnetType: SubnetType.PRIVATE_ISOLATED,
+      },
+      securityGroups: [redisSecurityGroup],
+      cloudMapOptions: {
+        name: 'redis',
+        cloudMapNamespace: namespace,
+        dnsRecordType: DnsRecordType.A,
+        dnsTtl: Duration.seconds(10),
+      },
+    });
+
+    // ---- WebSocket app task definition (connects to redis.ws.local:6379) ----
     const taskDef = createTaskDefinition(this, {
       dynamodbTableName: crdtTable.tableName,
       cognitoUserPoolId: cognito.userPool.userPoolId,
       cognitoRegion: this.region,
+      redisEndpoint: 'redis.ws.local',
     });
 
     // Grant task role permissions to access DynamoDB table
@@ -35,7 +117,11 @@ export class WebsocketGatewayStack extends Stack {
       vpc,
       cluster,
       taskDef,
+      redisSecurityGroup,
     });
+
+    // Ensure WebSocket service starts after Redis is registered in Cloud Map
+    fargateResources.service.node.addDependency(redisService);
 
     // Create CloudWatch Dashboard
     createDashboard(this, {
@@ -105,6 +191,11 @@ export class WebsocketGatewayStack extends Stack {
     new CfnOutput(this, 'CognitoClientId', {
       value: cognito.userPoolClient.userPoolClientId,
       description: 'Cognito App Client ID',
+    });
+
+    new CfnOutput(this, 'RedisEndpoint', {
+      value: 'redis.ws.local',
+      description: 'Redis service discovery endpoint',
     });
   }
 }

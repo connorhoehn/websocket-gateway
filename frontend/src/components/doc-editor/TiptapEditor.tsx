@@ -1,23 +1,26 @@
 // frontend/src/components/doc-editor/TiptapEditor.tsx
 //
-// Reusable Tiptap editor instance with Yjs collaboration support.
+// Reusable Tiptap editor with Y.js collaboration and custom cursor overlay.
+// Uses awareness protocol for cursor positions, rendered as a React overlay
+// instead of the broken yCursorPlugin/CollaborationCursor extension.
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import Collaboration from '@tiptap/extension-collaboration';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
-import { Plugin } from '@tiptap/pm/state';
-import { DecorationSet } from '@tiptap/pm/view';
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
 import type { Awareness } from 'y-protocols/awareness';
+// Must import from @tiptap/y-tiptap (not y-prosemirror) because Tiptap's
+// Collaboration extension uses its own PluginKey instance from this package.
+// Using y-prosemirror's key would never match the actual sync plugin state.
+import { ySyncPluginKey, absolutePositionToRelativePosition, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap';
 import EditorToolbar from './EditorToolbar';
 
-/** Minimal provider shape needed by the Collaboration Cursor extension. */
+/** Minimal provider shape needed by awareness. */
 export interface CollaborationProvider {
   awareness: Awareness;
 }
@@ -31,10 +34,28 @@ export interface TiptapEditorProps {
   placeholder?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Remote cursor data from awareness
+// ---------------------------------------------------------------------------
+
+interface RemoteCursorInfo {
+  clientId: number;
+  name: string;
+  color: string;
+  // Absolute positions in the ProseMirror doc
+  anchor: number | null;
+  head: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const wrapperStyle: React.CSSProperties = {
   border: '1px solid #e2e8f0',
   borderRadius: 8,
   overflow: 'hidden',
+  position: 'relative',
 };
 
 const editorAreaStyle: React.CSSProperties = {
@@ -42,10 +63,10 @@ const editorAreaStyle: React.CSSProperties = {
   fontSize: 14,
   lineHeight: 1.6,
   color: '#1e293b',
+  position: 'relative',
 };
 
-// ProseMirror needs explicit styling to fill the container and allow multiline editing.
-// Injected once globally since inline styles can't target child class selectors.
+// Inject global ProseMirror styles once
 const PROSEMIRROR_STYLE_ID = 'tiptap-prosemirror-style';
 if (typeof document !== 'undefined' && !document.getElementById(PROSEMIRROR_STYLE_ID)) {
   const style = document.createElement('style');
@@ -66,69 +87,147 @@ if (typeof document !== 'undefined' && !document.getElementById(PROSEMIRROR_STYL
       float: left;
       height: 0;
     }
-    /* Collaboration cursor — colored caret line */
-    .collaboration-cursor__caret {
-      border-left: 2.5px solid;
-      border-right: none;
-      margin-left: -1px;
-      margin-right: -1px;
-      pointer-events: none;
-      position: relative;
-      word-break: normal;
-      opacity: 0.8;
-      display: inline;
-    }
-    /* Collaboration cursor — floating name badge above caret */
-    .collaboration-cursor__label {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      padding: 2px 6px;
-      border-radius: 4px 4px 4px 0;
-      position: absolute;
-      top: -1.8em;
-      left: -2px;
-      white-space: nowrap;
-      color: #fff;
-      pointer-events: none;
-      user-select: none;
-      opacity: 0.9;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      line-height: 1.3;
-      z-index: 20;
+    @keyframes cursorBlink {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 0.3; }
     }
   `;
   document.head.appendChild(style);
 }
 
-/**
- * Safe wrapper around CollaborationCursor that catches the init-time crash.
- * The crash occurs because createDecorations accesses ySyncPluginKey.getState(state).doc
- * during EditorState.reconfigure, before the ySyncPlugin state is initialized.
- * This wrapper intercepts the ProseMirror plugins and wraps their init methods.
- */
-const SafeCollaborationCursor = CollaborationCursor.extend({
-  addProseMirrorPlugins() {
-    const originalPlugins = this.parent?.() ?? [];
-    return originalPlugins.map((plugin: Plugin) => {
-      const spec = { ...plugin.spec };
-      if (spec.state) {
-        const originalInit = spec.state.init;
-        spec.state = {
-          ...spec.state,
-          init(...args: [unknown, unknown]) {
-            try {
-              return originalInit.apply(this, args);
-            } catch {
-              return DecorationSet.empty;
-            }
-          },
-        };
-      }
-      return new Plugin(spec);
-    });
-  },
-});
+// ---------------------------------------------------------------------------
+// Helper: get pixel coordinates for a ProseMirror position
+// ---------------------------------------------------------------------------
+
+function getCoords(view: any, pos: number): { top: number; left: number; height: number } | null {
+  try {
+    if (pos < 0 || pos > view.state.doc.content.size) return null;
+    const coords = view.coordsAtPos(pos);
+    const editorRect = view.dom.getBoundingClientRect();
+    return {
+      top: coords.top - editorRect.top,
+      left: coords.left - editorRect.left,
+      height: coords.bottom - coords.top,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cursor Overlay Component
+// ---------------------------------------------------------------------------
+
+function CursorOverlay({ cursors, editorView }: {
+  cursors: RemoteCursorInfo[];
+  editorView: any;
+}) {
+  if (!editorView) return null;
+
+  return (
+    <>
+      {cursors.map((c) => {
+        if (c.head == null) return null;
+        const coords = getCoords(editorView, c.head);
+        if (!coords) return null;
+
+        const initials = c.name
+          .split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2)
+          || c.name.slice(0, 2).toUpperCase();
+
+        // Selection highlight
+        let selectionEl = null;
+        if (c.anchor != null && c.anchor !== c.head) {
+          const startPos = Math.min(c.anchor, c.head);
+          const endPos = Math.max(c.anchor, c.head);
+          const startCoords = getCoords(editorView, startPos);
+          const endCoords = getCoords(editorView, endPos);
+          if (startCoords && endCoords) {
+            selectionEl = (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: startCoords.top,
+                  left: startCoords.left,
+                  width: Math.max(endCoords.left - startCoords.left, 4),
+                  height: startCoords.height || 18,
+                  background: c.color,
+                  opacity: 0.15,
+                  borderRadius: 2,
+                  pointerEvents: 'none',
+                  zIndex: 5,
+                }}
+              />
+            );
+          }
+        }
+
+        return (
+          <div key={c.clientId} style={{ pointerEvents: 'none' }}>
+            {selectionEl}
+            {/* Cursor caret */}
+            <div
+              style={{
+                position: 'absolute',
+                top: coords.top,
+                left: coords.left - 1,
+                width: 2,
+                height: coords.height || 18,
+                background: c.color,
+                opacity: 0.7,
+                borderRadius: 1,
+                pointerEvents: 'none',
+                zIndex: 10,
+                animation: 'cursorBlink 1.2s ease-in-out infinite',
+              }}
+            />
+            {/* Ghost glow */}
+            <div
+              style={{
+                position: 'absolute',
+                top: coords.top,
+                left: coords.left - 4,
+                width: 8,
+                height: coords.height || 18,
+                background: c.color,
+                opacity: 0.1,
+                borderRadius: 4,
+                pointerEvents: 'none',
+                zIndex: 9,
+              }}
+            />
+            {/* Name badge */}
+            <div
+              style={{
+                position: 'absolute',
+                top: coords.top - 18,
+                left: coords.left - 2,
+                background: c.color,
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '1px 5px',
+                borderRadius: '4px 4px 4px 0',
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                zIndex: 11,
+                opacity: 0.85,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
+              }}
+              title={c.name}
+            >
+              {initials}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
 
 export default function TiptapEditor({
   fragment,
@@ -138,57 +237,126 @@ export default function TiptapEditor({
   editable = true,
   placeholder: placeholderText = 'Start typing...',
 }: TiptapEditorProps) {
-  const hasAwareness = !!provider?.awareness;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Tiptap v2/v3 extension types don't unify cleanly
-  const extensions = useMemo(() => {
-    const exts: any[] = [
-      StarterKit.configure({ history: false } as any),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder: placeholderText }),
-      Collaboration.configure({ document: ydoc, fragment }),
-    ];
-    if (hasAwareness) {
-      exts.push(SafeCollaborationCursor.configure({
-        provider: provider!,
-        user,
-        render: (cursorUser: { name: string; color: string }) => {
-          const cursor = document.createElement('span');
-          cursor.classList.add('collaboration-cursor__caret');
-          cursor.style.borderColor = cursorUser.color;
-
-          const label = document.createElement('span');
-          label.classList.add('collaboration-cursor__label');
-          label.style.backgroundColor = cursorUser.color;
-          // Show initials like "GR" for compact display, matching the TextCursorEditor style
-          const initials = cursorUser.name
-            .split(' ')
-            .map((w: string) => w[0] ?? '')
-            .join('')
-            .toUpperCase()
-            .slice(0, 2) || cursorUser.name.slice(0, 2).toUpperCase();
-          label.textContent = initials;
-          label.title = cursorUser.name;
-          cursor.appendChild(label);
-
-          return cursor;
-        },
-      }));
-    }
-    return exts;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const extensions = useMemo(() => [
+    StarterKit.configure({ history: false } as any),
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    Placeholder.configure({ placeholder: placeholderText }),
+    Collaboration.configure({ document: ydoc, fragment }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ydoc, fragment, hasAwareness]);
+  ], [ydoc, fragment]);
 
   const editor = useEditor({
     extensions,
     editable,
   }, [extensions]);
 
+  // ---- Custom cursor overlay using awareness directly ----
+  const [remoteCursors, setRemoteCursors] = useState<RemoteCursorInfo[]>([]);
+  const editorAreaRef = useRef<HTMLDivElement>(null);
+
+  // Set local awareness user info
+  useEffect(() => {
+    if (!provider?.awareness) return;
+    provider.awareness.setLocalStateField('user', user);
+  }, [provider, user]);
+
+  // Listen for awareness changes and extract cursor positions
+  const updateCursors = useCallback(() => {
+    if (!provider?.awareness || !editor?.view) return;
+
+    const states = provider.awareness.getStates();
+    const localClientId = provider.awareness.clientID;
+    const cursors: RemoteCursorInfo[] = [];
+
+    states.forEach((state: any, clientId: number) => {
+      if (clientId === localClientId) return;
+      const u = state.user;
+      if (!u || !state.cursor) return;
+
+      try {
+        const ystate = ySyncPluginKey.getState(editor.view.state);
+        if (!ystate?.type || !ystate?.binding?.mapping) return;
+
+        const anchor = relativePositionToAbsolutePosition(
+          ystate.doc, ystate.type,
+          Y.createRelativePositionFromJSON(state.cursor.anchor),
+          ystate.binding.mapping
+        );
+        const head = relativePositionToAbsolutePosition(
+          ystate.doc, ystate.type,
+          Y.createRelativePositionFromJSON(state.cursor.head),
+          ystate.binding.mapping
+        );
+
+        cursors.push({
+          clientId,
+          name: u.name || `User ${clientId}`,
+          color: u.color || '#3b82f6',
+          anchor,
+          head,
+        });
+      } catch {
+        // ySyncPlugin not ready yet
+      }
+    });
+
+    setRemoteCursors(cursors);
+  }, [provider, editor]);
+
+  // Update local cursor position in awareness when selection changes
+  useEffect(() => {
+    if (!editor?.view || !provider?.awareness) return;
+
+    const handleTransaction = () => {
+      try {
+        const ystate = ySyncPluginKey.getState(editor.view.state);
+        if (!ystate?.type || !ystate?.binding?.mapping) return;
+
+        const { anchor, head } = editor.view.state.selection;
+        const yAnchor = absolutePositionToRelativePosition(anchor, ystate.type, ystate.binding.mapping);
+        const yHead = absolutePositionToRelativePosition(head, ystate.type, ystate.binding.mapping);
+
+        provider.awareness.setLocalStateField('cursor', { anchor: yAnchor, head: yHead });
+      } catch {
+        // ySyncPlugin not ready
+      }
+    };
+
+    editor.on('selectionUpdate', handleTransaction);
+    editor.on('update', handleTransaction);
+    // Send initial position
+    handleTransaction();
+
+    return () => {
+      editor.off('selectionUpdate', handleTransaction);
+      editor.off('update', handleTransaction);
+    };
+  }, [editor, provider]);
+
+  // Listen for remote awareness changes
+  useEffect(() => {
+    if (!provider?.awareness) return;
+    const handler = () => updateCursors();
+    provider.awareness.on('change', handler);
+    // Also update on editor transactions (scroll, resize)
+    if (editor) {
+      editor.on('update', handler);
+    }
+    return () => {
+      provider.awareness.off('change', handler);
+      if (editor) editor.off('update', handler);
+    };
+  }, [provider, editor, updateCursors]);
+
   return (
     <div style={wrapperStyle}>
       {editable && <EditorToolbar editor={editor} />}
-      <div style={editorAreaStyle}>
+      <div ref={editorAreaRef} style={editorAreaStyle}>
         <EditorContent editor={editor} />
+        {/* Custom cursor overlay — rendered as React elements, not ProseMirror decorations */}
+        <CursorOverlay cursors={remoteCursors} editorView={editor?.view} />
       </div>
     </div>
   );

@@ -142,15 +142,32 @@ export default function ReviewableItem({ item, onAck, onReject }: ReviewableItem
       </div>
 
       {item.status === 'acked' && (
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-          Acked by {item.ackedBy} at {item.ackedAt}
-          {item.notes && <span> &mdash; {item.notes}</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+          <span style={{
+            width: 20, height: 20, borderRadius: '50%', background: '#22c55e',
+            color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 700, flexShrink: 0,
+          }}>✓</span>
+          <span>
+            Approved by <strong style={{ color: '#334155' }}>{item.ackedBy?.slice(0, 8) ?? 'user'}</strong>
+            {item.ackedAt && <> · {new Date(item.ackedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
+            {item.notes && <> — {item.notes}</>}
+          </span>
         </div>
       )}
 
       {item.status === 'rejected' && (
-        <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 4 }}>
-          Rejected{item.notes && <>: {item.notes}</>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#991b1b', marginBottom: 4 }}>
+          <span style={{
+            width: 20, height: 20, borderRadius: '50%', background: '#ef4444',
+            color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 10, fontWeight: 700, flexShrink: 0,
+          }}>✕</span>
+          <span>
+            Rejected by <strong>{item.ackedBy?.slice(0, 8) ?? 'user'}</strong>
+            {item.ackedAt && <> · {new Date(item.ackedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
+            {item.notes && <> — {item.notes}</>}
+          </span>
         </div>
       )}
 

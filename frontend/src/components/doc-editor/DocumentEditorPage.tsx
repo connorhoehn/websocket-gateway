@@ -115,16 +115,16 @@ export default function DocumentEditorPage({
   const handleAckItem = useCallback((sectionId: string, itemId: string) => {
     const section = sections.find(s => s.id === sectionId);
     const item = section?.items.find(i => i.id === itemId);
-    ackItem(sectionId, itemId, userId);
+    ackItem(sectionId, itemId, displayName);
     activityPublish('doc.ack', { itemText: item?.text, sectionId });
-  }, [ackItem, userId, sections, activityPublish]);
+  }, [ackItem, displayName, sections, activityPublish]);
 
   const handleRejectItem = useCallback((sectionId: string, itemId: string) => {
     const section = sections.find(s => s.id === sectionId);
     const item = section?.items.find(i => i.id === itemId);
-    rejectItem(sectionId, itemId, userId);
+    rejectItem(sectionId, itemId, displayName);
     activityPublish('doc.reject', { itemText: item?.text, sectionId });
-  }, [rejectItem, userId, sections, activityPublish]);
+  }, [rejectItem, displayName, sections, activityPublish]);
 
   const handleAddItem = useCallback((sectionId: string, item: Omit<import('../../types/document').TaskItem, 'id'>) => {
     const id = crypto.randomUUID();

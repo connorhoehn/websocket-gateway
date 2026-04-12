@@ -137,9 +137,9 @@ class DistributedWebSocketServer {
         this.logger.info(`Server initialized with node ID: ${this.nodeManager.nodeId}`);
     }
 
-    async initializeRedis(retries = 5) {
-        this.logger.info(`Attempting to connect to Redis at: ${config.redis.url} (attempt ${6 - retries})`);
-        
+    async initializeRedis(retries = 3) {
+        this.logger.info(`Attempting to connect to Redis at: ${config.redis.url} (attempt ${4 - retries})`);
+
         try {
             this.redisPublisher = redis.createClient({
                 url: config.redis.url,
@@ -791,18 +791,24 @@ class DistributedWebSocketServer {
     }
 
     async start() {
-        await this.initialize();
-        
         const port = config.server.port;
-        this.httpServer.listen(port, () => {
-            this.logger.info(`🚀 Distributed WebSocket Server running on port ${port}`);
-            this.logger.info(`📊 Health check: http://localhost:${port}/health`);
-            this.logger.info(`🔍 Cluster info: http://localhost:${port}/cluster`);
-            this.logger.info(`📈 Stats: http://localhost:${port}/stats`);
-            this.logger.info(`🆔 Node ID: ${this.nodeManager.nodeId}`);
-            this.logger.info(`🔧 Enabled services: ${config.server.enabledServices.join(', ')}`);
-            this.logger.info(`💾 Redis: ${this.redisConnected ? 'Connected' : 'Standalone mode'}`);
+
+        // Start HTTP server FIRST so health checks pass while services initialize.
+        // This prevents ECS circuit breaker from killing the task during Redis retry.
+        await new Promise(resolve => {
+            this.httpServer.listen(port, () => {
+                this.logger.info(`🚀 HTTP server listening on port ${port} (initializing services...)`);
+                resolve();
+            });
         });
+
+        await this.initialize();
+
+        this.logger.info(`✅ All services initialized`);
+        this.logger.info(`📊 Health check: http://localhost:${port}/health`);
+        this.logger.info(`🆔 Node ID: ${this.nodeManager.nodeId}`);
+        this.logger.info(`🔧 Enabled services: ${config.server.enabledServices.join(', ')}`);
+        this.logger.info(`💾 Redis: ${this.redisConnected ? 'Connected' : 'Standalone mode'}`);
     }
 }
 
