@@ -30,6 +30,9 @@ const SessionService = require("./services/session-service");
 const SocialService = require("./services/social-service");
 const ActivityService = require("./services/activity-service");
 
+// Utilities
+const { createDynamoClient } = require('./utils/dynamo-client');
+
 // Middleware
 const { handleReconnection } = require("./middleware/reconnection-handler");
 
@@ -217,8 +220,11 @@ class DistributedWebSocketServer {
     async initializeServices() {
         this.logger.info(`Initializing services: ${config.server.enabledServices.join(', ')}`);
 
+        // Create shared DynamoDB client for all services
+        this.dynamoClient = createDynamoClient();
+
         if (config.server.enabledServices.includes('chat')) {
-            const chatService = new ChatService(this.messageRouter, this.logger, this.metricsCollector);
+            const chatService = new ChatService(this.messageRouter, this.logger, this.metricsCollector, this.dynamoClient);
             this.services.set('chat', chatService);
             this.logger.info('✅ Chat service initialized');
         }
@@ -242,7 +248,7 @@ class DistributedWebSocketServer {
         }
 
         if (config.server.enabledServices.includes('crdt')) {
-            const crdtService = new CRDTService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher);
+            const crdtService = new CRDTService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher, this.dynamoClient);
             this.services.set('crdt', crdtService);
             this.logger.info('✅ CRDT service initialized');
         }
@@ -253,7 +259,7 @@ class DistributedWebSocketServer {
         this.logger.info('✅ Social service initialized');
 
         // Activity service is always enabled — required for real-time activity feed
-        const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher);
+        const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher, this.dynamoClient);
         this.services.set('activity', activityService);
         this.logger.info('✅ Activity service initialized');
     }

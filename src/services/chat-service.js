@@ -4,6 +4,7 @@
  * Supports both local and distributed modes based on configuration
  */
 
+const { PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
 const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { LRUCache } = require('lru-cache');
@@ -43,10 +44,13 @@ function validateMetadata(metadata, logger) {
 }
 
 class ChatService {
-    constructor(messageRouter, logger, metricsCollector = null) {
+    constructor(messageRouter, logger, metricsCollector = null, dynamoClient = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
         this.metricsCollector = metricsCollector;
+        this.dynamoClient = dynamoClient;
+        this.chatTableName = process.env.DYNAMODB_CHAT_TABLE || 'chat-messages';
+        this.TTL_90_DAYS_SEC = 90 * 24 * 60 * 60;
 
         // Local state management
         this.clientChannels = new Map(); // clientId -> Set of channels
@@ -222,6 +226,10 @@ class ChatService {
             // Store message in local history
             this.addToChannelHistory(channel, messageData);
 
+            // Fire-and-forget persist to DynamoDB
+            this._persistMessage(messageData).catch(err =>
+                this.logger.error('Failed to persist chat message:', err.message));
+
             // Broadcast message to channel subscribers (including sender)
             await this.broadcastMessage(channel, messageData);
 
@@ -248,8 +256,8 @@ class ChatService {
         }
 
         try {
-            const history = this.getChannelHistory(channel, limit);
-            
+            const history = await this.getChannelHistory(channel, limit);
+
             this.sendToClient(clientId, {
                 type: 'chat',
                 action: 'history',
@@ -282,14 +290,26 @@ class ChatService {
         cache.set(messageData.id, messageData);
     }
 
-    getChannelHistory(channel, limit = CHAT_DEFAULT_HISTORY_LIMIT) {
+    async getChannelHistory(channel, limit = CHAT_DEFAULT_HISTORY_LIMIT) {
         const cache = this.getChannelCache(channel);
         const allMessages = Array.from(cache.values());
-        return allMessages.slice(-limit); // Return last 'limit' messages
+        if (allMessages.length > 0) {
+            return allMessages.slice(-limit);
+        }
+
+        // LRU cache empty — fall back to DynamoDB
+        const dynamoMessages = await this._loadHistoryFromDynamo(channel, limit);
+        if (dynamoMessages.length > 0) {
+            // Backfill LRU cache
+            for (const msg of dynamoMessages) {
+                cache.set(msg.id, msg);
+            }
+        }
+        return dynamoMessages;
     }
 
     async sendChannelHistory(clientId, channel) {
-        const history = this.getChannelHistory(channel, CHAT_JOIN_HISTORY_LIMIT);
+        const history = await this.getChannelHistory(channel, CHAT_JOIN_HISTORY_LIMIT);
         if (history.length > 0) {
             this.sendToClient(clientId, {
                 type: 'chat',
@@ -298,6 +318,57 @@ class ChatService {
                 messages: history,
                 timestamp: new Date().toISOString()
             });
+        }
+    }
+
+    async _persistMessage(messageData) {
+        if (!this.dynamoClient) return;
+
+        const item = {
+            channelId: { S: messageData.channel },
+            messageId: { S: messageData.id },
+            clientId: { S: messageData.clientId },
+            message: { S: messageData.message },
+            timestamp: { S: messageData.timestamp },
+            ttl: { N: String(Math.floor(Date.now() / 1000) + this.TTL_90_DAYS_SEC) },
+        };
+
+        if (messageData.metadata && Object.keys(messageData.metadata).length > 0) {
+            item.metadata = { S: JSON.stringify(messageData.metadata) };
+        }
+
+        await this.dynamoClient.send(new PutItemCommand({
+            TableName: this.chatTableName,
+            Item: item,
+        }));
+    }
+
+    async _loadHistoryFromDynamo(channel, limit) {
+        if (!this.dynamoClient) return [];
+
+        try {
+            const result = await this.dynamoClient.send(new QueryCommand({
+                TableName: this.chatTableName,
+                KeyConditionExpression: 'channelId = :ch',
+                ExpressionAttributeValues: { ':ch': { S: channel } },
+                ScanIndexForward: false,
+                Limit: limit,
+            }));
+
+            const items = (result.Items || []).map(item => ({
+                id: item.messageId.S,
+                clientId: item.clientId.S,
+                channel: item.channelId.S,
+                message: item.message.S,
+                metadata: item.metadata ? JSON.parse(item.metadata.S) : {},
+                timestamp: item.timestamp.S,
+            }));
+
+            // Query returned newest-first; reverse to chronological order
+            return items.reverse();
+        } catch (err) {
+            this.logger.error('DynamoDB history load failed:', err.message);
+            return [];
         }
     }
 

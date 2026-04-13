@@ -137,6 +137,7 @@ local_resource(
         $CT --table-name social-likes --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-likes exists"
         $CT --table-name user-activity --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "user-activity exists"
         $CT --table-name crdt-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "crdt-documents exists"
+        $CT --table-name chat-messages --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=messageId,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=messageId,KeyType=RANGE 2>/dev/null || echo "chat-messages exists"
 
         echo "All tables ready"
     ''',

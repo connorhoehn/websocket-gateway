@@ -31,7 +31,7 @@ const IdleEvictionManager = require('./crdt/IdleEvictionManager');
 const config = require('./crdt/config');
 
 class CRDTService {
-    constructor(messageRouter, logger, metricsCollector = null, redisClient = null) {
+    constructor(messageRouter, logger, metricsCollector = null, redisClient = null, dynamoClient = null) {
         this.messageRouter = messageRouter;
         this.logger = logger;
         this.metricsCollector = metricsCollector;
@@ -40,15 +40,19 @@ class CRDTService {
         // ---------------------------------------------------------------
         // AWS clients
         // ---------------------------------------------------------------
-        const dynamoOpts = { region: process.env.AWS_REGION || 'us-east-1' };
-        if (process.env.LOCALSTACK_ENDPOINT) {
-            dynamoOpts.endpoint = process.env.LOCALSTACK_ENDPOINT;
-            dynamoOpts.credentials = {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'local',
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
-            };
+        if (dynamoClient) {
+            this.dynamoClient = dynamoClient;
+        } else {
+            const dynamoOpts = { region: process.env.AWS_REGION || 'us-east-1' };
+            if (process.env.LOCALSTACK_ENDPOINT) {
+                dynamoOpts.endpoint = process.env.LOCALSTACK_ENDPOINT;
+                dynamoOpts.credentials = {
+                    accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'local',
+                    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
+                };
+            }
+            this.dynamoClient = new DynamoDBClient(dynamoOpts);
         }
-        this.dynamoClient = new DynamoDBClient(dynamoOpts);
 
         this.eventBridgeClient = new EventBridgeClient({
             region: process.env.AWS_REGION || 'us-east-1',

@@ -218,13 +218,20 @@ class DocumentMetadataService {
 
         if (this._isRedisAvailable()) {
             const raw = await this.redisClient.get(`doc:meta:${documentId}`);
-            if (!raw) return null;
-            existing = JSON.parse(raw);
-        } else {
-            existing = this.docMetaFallback.get(documentId);
-            if (!existing) return null;
-            existing = { ...existing }; // shallow copy for safe merge
+            if (raw) existing = JSON.parse(raw);
         }
+
+        if (!existing) {
+            existing = this.docMetaFallback.get(documentId);
+            if (existing) existing = { ...existing }; // shallow copy for safe merge
+        }
+
+        // DynamoDB fallback when both Redis and in-memory miss
+        if (!existing) {
+            existing = await this._loadDocumentMetaFromDynamo(documentId);
+        }
+
+        if (!existing) return null;
 
         // Merge only allowed fields
         const allowedFields = ['title', 'status', 'description', 'icon', 'type'];

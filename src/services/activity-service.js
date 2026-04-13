@@ -13,6 +13,7 @@
  *
  * On connect, clients are auto-subscribed to 'activity:broadcast' for global activity events.
  */
+const { PutItemCommand } = require('@aws-sdk/client-dynamodb');
 const {
     ACTIVITY_MAX_HISTORY_ITEMS,
     ACTIVITY_HISTORY_TTL_SEC,
@@ -23,11 +24,13 @@ class ActivityService {
   static HISTORY_KEY_PREFIX = 'activity:history:';
   static MAX_HISTORY_ITEMS = ACTIVITY_MAX_HISTORY_ITEMS;
 
-  constructor(messageRouter, logger, metricsCollector = null, redisClient = null) {
+  constructor(messageRouter, logger, metricsCollector = null, redisClient = null, dynamoClient = null) {
     this.messageRouter = messageRouter;
     this.logger = logger;
     this.metricsCollector = metricsCollector;
     this.redisClient = redisClient;
+    this.dynamoClient = dynamoClient;
+    this.activityTableName = process.env.DYNAMODB_ACTIVITY_TABLE || 'user-activity';
     this.clientChannels = new Map(); // clientId -> Set of channelIds
   }
 
@@ -143,6 +146,10 @@ class ActivityService {
     this._persistEvent(ActivityService.BROADCAST_CHANNEL, enrichedPayload)
       .catch(err => this.logger.error('Failed to persist activity event to Redis:', err.message));
 
+    // Persist event to DynamoDB (fire-and-forget)
+    this._persistEventToDynamo(enrichedPayload).catch(err =>
+        this.logger.error('Failed to persist activity event to DynamoDB:', err.message));
+
     // Broadcast to all subscribers of activity:broadcast
     if (this.messageRouter) {
       await this.messageRouter.sendToChannel(ActivityService.BROADCAST_CHANNEL, broadcastMessage);
@@ -191,6 +198,28 @@ class ActivityService {
    */
   _isRedisAvailable() {
     return this.redisClient && this.messageRouter && this.messageRouter.redisAvailable !== false;
+  }
+
+  /**
+   * Persist an activity event to DynamoDB for durable storage.
+   * Skips if no dynamoClient or no userId on the payload.
+   */
+  async _persistEventToDynamo(enrichedPayload) {
+    if (!this.dynamoClient) return;
+    if (!enrichedPayload.userId) return;
+
+    const item = {
+      userId: { S: enrichedPayload.userId },
+      timestamp: { S: `${enrichedPayload.timestamp}#${enrichedPayload.id || Date.now()}` },
+      eventType: { S: enrichedPayload.eventType },
+      detail: { S: JSON.stringify(enrichedPayload.detail || {}) },
+      displayName: { S: enrichedPayload.displayName || 'anonymous' },
+    };
+
+    await this.dynamoClient.send(new PutItemCommand({
+      TableName: this.activityTableName,
+      Item: item,
+    }));
   }
 
   /**

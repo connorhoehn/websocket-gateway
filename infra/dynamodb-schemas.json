@@ -106,6 +106,13 @@
           "projection": "ALL"
         }
       ]
+    },
+    {
+      "tableName": "chat-messages",
+      "hashKey": { "name": "channelId", "type": "S" },
+      "rangeKey": { "name": "messageId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "_note": "Chat message persistence. messageId is base36(timestamp)+random for chronological sort. TTL attribute: ttl (epoch seconds, 90-day retention)."
     }
   ]
 }
