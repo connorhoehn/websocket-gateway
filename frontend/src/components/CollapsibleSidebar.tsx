@@ -217,7 +217,7 @@ export function CollapsibleSidebar({
   ensureKeyframes();
 
   const isConnected = connectionState === 'connected';
-  const recentEvents = useMemo(() => activityEvents.slice(0, 10), [activityEvents]);
+  const recentEvents = useMemo(() => activityEvents.slice(0, 5), [activityEvents]);
   const recentDocs = useMemo(() => documents.slice(0, 5), [documents]);
 
   return (
@@ -348,7 +348,20 @@ export function CollapsibleSidebar({
 
       {/* ---- Activity ---- */}
       <CollapsibleSection title="Activity">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingBottom: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingBottom: 4, position: 'relative' }}>
+          {/* Fade gradient overlay at bottom */}
+          {recentEvents.length > 3 && (
+            <div style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 32,
+              background: 'linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1))',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }} />
+          )}
           {recentEvents.length === 0 && (
             <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
               No recent activity

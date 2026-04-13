@@ -637,12 +637,7 @@ export default function DocumentEditorPage({
           />
         )}
 
-        {/* Activity feed — visible in all modes when document has content */}
-        {!isEmpty && (
-          <div style={{ maxWidth: 800, margin: '1.5rem auto 0' }}>
-            <ActivityFeed events={activityEvents} participants={participants} />
-          </div>
-        )}
+        {/* Activity feed removed — shown in the global left sidebar instead */}
       </div>
 
       {/* Version history sidebar */}
