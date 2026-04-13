@@ -220,15 +220,23 @@ class CRDTService {
                 }
                 case 'restoreSnapshot': {
                     if (!this._requireAuth(clientId, 'restoreSnapshot')) return;
-                    const restored = await this.snapshotManager.handleRestoreSnapshot(data.channel, data.timestamp);
-                    if (restored) {
-                        // Broadcast restored state to all subscribers on this channel
-                        this.messageRouter.sendToChannel(data.channel, {
-                            type: 'crdt', action: 'snapshot', channel: data.channel, update: restored.base64State
-                        });
-                        this.sendToClient(clientId, { type: 'crdt', action: 'snapshotRestored', channel: data.channel, timestamp: restored.restoredTimestamp });
-                    } else {
-                        this.sendError(clientId, 'Snapshot not found or restore failed');
+                    try {
+                        this.logger.info(`Restore requested for channel=${data.channel}, timestamp=${data.timestamp}`);
+                        const restored = await this.snapshotManager.handleRestoreSnapshot(data.channel, data.timestamp);
+                        if (restored) {
+                            // Broadcast restored state to all subscribers on this channel
+                            await this.messageRouter.sendToChannel(data.channel, {
+                                type: 'crdt:snapshot', channel: data.channel, snapshot: restored.base64State
+                            });
+                            this.sendToClient(clientId, { type: 'crdt', action: 'snapshotRestored', channel: data.channel, timestamp: restored.restoredTimestamp });
+                            this.logger.info(`Restore complete for channel=${data.channel}`);
+                        } else {
+                            this.logger.warn(`Restore failed: snapshot not found for channel=${data.channel}, timestamp=${data.timestamp}`);
+                            this.sendError(clientId, 'Snapshot not found or restore failed');
+                        }
+                    } catch (restoreErr) {
+                        this.logger.error(`Restore error for channel=${data.channel}:`, restoreErr.message);
+                        this.sendError(clientId, 'Restore failed: ' + restoreErr.message);
                     }
                     return;
                 }

@@ -67,7 +67,7 @@ const badgeStyle = (bg: string): React.CSSProperties => ({
   fontSize: 11,
   fontWeight: 600,
   borderRadius: 12,
-  background: bg,
+  backgroundColor: bg,
   color: '#fff',
   textTransform: 'capitalize',
   lineHeight: 1.4,
