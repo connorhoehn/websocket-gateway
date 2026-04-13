@@ -1,6 +1,6 @@
 // frontend/src/components/doc-editor/VersionHistoryPanel.tsx
 //
-// Slide-out sidebar for browsing, previewing, and restoring document versions.
+// Slide-out sidebar for browsing and comparing document versions (view-only).
 
 import type { VersionEntry, SnapshotSection } from '../../hooks/useVersionHistory';
 import DiffViewer from './DiffViewer';
@@ -15,7 +15,6 @@ interface VersionHistoryPanelProps {
   previewTimestamp: number | null;
   onFetch: () => void;
   onPreview: (timestamp: number) => void;
-  onRestore: (timestamp: number) => void;
   onClearPreview: () => void;
   onClose: () => void;
   /** Save a named version. */
@@ -130,25 +129,6 @@ const timestampLabel: React.CSSProperties = {
   color: '#9ca3af',
 };
 
-const footerStyle: React.CSSProperties = {
-  padding: '0.75rem 1rem',
-  borderTop: '1px solid #e5e7eb',
-  flexShrink: 0,
-};
-
-const restoreBtnStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 14px',
-  fontSize: 13,
-  fontWeight: 600,
-  border: 'none',
-  borderRadius: 6,
-  background: '#3b82f6',
-  color: '#fff',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
 const compareBtnStyle: React.CSSProperties = {
   padding: '3px 8px',
   fontSize: 11,
@@ -208,7 +188,6 @@ export default function VersionHistoryPanel({
   previewTimestamp,
   onFetch: _onFetch,
   onPreview,
-  onRestore,
   onClearPreview,
   onClose,
   onSaveVersion,
@@ -218,17 +197,6 @@ export default function VersionHistoryPanel({
   compareTimestamp,
   currentSections,
 }: VersionHistoryPanelProps) {
-  const handleRestore = () => {
-    if (previewTimestamp == null) return;
-    const confirmed = window.confirm(
-      'Restore this version? The current document will be replaced with this snapshot.',
-    );
-    if (confirmed) {
-      onRestore(previewTimestamp);
-      onClearPreview();
-    }
-  };
-
   const handleClose = () => {
     onClearPreview();
     onClearCompare();
@@ -327,14 +295,6 @@ export default function VersionHistoryPanel({
         />
       )}
 
-      {/* Footer: restore button */}
-      {previewTimestamp != null && (
-        <div style={footerStyle}>
-          <button type="button" style={restoreBtnStyle} onClick={handleRestore}>
-            Restore this version
-          </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -448,6 +448,22 @@ export default function DocumentEditorPage({
     status: 'draft',
   };
 
+  // ------ Finalize / unlock -----------------------------------------------
+
+  const isFinalized = headerMeta.status === 'final';
+
+  const handleFinalize = useCallback(() => {
+    if (window.confirm('Finalize this document? It will become read-only.')) {
+      updateMeta({ status: 'final' });
+      activityPublish('doc.finalize', { documentId, documentTitle: meta?.title });
+    }
+  }, [updateMeta, activityPublish, documentId, meta?.title]);
+
+  const handleUnlock = useCallback(() => {
+    updateMeta({ status: 'draft' });
+    activityPublish('doc.unlock', { documentId, documentTitle: meta?.title });
+  }, [updateMeta, activityPublish, documentId, meta?.title]);
+
   // ------ Render ---------------------------------------------------------
 
   const isEmpty = sections.length === 0 && !demoLoaded;
@@ -471,6 +487,8 @@ export default function DocumentEditorPage({
         onBack={onBack}
         onFollowUser={handleFollowUser}
         followingUserId={followingUserId}
+        onFinalize={handleFinalize}
+        onUnlock={handleUnlock}
       />
       <FollowModeBar
         followingUserId={followingUserId}
@@ -479,6 +497,23 @@ export default function DocumentEditorPage({
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+        {/* Read-only banner for finalized documents */}
+        {isFinalized && mode === 'editor' && (
+          <div style={{
+            background: '#fefce8',
+            border: '1px solid #fde68a',
+            borderRadius: 8,
+            padding: '10px 16px',
+            marginBottom: 12,
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#92400e',
+            textAlign: 'center',
+          }}>
+            This document has been finalized and is read-only
+          </div>
+        )}
+
         {/* Show demo loader when document is empty */}
         {isEmpty && (
           <div style={{
@@ -522,7 +557,7 @@ export default function DocumentEditorPage({
                 ydoc={ydoc}
                 provider={provider}
                 user={{ name: displayName, color }}
-                editable
+                editable={!isFinalized}
                 onUpdateSection={updateSection}
                 onAddItem={handleAddItem}
                 onUpdateItem={updateItem}
@@ -648,7 +683,6 @@ export default function DocumentEditorPage({
           previewTimestamp={versionHistory.previewTimestamp}
           onFetch={versionHistory.fetchVersions}
           onPreview={versionHistory.previewVersion}
-          onRestore={versionHistory.restoreVersion}
           onClearPreview={versionHistory.clearPreview}
           onClose={() => setShowHistory(false)}
           onSaveVersion={versionHistory.saveVersion}

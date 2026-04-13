@@ -23,6 +23,8 @@ interface DocumentHeaderProps {
   onBack?: () => void;
   onFollowUser?: (participant: Participant) => void;
   followingUserId?: string | null;
+  onFinalize?: () => void;
+  onUnlock?: () => void;
 }
 
 const headerStyle: React.CSSProperties = {
@@ -161,6 +163,8 @@ export default function DocumentHeader({
   onBack,
   onFollowUser,
   followingUserId,
+  onFinalize,
+  onUnlock,
 }: DocumentHeaderProps) {
   const [showExport, setShowExport] = useState(false);
 
@@ -265,6 +269,33 @@ export default function DocumentHeader({
         >
           History
         </button>
+        {meta.status === 'final' ? (
+          <button
+            type="button"
+            style={{
+              ...exportBtnStyle,
+              background: '#f0fdf4',
+              color: '#065f46',
+              border: '1px solid #86efac',
+            }}
+            onClick={onUnlock}
+          >
+            Unlock
+          </button>
+        ) : (
+          <button
+            type="button"
+            style={{
+              ...exportBtnStyle,
+              background: '#f0fdf4',
+              color: '#065f46',
+              border: '1px solid #86efac',
+            }}
+            onClick={onFinalize}
+          >
+            Finalize
+          </button>
+        )}
         <div style={{ position: 'relative' }}>
           <button
             type="button"
