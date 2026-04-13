@@ -700,6 +700,7 @@ export default function DocumentEditorPage({
           compareSections={versionHistory.compareSections}
           compareTimestamp={versionHistory.compareTimestamp}
           currentSections={ydoc ? versionHistory.extractSections(ydoc) : []}
+          onRestore={versionHistory.restoreVersion}
         />
       )}
 

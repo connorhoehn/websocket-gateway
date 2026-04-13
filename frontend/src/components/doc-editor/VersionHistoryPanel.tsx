@@ -29,6 +29,8 @@ interface VersionHistoryPanelProps {
   compareTimestamp: number | null;
   /** Current document sections for diff. */
   currentSections: SnapshotSection[];
+  /** Restore to a historical version. */
+  onRestore?: (timestamp: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +198,7 @@ export default function VersionHistoryPanel({
   compareSections,
   compareTimestamp,
   currentSections,
+  onRestore,
 }: VersionHistoryPanelProps) {
   const handleClose = () => {
     onClearPreview();
@@ -293,6 +296,43 @@ export default function VersionHistoryPanel({
           newSections={currentSections}
           onClose={onClearCompare}
         />
+      )}
+
+      {/* Restore button — shown when a version is selected for compare */}
+      {onRestore && compareTimestamp != null && (
+        <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid #e5e7eb', flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm(
+                'Restore this version?\n\n' +
+                'A checkpoint of the current state will be saved first. ' +
+                'All connected users will see the restored content. ' +
+                'Comments and reviews added after this version may be lost.'
+              )) {
+                onRestore(compareTimestamp);
+                onClearCompare();
+              }
+            }}
+            style={{
+              width: '100%',
+              padding: '10px 16px',
+              fontSize: 14,
+              fontWeight: 600,
+              border: 'none',
+              borderRadius: 8,
+              background: '#3b82f6',
+              color: '#fff',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Restore this version
+          </button>
+          <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 6 }}>
+            A pre-restore checkpoint will be saved automatically
+          </div>
+        </div>
       )}
 
     </div>
