@@ -18,19 +18,16 @@ sectionItemsRouter.post('/', requireAuth, async (req: Request, res: Response): P
       category?: string;
     };
 
-    if (!text || !text.trim()) {
-      res.status(400).json({ error: 'text is required' });
-      return;
-    }
+    // Allow empty text — items are created inline and the user types text after
 
     const item = await sectionItemRepo.createItem({
       documentId,
       sectionId,
-      text: text.trim(),
-      ...(assignee !== undefined && { assignee }),
-      ...(priority !== undefined && { priority }),
-      ...(dueDate !== undefined && { dueDate }),
-      ...(category !== undefined && { category }),
+      text: (text ?? '').trim(),
+      ...(assignee ? { assignee } : {}),
+      ...(priority ? { priority } : {}),
+      ...(dueDate ? { dueDate } : {}),
+      ...(category ? { category } : {}),
     });
 
     // Broadcast real-time event (non-fatal)
@@ -76,7 +73,7 @@ sectionItemsRouter.patch('/:itemId', requireAuth, async (req: Request, res: Resp
     const updates: Record<string, unknown> = {};
     if (text !== undefined) updates.text = text;
     if (status !== undefined) updates.status = status;
-    if (assignee !== undefined) updates.assignee = assignee;
+    if (assignee) updates.assignee = assignee;
     if (priority !== undefined) updates.priority = priority;
     if (dueDate !== undefined) updates.dueDate = dueDate;
     if (notes !== undefined) updates.notes = notes;
