@@ -87,6 +87,8 @@ export default function DocumentEditorPage({
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
+  const [commentSectionId, setCommentSectionId] = useState<string | null>(null);
 
   const {
     meta,
@@ -282,6 +284,17 @@ export default function DocumentEditorPage({
     setFocusedSectionId(sectionId);
     awareness.updateSection(sectionId);
   }, [awareness]);
+
+  // ------ Comment sidebar ---------------------------------------------------
+
+  const handleOpenComments = useCallback((sectionId: string) => {
+    setCommentSectionId(sectionId);
+    setCommentSidebarOpen(true);
+  }, []);
+
+  const handleCloseComments = useCallback(() => {
+    setCommentSidebarOpen(false);
+  }, []);
 
   // ------ Section comments (Y.js-persisted) --------------------------------
 
@@ -485,11 +498,10 @@ export default function DocumentEditorPage({
           </div>
         )}
 
-        {/* Editor mode — two-column layout: sections + comment sidebar */}
+        {/* Editor mode — centered content with overlay comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <div style={{ display: 'flex', maxWidth: 1160, margin: '0 auto', gap: 0 }}>
-            {/* Left column: section content */}
-            <div style={{ flex: '1 1 0%', minWidth: 0 }}>
+          <>
+            <div style={{ maxWidth: 900, margin: '0 auto', paddingRight: 48 }}>
               <SectionList
                 sections={sections}
                 getSectionFragment={getSectionFragment}
@@ -510,63 +522,92 @@ export default function DocumentEditorPage({
                 onResolveThread={handleResolveThread}
                 onUnresolveThread={handleUnresolveThread}
                 onUpdateCursorInfo={awareness.updateCursorInfo}
+                onOpenComments={handleOpenComments}
               />
             </div>
 
-            {/* Right column: comment sidebar */}
+            {/* Comment sidebar overlay panel */}
             <div
               style={{
-                width: 320,
-                flexShrink: 0,
-                borderLeft: '1px solid #e2e8f0',
-                background: '#fafbfc',
-                position: 'sticky',
+                position: 'fixed',
                 top: 0,
-                alignSelf: 'flex-start',
-                height: 'calc(100vh - 120px)',
-                overflowY: 'auto',
-                padding: '16px 14px',
+                right: 0,
+                width: 340,
+                height: '100vh',
+                background: '#fff',
+                boxShadow: commentSidebarOpen ? '-4px 0 24px rgba(0,0,0,0.10)' : 'none',
+                borderLeft: '1px solid #e2e8f0',
+                transform: commentSidebarOpen ? 'translateX(0)' : 'translateX(100%)',
+                transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s ease',
+                zIndex: 50,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
               }}
             >
-              {focusedSectionId ? (
-                <>
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#475569',
-                    marginBottom: 12,
-                    paddingBottom: 8,
-                    borderBottom: '1px solid #e2e8f0',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {sections.find(s => s.id === focusedSectionId)?.title ?? 'Comments'}
-                  </div>
-                  <SectionComments
-                    comments={comments[focusedSectionId] ?? []}
-                    onAddComment={(text, parentCommentId) => handleAddComment(focusedSectionId, text, parentCommentId)}
-                    participants={participants}
-                    onResolveThread={(commentId) => handleResolveThread(focusedSectionId, commentId)}
-                    onUnresolveThread={(commentId) => handleUnresolveThread(focusedSectionId, commentId)}
-                  />
-                </>
-              ) : (
+              {/* Sidebar header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 16px',
+                borderBottom: '1px solid #e2e8f0',
+                flexShrink: 0,
+              }}>
                 <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: '100%',
-                  color: '#94a3b8',
-                  fontSize: 14,
-                  textAlign: 'center',
-                  padding: '0 16px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#475569',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                  marginRight: 8,
                 }}>
-                  Click a section to see comments
+                  {commentSectionId
+                    ? (sections.find(s => s.id === commentSectionId)?.title ?? 'Comments')
+                    : 'Comments'}
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={handleCloseComments}
+                  style={{
+                    border: 'none',
+                    background: 'none',
+                    cursor: 'pointer',
+                    fontSize: 18,
+                    color: '#64748b',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                  title="Close comments"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Sidebar body */}
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '16px 14px',
+              }}>
+                {commentSectionId && (
+                  <SectionComments
+                    comments={comments[commentSectionId] ?? []}
+                    onAddComment={(text, parentCommentId) => handleAddComment(commentSectionId, text, parentCommentId)}
+                    participants={participants}
+                    onResolveThread={(commentId) => handleResolveThread(commentSectionId, commentId)}
+                    onUnresolveThread={(commentId) => handleUnresolveThread(commentSectionId, commentId)}
+                  />
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Review (ack) mode */}

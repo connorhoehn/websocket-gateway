@@ -30,6 +30,8 @@ export interface SectionListProps {
   onUnresolveThread?: (sectionId: string, commentId: string) => void;
   /** Merge-safe awareness updater for Tiptap cursor info. */
   onUpdateCursorInfo?: (name: string, color: string) => void;
+  /** Called when user clicks a section's comment icon to open the sidebar. */
+  onOpenComments?: (sectionId: string) => void;
 }
 
 const containerStyle: React.CSSProperties = {
@@ -72,6 +74,7 @@ export default function SectionList({
   onResolveThread,
   onUnresolveThread,
   onUpdateCursorInfo,
+  onOpenComments,
 }: SectionListProps) {
   return (
     <div style={containerStyle}>
@@ -96,6 +99,8 @@ export default function SectionList({
           onResolveThread={(commentId) => onResolveThread?.(section.id, commentId)}
           onUnresolveThread={(commentId) => onUnresolveThread?.(section.id, commentId)}
           onUpdateCursorInfo={onUpdateCursorInfo}
+          commentCount={(comments?.[section.id] ?? []).length}
+          onOpenComments={onOpenComments}
         />
       ))}
 

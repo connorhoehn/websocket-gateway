@@ -32,6 +32,12 @@ export interface SectionBlockProps {
   onUnresolveThread?: (commentId: string) => void;
   /** Merge-safe awareness updater for Tiptap cursor info. */
   onUpdateCursorInfo?: (name: string, color: string) => void;
+  /** Number of comments for this section (used for badge on comment icon). */
+  commentCount?: number;
+  /** Called when the user clicks the comment icon to open the sidebar. */
+  onOpenComments?: (sectionId: string) => void;
+  /** Participants who currently have comments open for this section. */
+  commentPresence?: Participant[];
 }
 
 const typeColors: Record<Section['type'], string> = {
@@ -231,6 +237,9 @@ export default function SectionBlock({
   onResolveThread,
   onUnresolveThread,
   onUpdateCursorInfo,
+  commentCount = 0,
+  onOpenComments,
+  commentPresence,
 }: SectionBlockProps) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
 
@@ -274,10 +283,94 @@ export default function SectionBlock({
     borderLeft: hasPresence ? `3px solid ${presenceBorderColor}` : '1px solid #e2e8f0',
     boxShadow: isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.3)' : 'none',
     transition: 'border-left 0.3s ease, box-shadow 0.3s ease',
+    position: 'relative',
   };
+
+  const [commentHovered, setCommentHovered] = useState(false);
 
   return (
     <div id={`section-${section.id}`} style={sectionOuterStyle} onClickCapture={onFocus} onFocusCapture={onFocus}>
+      {/* Comment icon button — top-right of section card */}
+      {onOpenComments && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOpenComments(section.id); }}
+          onMouseEnter={() => setCommentHovered(true)}
+          onMouseLeave={() => setCommentHovered(false)}
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: -44,
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            border: '1px solid #e2e8f0',
+            background: commentHovered ? '#f1f5f9' : '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 16,
+            lineHeight: 1,
+            opacity: commentHovered ? 0.9 : 0.4,
+            transition: 'opacity 0.15s ease, background 0.15s ease',
+            padding: 0,
+            zIndex: 1,
+          }}
+          title="Open comments"
+        >
+          <span style={{ pointerEvents: 'none' }}>💬</span>
+          {/* Badge count */}
+          {commentCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: -4,
+              right: -4,
+              minWidth: 16,
+              height: 16,
+              borderRadius: 8,
+              background: '#3b82f6',
+              color: '#fff',
+              fontSize: 10,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0 4px',
+              lineHeight: 1,
+            }}>
+              {commentCount}
+            </span>
+          )}
+          {/* Presence dots for users with comments open */}
+          {commentPresence && commentPresence.length > 0 && (
+            <span style={{
+              position: 'absolute',
+              left: -4,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}>
+              {commentPresence.slice(0, 3).map((p) => (
+                <span
+                  key={p.clientId}
+                  title={p.displayName}
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: p.color || '#3b82f6',
+                    border: '1px solid #fff',
+                    display: 'block',
+                  }}
+                />
+              ))}
+            </span>
+          )}
+        </button>
+      )}
       <div style={headerStyle}>
         <button
           type="button"
