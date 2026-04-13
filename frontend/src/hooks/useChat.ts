@@ -15,6 +15,7 @@ import type { ConnectionState, GatewayMessage } from '../types/gateway';
 // ---------------------------------------------------------------------------
 
 export interface ChatMessage {
+  id?: string;        // server-assigned message ID for deduplication
   clientId: string;
   content: string;
   timestamp: string;  // ISO string from server
@@ -67,30 +68,36 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   // using currentChannelRef so closures always see the latest channel.
   useEffect(() => {
     const unregister = onMessage((msg: GatewayMessage) => {
-      if (msg.type === 'chat:history') {
+      if (msg.type === 'chat' && msg.action === 'history') {
         // Only process history for the current channel
         if (msg.channel !== currentChannelRef.current) return;
-        const incoming = (msg.messages as Array<{ clientId: string; content: string; timestamp: string; data?: { displayName?: string } }> | undefined) ?? [];
+        const incoming = (msg.messages as Array<{ clientId: string; message: string; timestamp: string; metadata?: { displayName?: string } }> | undefined) ?? [];
         setMessages(incoming.map((m) => ({
           clientId: m.clientId,
-          content: m.content,
+          content: m.message,
           timestamp: m.timestamp,
-          displayName: (m.data as { displayName?: string } | undefined)?.displayName,
+          displayName: m.metadata?.displayName,
         })));
         return;
       }
 
-      if (msg.type === 'chat:message') {
+      if (msg.type === 'chat' && msg.action === 'message') {
         // Only process messages for the current channel
         if (msg.channel !== currentChannelRef.current) return;
-        const msgData = msg.data as { displayName?: string } | undefined;
+        const messageData = msg.message as { id?: string; clientId: string; message: string; timestamp: string; channel: string; metadata?: { displayName?: string } } | undefined;
+        if (!messageData) return;
         const incoming: ChatMessage = {
-          clientId: msg.clientId as string,
-          content: msg.content as string,
-          timestamp: msg.timestamp as string,
-          displayName: msgData?.displayName,
+          id: messageData.id,
+          clientId: messageData.clientId,
+          content: messageData.message,
+          timestamp: messageData.timestamp,
+          displayName: messageData.metadata?.displayName,
         };
-        setMessages((prev) => [...prev, incoming]);
+        setMessages((prev) => {
+          // Deduplicate by server message ID
+          if (incoming.id && prev.some((m) => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
+        });
         return;
       }
     });
@@ -105,17 +112,17 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       return;
     }
 
-    // Subscribe to the channel
-    sendMessage({ service: 'chat', action: 'subscribe', channel: currentChannel });
+    // Join the channel
+    sendMessage({ service: 'chat', action: 'join', channel: currentChannel });
 
     // Note: messages are cleared in the cleanup function of the previous
     // effect iteration, so no need to clear here.
 
-    // Cleanup: unsubscribe when channel changes or unmounts
+    // Cleanup: leave channel when channel changes or unmounts
     return () => {
       sendMessageRef.current({
         service: 'chat',
-        action: 'unsubscribe',
+        action: 'leave',
         channel: currentChannel,
       });
       // Clear messages on channel exit
@@ -129,10 +136,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const send = useCallback((content: string) => {
     sendMessageRef.current({
       service: 'chat',
-      action: 'message',
+      action: 'send',
       channel: currentChannelRef.current,
-      content,
-      data: { displayName: displayNameRef.current },
+      message: content,
+      metadata: { displayName: displayNameRef.current },
     });
   }, []);  
   // All deps accessed via refs — stable callback that never causes re-renders

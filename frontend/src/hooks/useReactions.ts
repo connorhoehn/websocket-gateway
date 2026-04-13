@@ -63,16 +63,17 @@ export function useReactions(options: UseReactionsOptions): UseReactionsReturn {
   // using currentChannelRef so closures always see the latest channel.
   useEffect(() => {
     const unregister = onMessage((msg: GatewayMessage) => {
-      if (msg.type === 'reactions:reaction') {
+      if (msg.type === 'reaction' && msg.action === 'reaction_received') {
+        const data = msg.data as { channel?: string; emoji?: string; timestamp?: string } | undefined;
         // Only process reactions for the current channel
-        if (msg.channel !== currentChannelRef.current) return;
+        if (data?.channel !== currentChannelRef.current) return;
 
         const reaction: EphemeralReaction = {
           id: `${Date.now()}-${Math.random()}`,
-          emoji: msg.emoji as string,
+          emoji: data?.emoji as string,
           x: Math.floor(Math.random() * 81) + 10,  // 10-90
           y: Math.floor(Math.random() * 81) + 10,  // 10-90
-          timestamp: msg.timestamp as string,
+          timestamp: data?.timestamp as string,
         };
 
         setActiveReactions((prev) => [...prev, reaction]);
@@ -82,7 +83,7 @@ export function useReactions(options: UseReactionsOptions): UseReactionsReturn {
           setActiveReactions((prev) => prev.filter((r) => r.id !== reaction.id));
         }, 2500);
       }
-      // reactions:subscribed is silently ignored — no state change needed
+      // reaction:reaction_subscribed is silently ignored — no state change needed
     });
 
     return unregister;
@@ -119,7 +120,7 @@ export function useReactions(options: UseReactionsOptions): UseReactionsReturn {
   const react = useCallback((emoji: string) => {
     sendMessageRef.current({
       service: 'reaction',
-      action: 'react',
+      action: 'send',
       channel: currentChannelRef.current,
       emoji,
     });

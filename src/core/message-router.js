@@ -396,8 +396,11 @@ class MessageRouter {
      * Broadcast a message to all connected clients
      */
     async broadcastToAll(message, excludeClientId = null) {
+        // Always deliver to local clients first
+        this.broadcastToLocalClients(message, excludeClientId);
+
         if (!this.redisPublisher) {
-            return this.broadcastToLocalClients(message, excludeClientId);
+            return;
         }
 
         try {
@@ -409,13 +412,13 @@ class MessageRouter {
                 timestamp: new Date().toISOString()
             };
 
-            // Broadcast to all nodes
+            // Broadcast to all nodes (remote nodes only — local already handled above)
             await this.redisPublisher.publish('websocket:broadcast:all', JSON.stringify(routedMessage));
 
             this.logger.debug('Message broadcasted to all nodes');
         } catch (error) {
-            this.logger.error('Failed to broadcast message:', error);
-            this.broadcastToLocalClients(message, excludeClientId);
+            this.logger.error('Failed to broadcast message to remote nodes:', error);
+            // Local clients already received the message above
         }
     }
 

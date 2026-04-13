@@ -106,7 +106,12 @@ local_resource(
         CT="aws dynamodb create-table --billing-mode PAY_PER_REQUEST $ENDPOINT"
 
         $CT --table-name social-profiles --attribute-definitions AttributeName=userId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH 2>/dev/null || echo "social-profiles exists"
-        $CT --table-name social-relationships --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE 2>/dev/null || echo "social-relationships exists"
+        aws dynamodb create-table --table-name social-relationships \
+            --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S \
+            --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"followeeId-followerId-index","KeySchema":[{"AttributeName":"followeeId","KeyType":"HASH"},{"AttributeName":"followerId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "social-relationships exists"
         aws dynamodb create-table --table-name social-outbox \
             --attribute-definitions AttributeName=outboxId,AttributeType=S AttributeName=status,AttributeType=S AttributeName=createdAt,AttributeType=S \
             --key-schema AttributeName=outboxId,KeyType=HASH \
@@ -114,10 +119,20 @@ local_resource(
             --global-secondary-indexes '[{"IndexName":"status-index","KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
             $ENDPOINT 2>/dev/null || echo "social-outbox exists"
         $CT --table-name social-rooms --attribute-definitions AttributeName=roomId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH 2>/dev/null || echo "social-rooms exists"
-        $CT --table-name social-room-members --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-room-members exists"
+        aws dynamodb create-table --table-name social-room-members \
+            --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S \
+            --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"userId-roomId-index","KeySchema":[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"roomId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "social-room-members exists"
         $CT --table-name social-groups --attribute-definitions AttributeName=groupId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH 2>/dev/null || echo "social-groups exists"
         $CT --table-name social-group-members --attribute-definitions AttributeName=groupId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-group-members exists"
-        $CT --table-name social-posts --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH AttributeName=postId,KeyType=RANGE 2>/dev/null || echo "social-posts exists"
+        aws dynamodb create-table --table-name social-posts \
+            --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S AttributeName=authorId,AttributeType=S \
+            --key-schema AttributeName=roomId,KeyType=HASH AttributeName=postId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"authorId-postId-index","KeySchema":[{"AttributeName":"authorId","KeyType":"HASH"},{"AttributeName":"postId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "social-posts exists"
         $CT --table-name social-comments --attribute-definitions AttributeName=postId,AttributeType=S AttributeName=commentId,AttributeType=S --key-schema AttributeName=postId,KeyType=HASH AttributeName=commentId,KeyType=RANGE 2>/dev/null || echo "social-comments exists"
         $CT --table-name social-likes --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-likes exists"
         $CT --table-name user-activity --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "user-activity exists"

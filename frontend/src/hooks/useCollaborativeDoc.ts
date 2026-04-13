@@ -221,24 +221,28 @@ export function useCollaborativeDoc(
     };
     yMeta.observe(metaObserver);
 
-    // Observe sections array
+    // Observe sections array (debounced to avoid cascading re-renders)
     const ySections = ydoc.getArray<Y.Map<unknown>>('sections');
+    let sectionsTimer: ReturnType<typeof setTimeout> | null = null;
     const sectionsObserver = () => {
-      const next = yArrayToSections(ySections);
-      queueMicrotask(() => setSections(next));
+      if (sectionsTimer) clearTimeout(sectionsTimer);
+      sectionsTimer = setTimeout(() => {
+        const next = yArrayToSections(ySections);
+        setSections(next);
 
-      // Rebuild comments from all sections' Y.Arrays
-      const nextComments: Record<string, CommentThread[]> = {};
-      for (let i = 0; i < ySections.length; i++) {
-        const ySection = ySections.get(i);
-        const sectionId = ySection.get('id') as string;
-        const yComments = ySection.get('comments');
-        if (yComments instanceof Y.Array) {
-          const flat = yCommentsToArray(yComments as Y.Array<Y.Map<unknown>>);
-          nextComments[sectionId] = buildCommentTree(flat);
+        // Rebuild comments from all sections' Y.Arrays
+        const nextComments: Record<string, CommentThread[]> = {};
+        for (let i = 0; i < ySections.length; i++) {
+          const ySection = ySections.get(i);
+          const sectionId = ySection.get('id') as string;
+          const yComments = ySection.get('comments');
+          if (yComments instanceof Y.Array) {
+            const flat = yCommentsToArray(yComments as Y.Array<Y.Map<unknown>>);
+            nextComments[sectionId] = buildCommentTree(flat);
+          }
         }
-      }
-      queueMicrotask(() => setComments(nextComments));
+        setComments(nextComments);
+      }, 16); // ~1 frame debounce
     };
     ySections.observeDeep(sectionsObserver);
 
@@ -247,9 +251,9 @@ export function useCollaborativeDoc(
     provider.on('synced', onSynced);
 
     // Observe awareness changes to track remote participants
+    let prevParticipantKey = '';
     const awarenessHandler = () => {
       const states = provider.awareness.getStates();
-      console.log('[collab] Awareness change, states:', states.size, 'localId:', provider.awareness.clientID);
       const parts: Participant[] = [];
       states.forEach((state: Record<string, unknown>, clientId: number) => {
         if (clientId === provider.awareness.clientID) return; // skip self
@@ -275,7 +279,12 @@ export function useCollaborativeDoc(
           seen.set(key, p);
         }
       }
-      queueMicrotask(() => setParticipants(Array.from(seen.values())));
+      // Avoid new array reference when participants haven't meaningfully changed
+      const next = Array.from(seen.values());
+      const nextKey = next.map(p => `${p.clientId}:${p.currentSectionId}:${p.mode}:${p.idle}`).join('|');
+      if (nextKey === prevParticipantKey) return;
+      prevParticipantKey = nextKey;
+      queueMicrotask(() => setParticipants(next));
     };
     provider.awareness.on('change', awarenessHandler);
 
@@ -287,6 +296,7 @@ export function useCollaborativeDoc(
         channel,
       });
 
+      if (sectionsTimer) clearTimeout(sectionsTimer);
       yMeta.unobserve(metaObserver);
       ySections.unobserveDeep(sectionsObserver);
       provider.awareness.off('change', awarenessHandler);

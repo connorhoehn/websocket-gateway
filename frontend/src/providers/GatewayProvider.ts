@@ -46,7 +46,9 @@ export class GatewayProvider extends Observable<string> {
       added: number[];
       updated: number[];
       removed: number[];
-    }) => {
+    }, origin: unknown) => {
+      // Skip updates applied from remote (applyAwarenessUpdate uses `this` as origin)
+      if (origin === this) return;
       const changedClients = added.concat(updated, removed);
       // Only send if local client changed (not remote echoes)
       if (!changedClients.includes(this.awareness.clientID)) return;
