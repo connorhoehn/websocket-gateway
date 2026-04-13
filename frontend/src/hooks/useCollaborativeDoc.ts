@@ -213,12 +213,18 @@ export function useCollaborativeDoc(
     // NOTE: Initial awareness state is now set by useAwarenessState hook
     // (called below). No direct setLocalStateField here.
 
-    // Subscribe to the document channel
-    ws.sendMessage({
-      service: 'crdt',
-      action: 'subscribe',
-      channel,
-    });
+    // Subscribe to the document channel (retry until WS is open)
+    const sendSubscribe = () => {
+      ws.sendMessage({
+        service: 'crdt',
+        action: 'subscribe',
+        channel,
+      });
+    };
+    sendSubscribe();
+    // Retry subscribe in case WS wasn't OPEN yet (sendMessage silently drops)
+    const retryTimer = setTimeout(sendSubscribe, 500);
+    const retryTimer2 = setTimeout(sendSubscribe, 1500);
 
     // Observe meta map
     const yMeta = ydoc.getMap('meta');
@@ -315,6 +321,9 @@ export function useCollaborativeDoc(
     provider.awareness.on('change', awarenessHandler);
 
     return () => {
+      clearTimeout(retryTimer);
+      clearTimeout(retryTimer2);
+
       // Unsubscribe from the channel
       ws.sendMessage({
         service: 'crdt',
