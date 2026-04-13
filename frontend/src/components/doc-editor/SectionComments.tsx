@@ -553,12 +553,15 @@ export default function SectionComments({
 
   const mentionUsers = useMentionUsers(participants);
   const totalCount = countAllComments(comments);
+  const [sortNewest, setSortNewest] = useState(true);
 
-  // Sort resolved threads to the bottom
+  // Sort: resolved to bottom, then by time (newest or oldest first)
   const sortedComments = [...comments].sort((a, b) => {
     if (a.resolved && !b.resolved) return 1;
     if (!a.resolved && b.resolved) return -1;
-    return 0;
+    const timeA = new Date(a.timestamp).getTime();
+    const timeB = new Date(b.timestamp).getTime();
+    return sortNewest ? timeB - timeA : timeA - timeB;
   });
 
   const handlePost = () => {
@@ -726,8 +729,26 @@ export default function SectionComments({
             </button>
           </div>
 
-          {/* Comment threads */}
-          <div style={{ maxHeight: 400, overflowY: 'auto', padding: '8px 12px' }}>
+          {/* Sort control + comment threads */}
+          {comments.length > 1 && (
+            <div style={{
+              display: 'flex', justifyContent: 'flex-end', padding: '4px 12px 0',
+              borderBottom: '1px solid #f1f5f9',
+            }}>
+              <button
+                type="button"
+                onClick={() => setSortNewest(v => !v)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: 11, color: '#64748b', padding: '2px 6px',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {sortNewest ? '↓ Newest first' : '↑ Oldest first'}
+              </button>
+            </div>
+          )}
+          <div style={{ maxHeight: 420, overflowY: 'auto', padding: '8px 12px' }}>
             {comments.length === 0 && (
               <div
                 style={{
