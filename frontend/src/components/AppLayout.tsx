@@ -17,8 +17,7 @@ import { useIdentityContext } from '../contexts/IdentityContext';
 import { usePresenceContext } from '../contexts/PresenceContext';
 
 import { ConnectionStatus } from './ConnectionStatus';
-import { PresencePanel } from './PresencePanel';
-import { DisconnectReconnect } from './DisconnectReconnect';
+import { CollapsibleSidebar } from './CollapsibleSidebar';
 import { ReactionsOverlay } from './ReactionsOverlay';
 import { ReactionButtons } from './ReactionButtons';
 import { ChatPanel } from './ChatPanel';
@@ -491,21 +490,31 @@ export function AppLayout({
         {/* Sidebar */}
         <div
           style={{
-            width: 240,
+            width: 260,
             flexShrink: 0,
             padding: '1rem',
             borderRight: '1px solid #e2e8f0',
             background: '#ffffff',
             display: 'flex',
             flexDirection: 'column',
-            gap: '1rem',
           }}
         >
-          <PresencePanel users={presenceUsers} currentClientId={currentClientId} />
-          <DisconnectReconnect
+          <CollapsibleSidebar
             connectionState={connectionState}
             onDisconnect={onDisconnect}
             onReconnect={onReconnect}
+            presenceUsers={presenceUsers}
+            currentClientId={currentClientId}
+            currentChannel={currentChannel}
+            activityEvents={activityEvents}
+            userId={userId}
+            documents={documents}
+            onOpenDocument={(id: string) => {
+              const doc = documents.find(d => d.id === id);
+              setActiveDocumentType(doc?.type);
+              setActiveDocumentId(id);
+              setActiveView('doc-editor');
+            }}
           />
         </div>
 

@@ -17,7 +17,7 @@ import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import MyMentionsPanel from './MyMentionsPanel';
-import AckMode from './AckMode';
+import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
 import ActivityFeed from './ActivityFeed';
@@ -99,14 +99,14 @@ export default function DocumentEditorPage({
     getSectionFragment,
     ydoc,
     provider,
-    ackItem,
-    rejectItem,
     exportJSON,
     participants,
     comments,
     addComment: addYjsComment,
     resolveThread,
     unresolveThread,
+    sectionReviews,
+    reviewSection,
     awareness,
   } = useCollaborativeDoc({
     documentId,
@@ -134,9 +134,6 @@ export default function DocumentEditorPage({
   // ------ Focus tracking + jump-to-user ------------------------------------
 
   const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
-  // For Review mode: jump to a specific section page
-  const [jumpToSectionIndex, setJumpToSectionIndex] = useState<number | null>(null);
-
   const handleJumpToUser = useCallback((participant: Participant) => {
     const isActive = participant.lastSeen && (Date.now() - participant.lastSeen) < 30000; // active within 30s
 
@@ -156,16 +153,7 @@ export default function DocumentEditorPage({
 
     if (!participant.currentSectionId) return;
 
-    // For Review mode: find section index and navigate to that page
-    if (targetMode === 'ack') {
-      const idx = sections.findIndex(s => s.id === participant.currentSectionId);
-      if (idx >= 0) {
-        setJumpToSectionIndex(idx);
-      }
-      return;
-    }
-
-    // For Editor/Read mode: scroll to section (only if user is active)
+    // Scroll to section (all modes use continuous scroll now)
     setTimeout(() => {
       const el = document.getElementById(`section-${participant.currentSectionId}`);
       if (el) {
@@ -236,14 +224,7 @@ export default function DocumentEditorPage({
       }
     }
 
-    // For review mode, jump to section page
-    if (targetMode === 'ack') {
-      const idx = sections.findIndex((s) => s.id === followed.currentSectionId);
-      if (idx >= 0) setJumpToSectionIndex(idx);
-      return;
-    }
-
-    // For editor/reader mode, scroll to the section
+    // Scroll to the followed user's section (all modes use continuous scroll)
     setTimeout(() => {
       const el = document.getElementById(`section-${followed.currentSectionId}`);
       if (el) {
@@ -260,21 +241,6 @@ export default function DocumentEditorPage({
   }, []);
 
   // ------ Activity helpers --------------------------------------------------
-
-  // Wrapped handlers that log activity
-  const handleAckItem = useCallback((sectionId: string, itemId: string) => {
-    const section = sections.find(s => s.id === sectionId);
-    const item = section?.items.find(i => i.id === itemId);
-    ackItem(sectionId, itemId, displayName);
-    activityPublish('doc.ack', { itemText: item?.text, sectionId, documentId, documentTitle: meta?.title });
-  }, [ackItem, displayName, sections, activityPublish, documentId, meta?.title]);
-
-  const handleRejectItem = useCallback((sectionId: string, itemId: string) => {
-    const section = sections.find(s => s.id === sectionId);
-    const item = section?.items.find(i => i.id === itemId);
-    rejectItem(sectionId, itemId, displayName);
-    activityPublish('doc.reject', { itemText: item?.text, sectionId, documentId, documentTitle: meta?.title });
-  }, [rejectItem, displayName, sections, activityPublish, documentId, meta?.title]);
 
   const handleAddItem = useCallback((sectionId: string, item: Omit<import('../../types/document').TaskItem, 'id'>) => {
     const id = crypto.randomUUID();
@@ -360,11 +326,6 @@ export default function DocumentEditorPage({
   const myItems = useMyMentionsAndTasks({ sections, comments, displayName, userId });
 
   const handleNavigateToSection = useCallback((sectionId: string) => {
-    if (mode === 'ack') {
-      const idx = sections.findIndex(s => s.id === sectionId);
-      if (idx >= 0) setJumpToSectionIndex(idx);
-      return;
-    }
     setTimeout(() => {
       const el = document.getElementById(`section-${sectionId}`);
       if (el) {
@@ -374,7 +335,7 @@ export default function DocumentEditorPage({
         setTimeout(() => { el.style.boxShadow = ''; }, 2000);
       }
     }, 150);
-  }, [mode, sections]);
+  }, []);
 
   const handleToggleMyItems = useCallback(() => {
     setShowMyItems(v => !v);
@@ -552,21 +513,20 @@ export default function DocumentEditorPage({
 
         {/* Review (ack) mode */}
         {!isEmpty && mode === 'ack' && ydoc && (
-          <AckMode
+          <ReviewMode
             sections={sections}
-            onAckItem={handleAckItem}
-            onRejectItem={handleRejectItem}
             participants={participants}
-            onSectionFocus={handleSectionFocus}
-            jumpToIndex={jumpToSectionIndex}
-            onJumpComplete={() => setJumpToSectionIndex(null)}
+            userId={userId}
             getSectionFragment={getSectionFragment}
             ydoc={ydoc}
             provider={provider}
+            sectionReviews={sectionReviews}
+            reviewSection={reviewSection}
             comments={comments}
             onAddComment={handleAddComment}
             onResolveThread={handleResolveThread}
             onUnresolveThread={handleUnresolveThread}
+            onSectionFocus={handleSectionFocus}
           />
         )}
 

@@ -19,6 +19,7 @@ import type {
   ViewMode,
   CommentData,
   CommentThread,
+  SectionReview,
 } from '../types/document';
 import type { GatewayMessage } from '../types/gateway';
 
@@ -91,6 +92,12 @@ export interface UseCollaborativeDocReturn {
 
   /** Unresolve a previously resolved thread. */
   unresolveThread: (sectionId: string, commentId: string) => void;
+
+  /** Per-section review statuses (keyed by sectionId). */
+  sectionReviews: Record<string, SectionReview[]>;
+
+  /** Submit a review for a section (persisted in Y.js). */
+  reviewSection: (sectionId: string, status: SectionReview['status'], comment?: string) => void;
 
   /** Awareness state updaters — single source of truth for all awareness writes. */
   awareness: AwarenessUpdaters;
@@ -188,6 +195,7 @@ export function useCollaborativeDoc(
   const [synced, setSynced] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [comments, setComments] = useState<Record<string, CommentThread[]>>({});
+  const [sectionReviews, setSectionReviews] = useState<Record<string, SectionReview[]>>({});
 
   // ---- Refs (mutable objects that survive renders) ------------------------
   const ydocRef = useRef<Y.Doc | null>(null);
@@ -246,6 +254,22 @@ export function useCollaborativeDoc(
     };
     ySections.observeDeep(sectionsObserver);
 
+    // Observe section reviews map
+    const yReviews = ydoc.getMap('sectionReviews');
+    const reviewsObserver = () => {
+      const next: Record<string, SectionReview[]> = {};
+      yReviews.forEach((value, key) => {
+        if (!(value instanceof Y.Map)) return;
+        const review = yMapToObject<SectionReview>(value);
+        // Key format: sectionId:userId
+        const sectionId = key.split(':')[0];
+        if (!next[sectionId]) next[sectionId] = [];
+        next[sectionId].push(review);
+      });
+      setSectionReviews(next);
+    };
+    yReviews.observe(reviewsObserver);
+
     // Listen for synced event
     const onSynced = () => setSynced(true);
     provider.on('synced', onSynced);
@@ -299,6 +323,7 @@ export function useCollaborativeDoc(
       if (sectionsTimer) clearTimeout(sectionsTimer);
       yMeta.unobserve(metaObserver);
       ySections.unobserveDeep(sectionsObserver);
+      yReviews.unobserve(reviewsObserver);
       provider.awareness.off('change', awarenessHandler);
       provider.off('synced', onSynced);
       provider.destroy();
@@ -668,6 +693,22 @@ export function useCollaborativeDoc(
     }
   }, [getOrCreateCommentsArray]);
 
+  const reviewSection = useCallback((sectionId: string, status: SectionReview['status'], comment?: string) => {
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
+    const yReviews = ydoc.getMap('sectionReviews');
+    const key = `${sectionId}:${userId}`;
+    ydoc.transact(() => {
+      const yReview = new Y.Map<unknown>();
+      yReview.set('userId', userId);
+      yReview.set('displayName', displayName);
+      yReview.set('status', status);
+      yReview.set('timestamp', new Date().toISOString());
+      if (comment) yReview.set('comment', comment);
+      yReviews.set(key, yReview);
+    });
+  }, [userId, displayName]);
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const loadFromMarkdown = useCallback((_markdown: string) => {
     // Stub: will be implemented in a future plan when markdown parsing is wired.
@@ -712,6 +753,8 @@ export function useCollaborativeDoc(
     addComment,
     resolveThread,
     unresolveThread,
+    sectionReviews,
+    reviewSection,
     awareness: awarenessUpdaters,
   };
 }

@@ -124,10 +124,11 @@ function detectMention(
     return MENTION_INITIAL;
   }
   const query = value.slice(i + 1, cursorPos);
-  // Position dropdown below the textarea
+  // Position dropdown below the textarea using viewport-absolute coords
+  // so the portal-rendered MentionDropdown (position: fixed) aligns correctly.
   const rect = textareaEl?.getBoundingClientRect();
   const position = rect
-    ? { top: rect.height + 4, left: 0 }
+    ? { top: rect.bottom + 4, left: rect.left }
     : { top: 28, left: 0 };
   return { active: true, query, position, atIndex: i };
 }

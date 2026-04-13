@@ -86,3 +86,12 @@ export interface CommentData {
 export interface CommentThread extends CommentData {
   replies: CommentThread[];
 }
+
+/** Per-section review status (DocuSign-style acknowledgement). */
+export interface SectionReview {
+  userId: string;
+  displayName: string;
+  status: 'reviewed' | 'approved' | 'changes_requested';
+  timestamp: string;
+  comment?: string;
+}

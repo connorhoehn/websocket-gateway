@@ -329,20 +329,18 @@ export default function SectionBlock({
             />
           )}
 
-          {showTaskList && (
-            <>
-              <TaskList
-                items={section.items}
-                editable={editable}
-                onUpdateItem={onUpdateItem}
-                onRemoveItem={onRemoveItem}
-              />
-              {editable && (
-                <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
-                  + Add {effectiveSectionType === 'checklist' ? 'item' : 'task'}
-                </button>
-              )}
-            </>
+          {(showTaskList || section.items.length > 0) && (
+            <TaskList
+              items={section.items}
+              editable={editable}
+              onUpdateItem={onUpdateItem}
+              onRemoveItem={onRemoveItem}
+            />
+          )}
+          {editable && (
+            <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
+              + Add item
+            </button>
           )}
 
           {onAddComment && (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
+import ReactDOM from 'react-dom';
 import type { MentionUser } from '../../hooks/useMentionUsers';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ export interface MentionDropdownHandle {
 
 const styles = {
   container: (pos: { top: number; left: number }): React.CSSProperties => ({
-    position: 'absolute',
+    position: 'fixed',
     top: pos.top,
     left: pos.left,
     zIndex: 1000,
@@ -166,7 +167,7 @@ export const MentionDropdown = forwardRef<MentionDropdownHandle, MentionDropdown
     // Expose handleKeyDown to parent via ref
     useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown]);
 
-    return (
+    return ReactDOM.createPortal(
       <div style={styles.container(position)} ref={listRef} role="listbox">
         {filtered.length === 0 ? (
           <div style={styles.empty}>No users found</div>
@@ -199,7 +200,8 @@ export const MentionDropdown = forwardRef<MentionDropdownHandle, MentionDropdown
             </div>
           ))
         )}
-      </div>
+      </div>,
+      document.body,
     );
   },
 );
