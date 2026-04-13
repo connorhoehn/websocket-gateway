@@ -641,7 +641,16 @@ export default function DocumentEditorPage({
             ydoc={ydoc}
             provider={provider}
             sectionReviews={sectionReviews}
-            reviewSection={reviewSection}
+            reviewSection={(sectionId, status, comment) => {
+              reviewSection(sectionId, status, comment);
+              const section = sections.find(s => s.id === sectionId);
+              activityPublish(`doc.review_${status}`, {
+                sectionTitle: section?.title,
+                status,
+                documentId,
+                documentTitle: meta?.title,
+              });
+            }}
             comments={comments}
             onAddComment={handleAddComment}
             onResolveThread={handleResolveThread}
