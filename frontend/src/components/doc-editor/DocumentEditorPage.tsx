@@ -498,10 +498,11 @@ export default function DocumentEditorPage({
           </div>
         )}
 
-        {/* Editor mode — centered content with overlay comment sidebar */}
+        {/* Editor mode — centered content with inline comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <>
-            <div style={{ maxWidth: 900, margin: '0 auto', paddingRight: 48 }}>
+          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', maxWidth: 1200, margin: '0 auto' }}>
+            {/* Left: section content */}
+            <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
               <SectionList
                 sections={sections}
                 getSectionFragment={getSectionFragment}
@@ -526,77 +527,50 @@ export default function DocumentEditorPage({
               />
             </div>
 
-            {/* Comment sidebar overlay panel */}
-            <div
-              style={{
-                position: 'fixed',
-                top: 0,
-                right: 0,
+            {/* Right: inline comment sidebar */}
+            {commentSidebarOpen && commentSectionId && (
+              <div style={{
                 width: 340,
-                height: '100vh',
-                background: '#fff',
-                boxShadow: commentSidebarOpen ? '-4px 0 24px rgba(0,0,0,0.10)' : 'none',
-                borderLeft: '1px solid #e2e8f0',
-                transform: commentSidebarOpen ? 'translateX(0)' : 'translateX(100%)',
-                transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s ease',
-                zIndex: 50,
+                flexShrink: 0,
+                position: 'sticky',
+                top: 16,
+                alignSelf: 'flex-start',
+                background: '#fafbfc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
                 display: 'flex',
                 flexDirection: 'column',
+                maxHeight: 'calc(100vh - 180px)',
                 overflow: 'hidden',
-              }}
-            >
-              {/* Sidebar header */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '14px 16px',
-                borderBottom: '1px solid #e2e8f0',
-                flexShrink: 0,
               }}>
+                {/* Sidebar header */}
                 <div style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: '#475569',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flex: 1,
-                  marginRight: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 14px', borderBottom: '1px solid #e2e8f0', flexShrink: 0,
                 }}>
-                  {commentSectionId
-                    ? (sections.find(s => s.id === commentSectionId)?.title ?? 'Comments')
-                    : 'Comments'}
+                  <div style={{
+                    fontSize: 13, fontWeight: 600, color: '#475569',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    flex: 1, marginRight: 8,
+                  }}>
+                    {sections.find(s => s.id === commentSectionId)?.title ?? 'Comments'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseComments}
+                    style={{
+                      border: 'none', background: 'none', cursor: 'pointer',
+                      fontSize: 16, color: '#64748b', padding: '2px 6px',
+                      borderRadius: 4, lineHeight: 1, flexShrink: 0,
+                    }}
+                    title="Close comments"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCloseComments}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    cursor: 'pointer',
-                    fontSize: 18,
-                    color: '#64748b',
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    lineHeight: 1,
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
-                  title="Close comments"
-                >
-                  ✕
-                </button>
-              </div>
 
-              {/* Sidebar body */}
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '16px 14px',
-              }}>
-                {commentSectionId && (
+                {/* Sidebar body */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '14px 12px' }}>
                   <SectionComments
                     comments={comments[commentSectionId] ?? []}
                     onAddComment={(text, parentCommentId) => handleAddComment(commentSectionId, text, parentCommentId)}
@@ -604,10 +578,10 @@ export default function DocumentEditorPage({
                     onResolveThread={(commentId) => handleResolveThread(commentSectionId, commentId)}
                     onUnresolveThread={(commentId) => handleUnresolveThread(commentSectionId, commentId)}
                   />
-                )}
+                </div>
               </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
 
         {/* Review (ack) mode */}

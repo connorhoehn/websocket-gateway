@@ -299,10 +299,11 @@ export default function SectionBlock({
           onMouseLeave={() => setCommentHovered(false)}
           style={{
             position: 'absolute',
-            top: 10,
-            right: -44,
-            width: 32,
-            height: 32,
+            top: '50%',
+            right: -52,
+            transform: 'translateY(-50%)',
+            width: 40,
+            height: 40,
             borderRadius: '50%',
             border: '1px solid #e2e8f0',
             background: commentHovered ? '#f1f5f9' : '#fff',
@@ -310,12 +311,13 @@ export default function SectionBlock({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 16,
+            fontSize: 20,
             lineHeight: 1,
             opacity: commentHovered ? 0.9 : 0.4,
             transition: 'opacity 0.15s ease, background 0.15s ease',
             padding: 0,
             zIndex: 1,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
           }}
           title="Open comments"
         >
