@@ -74,7 +74,7 @@ class CRDTService {
             dynamoClient: this.dynamoClient,
             redisClient: this.redisClient,
             logger: this.logger,
-            isRedisAvailable: () => this.redisConnected,
+            isRedisAvailable: () => !!(this.redisClient && this.redisClient.isReady),
         });
 
         this.snapshotManager = new SnapshotManager({
@@ -83,7 +83,7 @@ class CRDTService {
             eventBridgeClient: this.eventBridgeClient,
             logger: this.logger,
             getChannelState: (ch) => this.channelStates.get(ch),
-            isRedisAvailable: () => this.redisConnected,
+            isRedisAvailable: () => !!(this.redisClient && this.redisClient.isReady),
         });
 
         this.awarenessCoalescer = new AwarenessCoalescer(this.messageRouter, this.logger);
@@ -200,31 +200,49 @@ class CRDTService {
                     return await this.handleAwareness(clientId, data);
 
                 // Delegated to SnapshotManager
-                case 'listSnapshots':
-                    return await this.snapshotManager.handleListSnapshots(clientId, data,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
-                case 'getSnapshotAtVersion':
-                    return await this.snapshotManager.handleGetSnapshotAtVersion(clientId, data,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
-                case 'restoreSnapshot':
+                case 'listSnapshots': {
+                    const snapshots = await this.snapshotManager.handleListSnapshots(data.channel, data.limit || 20);
+                    this.sendToClient(clientId, { type: 'crdt', action: 'snapshotList', channel: data.channel, snapshots });
+                    return;
+                }
+                case 'getSnapshotAtVersion': {
+                    const result = await this.snapshotManager.handleGetSnapshotAtVersion(data.channel, data.timestamp);
+                    if (result) {
+                        this.sendToClient(clientId, { type: 'crdt', action: 'snapshot', channel: data.channel, version: true, update: result.base64, timestamp: result.timestamp });
+                    } else {
+                        this.sendError(clientId, 'Snapshot not found');
+                    }
+                    return;
+                }
+                case 'restoreSnapshot': {
                     if (!this._requireAuth(clientId, 'restoreSnapshot')) return;
-                    return await this.snapshotManager.handleRestoreSnapshot(clientId, data,
-                        this.channelStates,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
+                    const restored = await this.snapshotManager.handleRestoreSnapshot(data.channel, data.timestamp);
+                    if (restored) {
+                        // Broadcast restored state to all subscribers on this channel
+                        this.messageRouter.sendToChannel(data.channel, {
+                            type: 'crdt', action: 'snapshot', channel: data.channel, update: restored.base64State
+                        });
+                        this.sendToClient(clientId, { type: 'crdt', action: 'snapshotRestored', channel: data.channel, timestamp: restored.restoredTimestamp });
+                    } else {
+                        this.sendError(clientId, 'Snapshot not found or restore failed');
+                    }
+                    return;
+                }
                 case 'clearDocument':
                     if (!this._requireAuth(clientId, 'clearDocument')) return;
                     return await this.snapshotManager.handleClearDocument(clientId, data,
                         this.channelStates,
                         (cid, msg) => this.sendToClient(cid, msg),
                         (cid, msg) => this.sendError(cid, msg));
-                case 'saveVersion':
-                    return await this.snapshotManager.handleSaveVersion(clientId, data,
-                        this.channelStates,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
+                case 'saveVersion': {
+                    const saved = await this.snapshotManager.handleSaveVersion(data.channel, data.name, clientId);
+                    if (saved) {
+                        this.sendToClient(clientId, { type: 'crdt', action: 'versionSaved', channel: data.channel, name: saved.name, timestamp: saved.timestamp });
+                    } else {
+                        this.sendError(clientId, 'Failed to save version');
+                    }
+                    return;
+                }
 
                 // Delegated to DocumentMetadataService
                 case 'listDocuments': {
