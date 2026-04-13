@@ -139,6 +139,33 @@ local_resource(
         $CT --table-name crdt-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "crdt-documents exists"
         $CT --table-name chat-messages --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=messageId,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=messageId,KeyType=RANGE 2>/dev/null || echo "chat-messages exists"
 
+        aws dynamodb create-table --table-name section-items \
+            --attribute-definitions AttributeName=sectionKey,AttributeType=S AttributeName=itemId,AttributeType=S AttributeName=assignee,AttributeType=S AttributeName=status,AttributeType=S AttributeName=documentId,AttributeType=S \
+            --key-schema AttributeName=sectionKey,KeyType=HASH AttributeName=itemId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"assignee-status-index","KeySchema":[{"AttributeName":"assignee","KeyType":"HASH"},{"AttributeName":"status","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},{"IndexName":"documentId-index","KeySchema":[{"AttributeName":"documentId","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "section-items exists"
+        $CT --table-name document-sections --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sectionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sectionId,KeyType=RANGE 2>/dev/null || echo "document-sections exists"
+
+        aws dynamodb create-table --table-name approval-workflows \
+            --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=workflowId,AttributeType=S AttributeName=workflowStatus,AttributeType=S AttributeName=createdAt,AttributeType=S \
+            --key-schema AttributeName=documentId,KeyType=HASH AttributeName=workflowId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"status-index","KeySchema":[{"AttributeName":"workflowStatus","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "approval-workflows exists"
+        aws dynamodb create-table --table-name document-comments \
+            --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=commentId,AttributeType=S AttributeName=sectionId,AttributeType=S AttributeName=timestamp,AttributeType=S \
+            --key-schema AttributeName=documentId,KeyType=HASH AttributeName=commentId,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"sectionId-timestamp-index","KeySchema":[{"AttributeName":"sectionId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "document-comments exists"
+        aws dynamodb create-table --table-name section-reviews \
+            --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=reviewKey,AttributeType=S AttributeName=userId,AttributeType=S AttributeName=sectionId,AttributeType=S AttributeName=timestamp,AttributeType=S \
+            --key-schema AttributeName=documentId,KeyType=HASH AttributeName=reviewKey,KeyType=RANGE \
+            --billing-mode PAY_PER_REQUEST \
+            --global-secondary-indexes '[{"IndexName":"userId-documentId-index","KeySchema":[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"documentId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},{"IndexName":"sectionId-timestamp-index","KeySchema":[{"AttributeName":"sectionId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+            $ENDPOINT 2>/dev/null || echo "section-reviews exists"
+
         echo "All tables ready"
     ''',
     resource_deps=['wsg-websocket-gateway-dynamodb'],

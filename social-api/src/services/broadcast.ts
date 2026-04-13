@@ -20,7 +20,12 @@ type SocialEventType =
   | 'social:comment'
   | 'social:like'
   | 'social:member_joined'
-  | 'social:member_left';
+  | 'social:member_left'
+  | 'doc:comment_added'
+  | 'doc:comment_resolved'
+  | 'doc:comment_deleted'
+  | 'doc:workflow_advanced'
+  | 'doc:workflow_completed';
 
 class BroadcastService {
   private client: RedisClientType | null = null;

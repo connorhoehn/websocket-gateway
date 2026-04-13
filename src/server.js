@@ -29,6 +29,7 @@ const CRDTService = require("./services/crdt-service");
 const SessionService = require("./services/session-service");
 const SocialService = require("./services/social-service");
 const ActivityService = require("./services/activity-service");
+const DocumentEventsService = require("./services/document-events-service");
 
 // Utilities
 const { createDynamoClient } = require('./utils/dynamo-client');
@@ -262,6 +263,11 @@ class DistributedWebSocketServer {
         const activityService = new ActivityService(this.messageRouter, this.logger, this.metricsCollector, this.redisPublisher, this.dynamoClient);
         this.services.set('activity', activityService);
         this.logger.info('✅ Activity service initialized');
+
+        // Document events service is always enabled — required for real-time document event delivery
+        const docEventsService = new DocumentEventsService(this.messageRouter, this.logger, this.metricsCollector);
+        this.services.set('document-events', docEventsService);
+        this.logger.info('✅ Document events service initialized');
     }
 
     setupHttpServer() {

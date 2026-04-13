@@ -113,6 +113,79 @@
       "rangeKey": { "name": "messageId", "type": "S" },
       "billing": "PAY_PER_REQUEST",
       "_note": "Chat message persistence. messageId is base36(timestamp)+random for chronological sort. TTL attribute: ttl (epoch seconds, 90-day retention)."
+    },
+    {
+      "tableName": "document-comments",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "rangeKey": { "name": "commentId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "sectionId-timestamp-index",
+          "hashKey": { "name": "sectionId", "type": "S" },
+          "rangeKey": { "name": "timestamp", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
+    },
+    {
+      "tableName": "section-reviews",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "rangeKey": { "name": "reviewKey", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "userId-documentId-index",
+          "hashKey": { "name": "userId", "type": "S" },
+          "rangeKey": { "name": "documentId", "type": "S" },
+          "projection": "ALL"
+        },
+        {
+          "indexName": "sectionId-timestamp-index",
+          "hashKey": { "name": "sectionId", "type": "S" },
+          "rangeKey": { "name": "timestamp", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
+    },
+    {
+      "tableName": "approval-workflows",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "rangeKey": { "name": "workflowId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "status-index",
+          "hashKey": { "name": "workflowStatus", "type": "S" },
+          "rangeKey": { "name": "createdAt", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
+    },
+    {
+      "tableName": "section-items",
+      "hashKey": { "name": "sectionKey", "type": "S" },
+      "rangeKey": { "name": "itemId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "assignee-status-index",
+          "hashKey": { "name": "assignee", "type": "S" },
+          "rangeKey": { "name": "status", "type": "S" },
+          "projection": "ALL"
+        },
+        {
+          "indexName": "documentId-index",
+          "hashKey": { "name": "documentId", "type": "S" },
+          "projection": "ALL"
+        }
+      ]
+    },
+    {
+      "tableName": "document-sections",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "rangeKey": { "name": "sectionId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
     }
   ]
 }

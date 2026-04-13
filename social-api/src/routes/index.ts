@@ -11,6 +11,11 @@ import { commentsRouter } from './comments';
 import { postLikesRouter, commentLikesRouter } from './likes';
 import { reactionsRouter } from './reactions';
 import { activityRouter } from './activity';
+import { documentCommentsRouter } from './documentComments';
+import { sectionReviewsRouter, documentReviewsRouter, myReviewsRouter } from './sectionReviews';
+import { sectionItemsRouter, myItemsRouter } from './sectionItems';
+import { approvalWorkflowsRouter, pendingWorkflowsRouter } from './approvalWorkflows';
+import { documentImportExportRouter } from './documentImportExport';
 
 const router = Router();
 
@@ -29,5 +34,14 @@ router.use('/rooms/:roomId/posts/:postId/likes', postLikesRouter);
 router.use('/rooms/:roomId/posts/:postId/comments/:commentId/likes', commentLikesRouter);
 router.use('/rooms/:roomId/posts/:postId', reactionsRouter);
 router.use('/activity', activityRouter);
+router.use('/documents', documentCommentsRouter);
+router.use('/documents/:documentId/sections/:sectionId/reviews', sectionReviewsRouter);
+router.use('/documents/:documentId/reviews', documentReviewsRouter);
+router.use('/reviews', myReviewsRouter);
+router.use('/documents/:documentId/sections/:sectionId/items', sectionItemsRouter);
+router.use('/items', myItemsRouter);
+router.use('/documents/:documentId', documentImportExportRouter);
+router.use('/documents/:documentId/workflows', approvalWorkflowsRouter);
+router.use('/workflows', pendingWorkflowsRouter);
 
 export default router;
