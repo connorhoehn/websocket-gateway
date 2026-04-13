@@ -10,7 +10,6 @@ import type { Section, TaskItem, Participant } from '../../types/document';
 import TiptapEditor from './TiptapEditor';
 import type { CollaborationProvider } from './TiptapEditor';
 import TaskList from './TaskList';
-import SectionComments from './SectionComments';
 import type { CommentThread } from '../../types/document';
 
 export interface SectionBlockProps {
@@ -341,16 +340,6 @@ export default function SectionBlock({
             <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
               + Add item
             </button>
-          )}
-
-          {onAddComment && (
-            <SectionComments
-              comments={comments ?? []}
-              onAddComment={onAddComment}
-              participants={participants}
-              onResolveThread={onResolveThread}
-              onUnresolveThread={onUnresolveThread}
-            />
           )}
         </div>
       )}

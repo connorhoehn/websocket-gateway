@@ -20,6 +20,7 @@ import MyMentionsPanel from './MyMentionsPanel';
 import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
+import SectionComments from './SectionComments';
 import ActivityFeed from './ActivityFeed';
 
 // ---------------------------------------------------------------------------
@@ -484,30 +485,87 @@ export default function DocumentEditorPage({
           </div>
         )}
 
-        {/* Editor mode */}
+        {/* Editor mode — two-column layout: sections + comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <div style={{ maxWidth: 800, margin: '0 auto' }}>
-            <SectionList
-              sections={sections}
-              getSectionFragment={getSectionFragment}
-              ydoc={ydoc}
-              provider={provider}
-              user={{ name: displayName, color }}
-              editable
-              onUpdateSection={updateSection}
-              onAddItem={handleAddItem}
-              onUpdateItem={updateItem}
-              onRemoveItem={removeItem}
-              onAddSection={handleAddSection}
-              participants={participants}
-              onSectionFocus={handleSectionFocus}
-              focusedSectionId={focusedSectionId}
-              comments={comments}
-              onAddComment={handleAddComment}
-              onResolveThread={handleResolveThread}
-              onUnresolveThread={handleUnresolveThread}
-              onUpdateCursorInfo={awareness.updateCursorInfo}
-            />
+          <div style={{ display: 'flex', maxWidth: 1160, margin: '0 auto', gap: 0 }}>
+            {/* Left column: section content */}
+            <div style={{ flex: '1 1 0%', minWidth: 0 }}>
+              <SectionList
+                sections={sections}
+                getSectionFragment={getSectionFragment}
+                ydoc={ydoc}
+                provider={provider}
+                user={{ name: displayName, color }}
+                editable
+                onUpdateSection={updateSection}
+                onAddItem={handleAddItem}
+                onUpdateItem={updateItem}
+                onRemoveItem={removeItem}
+                onAddSection={handleAddSection}
+                participants={participants}
+                onSectionFocus={handleSectionFocus}
+                focusedSectionId={focusedSectionId}
+                comments={comments}
+                onAddComment={handleAddComment}
+                onResolveThread={handleResolveThread}
+                onUnresolveThread={handleUnresolveThread}
+                onUpdateCursorInfo={awareness.updateCursorInfo}
+              />
+            </div>
+
+            {/* Right column: comment sidebar */}
+            <div
+              style={{
+                width: 320,
+                flexShrink: 0,
+                borderLeft: '1px solid #e2e8f0',
+                background: '#fafbfc',
+                position: 'sticky',
+                top: 0,
+                alignSelf: 'flex-start',
+                height: 'calc(100vh - 120px)',
+                overflowY: 'auto',
+                padding: '16px 14px',
+              }}
+            >
+              {focusedSectionId ? (
+                <>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#475569',
+                    marginBottom: 12,
+                    paddingBottom: 8,
+                    borderBottom: '1px solid #e2e8f0',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {sections.find(s => s.id === focusedSectionId)?.title ?? 'Comments'}
+                  </div>
+                  <SectionComments
+                    comments={comments[focusedSectionId] ?? []}
+                    onAddComment={(text, parentCommentId) => handleAddComment(focusedSectionId, text, parentCommentId)}
+                    participants={participants}
+                    onResolveThread={(commentId) => handleResolveThread(focusedSectionId, commentId)}
+                    onUnresolveThread={(commentId) => handleUnresolveThread(focusedSectionId, commentId)}
+                  />
+                </>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  color: '#94a3b8',
+                  fontSize: 14,
+                  textAlign: 'center',
+                  padding: '0 16px',
+                }}>
+                  Click a section to see comments
+                </div>
+              )}
+            </div>
           </div>
         )}
 
