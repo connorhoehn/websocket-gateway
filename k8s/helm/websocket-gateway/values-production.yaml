@@ -1,0 +1,21 @@
+# Production values — used by EKS CDK stack and manual production deploys
+gateway:
+  replicaCount: 2
+  image:
+    pullPolicy: Always
+  env:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    ENABLED_SERVICES: chat,presence,cursor,reaction,crdt
+    SKIP_AUTH: "false"
+    # These are overridden by CDK when deploying via EksGatewayStack:
+    # COGNITO_USER_POOL_ID, COGNITO_REGION, DYNAMODB_CRDT_TABLE, AWS_REGION
+
+redis:
+  enabled: true
+
+dynamodb:
+  enabled: false
+
+socialApi:
+  enabled: false

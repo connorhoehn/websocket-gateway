@@ -5,7 +5,7 @@
 // Replaces the monolithic vertical stack in GatewayDemo.
 
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
-import type { GatewayError, GatewayMessage } from '../types/gateway';
+import type { GatewayError } from '../types/gateway';
 import type { EphemeralReaction } from '../hooks/useReactions';
 import type { ChatMessage } from '../hooks/useChat';
 import type { CursorMode, RemoteCursor, TextSelectionData } from '../hooks/useCursors';
@@ -19,28 +19,19 @@ import { usePresenceContext } from '../contexts/PresenceContext';
 import { ConnectionStatus } from './ConnectionStatus';
 import { CollapsibleSidebar } from './CollapsibleSidebar';
 import { ReactionsOverlay } from './ReactionsOverlay';
-import { ReactionButtons } from './ReactionButtons';
-import { ChatPanel } from './ChatPanel';
-import { CursorModeSelector } from './CursorModeSelector';
-import { CursorCanvas } from './CursorCanvas';
-import { TableCursorGrid } from './TableCursorGrid';
-import { TextCursorEditor } from './TextCursorEditor';
-import { CanvasCursorBoard } from './CanvasCursorBoard';
-import { SharedTextEditor } from './SharedTextEditor';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ErrorPanel } from './ErrorPanel';
 import { TabbedEventLog } from './TabbedEventLog';
-import { SocialPanel } from './SocialPanel';
-import { GroupPanel } from './GroupPanel';
-import { RoomList } from './RoomList';
-import { PostFeed } from './PostFeed';
-import { ActivityPanel } from './ActivityPanel';
-const BigBrotherPanel = lazy(() => import('./BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
-const DocumentEditorPage = lazy(() => import('./doc-editor/DocumentEditorPage'));
-import DocumentListPage from './doc-editor/DocumentListPage';
 import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
 import { ErrorBoundary } from './ErrorBoundary';
+
+// Lazy-loaded views for code splitting
+const PanelsView = lazy(() => import('./PanelsView'));
+const SocialTabContent = lazy(() => import('./SocialTabContent'));
+const BigBrotherPanel = lazy(() => import('./BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
+const DocumentEditorPage = lazy(() => import('./doc-editor/DocumentEditorPage'));
+const DocumentListPage = lazy(() => import('./doc-editor/DocumentListPage'));
 
 // ---------------------------------------------------------------------------
 // Types
@@ -176,218 +167,6 @@ export interface AppLayoutProps {
   activityIsLive: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Shared section card style
-// ---------------------------------------------------------------------------
-
-const sectionCardStyle: React.CSSProperties = {
-  background: '#ffffff',
-  border: '1px solid #e2e8f0',
-  borderRadius: 8,
-  padding: '1.25rem',
-};
-
-const sectionHeaderStyle: React.CSSProperties = {
-  fontSize: '0.75rem',
-  fontWeight: 600,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  color: '#64748b',
-  margin: '0 0 0.75rem 0',
-};
-
-// ---------------------------------------------------------------------------
-// Social Tab — profile card + tabbed sub-views
-// ---------------------------------------------------------------------------
-
-function SocialTabContent({
-  userId,
-  displayName,
-  userEmail,
-  connectionState,
-  idToken,
-  onMessage,
-  rooms,
-  createRoom,
-  createDM,
-  createGroupRoom,
-  roomsLoading,
-  handleRoomSelect,
-  activeRoomId,
-  activityEvents,
-}: {
-  userId: string;
-  displayName: string;
-  userEmail: string;
-  connectionState: string;
-  idToken: string | null;
-  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
-  rooms: RoomItem[];
-  createRoom: (name: string) => Promise<void>;
-  createDM: (targetUserId: string) => Promise<void>;
-  createGroupRoom: (name: string, memberIds: string[]) => Promise<void>;
-  roomsLoading: boolean;
-  handleRoomSelect: (room: RoomItem) => void;
-  activeRoomId: string | null;
-  activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
-}) {
-  const [socialTab, setSocialTab] = useState<'groups' | 'channels' | 'dms'>('channels');
-
-  const initials = displayName
-    ? displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
-    : userId.slice(0, 2).toUpperCase();
-
-  return (
-    <>
-      {/* Profile card */}
-      <div style={{
-        ...sectionCardStyle,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1rem',
-      }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #646cff, #9b59b6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0,
-        }}>
-          {initials}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {displayName || userId}
-          </div>
-          {userEmail && (
-            <div style={{ fontSize: '0.8125rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userEmail}
-            </div>
-          )}
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.375rem',
-          fontSize: '0.75rem', fontWeight: 500,
-          color: connectionState === 'connected' ? '#16a34a' : '#ef4444', flexShrink: 0,
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: connectionState === 'connected' ? '#16a34a' : '#ef4444',
-            display: 'inline-block',
-          }} />
-          {connectionState === 'connected' ? 'Online' : 'Offline'}
-        </div>
-      </div>
-
-      {/* Split layout: left tabs + right activity */}
-      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-        {/* Left panel — Groups / Channels / DMs */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Sub-tabs */}
-          <div style={{
-            display: 'flex', alignItems: 'center',
-            borderBottom: '1px solid #e2e8f0', marginBottom: '0.75rem',
-          }}>
-            {([
-              ['channels', 'Channels'],
-              ['groups', 'Groups'],
-              ['dms', 'DMs'],
-            ] as const).map(([tab, label]) => (
-              <button
-                key={tab}
-                onClick={() => setSocialTab(tab)}
-                style={{
-                  padding: '0.5rem 1rem', border: 'none',
-                  borderBottom: socialTab === tab ? '2px solid #646cff' : '2px solid transparent',
-                  background: 'none',
-                  color: socialTab === tab ? '#0f172a' : '#64748b',
-                  fontWeight: socialTab === tab ? 600 : 400,
-                  fontSize: '0.875rem', cursor: 'pointer',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {socialTab === 'channels' && (
-            <RoomList
-              idToken={idToken}
-              rooms={rooms}
-              createRoom={createRoom}
-              createDM={createDM}
-              loading={roomsLoading}
-              onRoomSelect={handleRoomSelect}
-              activeRoomId={activeRoomId}
-            />
-          )}
-
-          {socialTab === 'groups' && (
-            <GroupPanel
-              idToken={idToken}
-              rooms={rooms}
-              createGroupRoom={createGroupRoom}
-              onRoomSelect={handleRoomSelect}
-              roomsLoading={roomsLoading}
-            />
-          )}
-
-          {socialTab === 'dms' && (
-            <div style={sectionCardStyle}>
-              <p style={sectionHeaderStyle}>Direct Messages</p>
-              <RoomList
-                idToken={idToken}
-                rooms={rooms}
-                createRoom={createRoom}
-                createDM={createDM}
-                loading={roomsLoading}
-                onRoomSelect={handleRoomSelect}
-                activeRoomId={activeRoomId}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Right panel — Activity (always visible) */}
-        <div style={{
-          width: 320, flexShrink: 0,
-          ...sectionCardStyle,
-          position: 'sticky', top: '1rem',
-          maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
-        }}>
-          <p style={sectionHeaderStyle}>Activity</p>
-          {activityEvents.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0 }}>No activity yet.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              {activityEvents.slice().reverse().slice(0, 50).map((evt) => (
-                <div key={evt.id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-                  fontSize: '0.8125rem', padding: '0.375rem 0.5rem',
-                  borderRadius: 6, background: '#f8fafc',
-                }}>
-                  <span style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: evt.color || '#646cff', flexShrink: 0, marginTop: 6,
-                  }} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                      {evt.displayName || evt.userId || 'System'}
-                    </span>
-                    {' '}
-                    <span style={{ color: '#64748b' }}>{evt.eventType}</span>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 1 }}>
-                      {new Date(evt.timestamp).toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -443,10 +222,8 @@ export function AppLayout({
   const {
     documents,
     presence: docPresence,
-    loading: docsLoading,
     createDocument,
     deleteDocument,
-    refreshDocuments,
   } = useDocuments({
     sendMessage,
     onMessage,
@@ -779,89 +556,54 @@ export function AppLayout({
           </div>
 
           {activeView === 'panels' && (
-          <>
-          {/* Chat section */}
-          <div style={sectionCardStyle}>
-            <p style={sectionHeaderStyle}>Chat</p>
-            <ChatPanel
-              messages={chatMessages}
-              onSend={onChatSend}
-              disabled={connectionState !== 'connected'}
-              onTyping={onTyping}
-              typingUsers={typingUsers}
-            />
-          </div>
-
-          {/* Cursors section */}
-          <div style={sectionCardStyle}>
-            <p style={sectionHeaderStyle}>Cursors</p>
-            <CursorModeSelector activeMode={activeMode} onModeChange={onModeChange} />
-            {activeMode === 'freeform' && (
-              <CursorCanvas cursors={cursors} localCursor={localCursor} onMouseMove={onFreeformMove} />
-            )}
-            {activeMode === 'table' && (
-              <TableCursorGrid cursors={cursors} localCursor={localCursor} onCellClick={onTableClick} />
-            )}
-            {activeMode === 'text' && (
-              <TextCursorEditor cursors={cursors} localCursor={localCursor} onPositionChange={onTextChange} />
-            )}
-            {activeMode === 'canvas' && (
-              <CanvasCursorBoard cursors={cursors} localCursor={localCursor} onMouseMove={onCanvasMove} />
-            )}
-          </div>
-
-          {/* Reactions section */}
-          <div style={sectionCardStyle}>
-            <p style={sectionHeaderStyle}>Reactions</p>
-            <ReactionButtons
-              onReact={onReact}
-              disabled={connectionState !== 'connected'}
-            />
-          </div>
-
-          {/* Shared Document (CRDT) section */}
-          <div style={sectionCardStyle}>
-            <p style={sectionHeaderStyle}>Shared Document</p>
-            <SharedTextEditor
-              content={crdtContent}
-              applyLocalEdit={applyLocalEdit}
-              disabled={connectionState !== 'connected'}
-              hasConflict={hasConflict}
-              onDismissConflict={onDismissConflict}
-            />
-          </div>
-
-          {/* Activity section */}
-          <ErrorBoundary name="ActivityPanel">
-            <ActivityPanel
-              idToken={idToken}
-              sendMessage={sendMessage}
-              onMessage={onMessage}
-              connectionState={connectionState}
-            />
-          </ErrorBoundary>
-          </>
+            <Suspense fallback={<div>Loading...</div>}>
+              <PanelsView
+                connectionState={connectionState}
+                onReact={onReact}
+                chatMessages={chatMessages}
+                onChatSend={onChatSend}
+                cursors={cursors}
+                localCursor={localCursor}
+                activeMode={activeMode}
+                onModeChange={onModeChange}
+                onFreeformMove={onFreeformMove}
+                onTableClick={onTableClick}
+                onTextChange={onTextChange}
+                onCanvasMove={onCanvasMove}
+                crdtContent={crdtContent}
+                applyLocalEdit={applyLocalEdit}
+                hasConflict={hasConflict}
+                onDismissConflict={onDismissConflict}
+                onTyping={onTyping}
+                typingUsers={typingUsers}
+                idToken={idToken}
+                sendMessage={sendMessage}
+                onMessage={onMessage}
+              />
+            </Suspense>
           )}
 
           {activeView === 'social' && (
-          <ErrorBoundary name="SocialPanels">
-          <SocialTabContent
-            userId={userId}
-            displayName={displayName}
-            userEmail={userEmail}
-            connectionState={connectionState}
-            idToken={idToken}
-            onMessage={onMessage}
-            rooms={rooms}
-            createRoom={createRoom}
-            createDM={createDM}
-            createGroupRoom={createGroupRoom}
-            roomsLoading={roomsLoading}
-            handleRoomSelect={handleRoomSelect}
-            activeRoomId={activeRoomId}
-            activityEvents={activityEvents}
-          />
-          </ErrorBoundary>
+            <ErrorBoundary name="SocialPanels">
+              <Suspense fallback={<div>Loading...</div>}>
+                <SocialTabContent
+                  userId={userId}
+                  displayName={displayName}
+                  userEmail={userEmail}
+                  connectionState={connectionState}
+                  idToken={idToken}
+                  onMessage={onMessage}
+                  rooms={rooms}
+                  createRoom={createRoom}
+                  createDM={createDM}
+                  createGroupRoom={createGroupRoom}
+                  roomsLoading={roomsLoading}
+                  handleRoomSelect={handleRoomSelect}
+                  activeRoomId={activeRoomId}
+                  activityEvents={activityEvents}
+                />
+              </Suspense>
+            </ErrorBoundary>
           )}
 
           {activeView === 'dashboard' && (
@@ -876,6 +618,7 @@ export function AppLayout({
           )}
 
           {activeView === 'doc-editor' && !activeDocumentId && (
+            <Suspense fallback={<div>Loading...</div>}>
             <DocumentListPage
               documents={documents}
               presence={docPresence}
@@ -893,6 +636,7 @@ export function AppLayout({
                 setActiveDocumentId(docId);
               }}
             />
+            </Suspense>
           )}
 
           {activeView === 'doc-editor' && activeDocumentId && (

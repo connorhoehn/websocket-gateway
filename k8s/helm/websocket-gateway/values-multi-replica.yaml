@@ -4,5 +4,5 @@ gateway:
   image:
     pullPolicy: Never
   env:
-    SKIP_AUTH: "true"
+    SKIP_AUTH: "false"
     LOG_LEVEL: info

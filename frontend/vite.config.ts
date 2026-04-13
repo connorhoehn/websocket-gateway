@@ -12,6 +12,17 @@ export default defineConfig({
       'y-prosemirror': '@tiptap/y-tiptap',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-yjs': ['yjs'],
+          'vendor-tiptap': ['@tiptap/core', '@tiptap/react', '@tiptap/starter-kit'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
   },

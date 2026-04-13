@@ -29,7 +29,7 @@ export function createTaskDefinition(scope: Construct, props: TaskDefinitionProp
   taskRole.addToPolicy(new PolicyStatement({
     effect: Effect.ALLOW,
     actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:Query'],
-    resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/crdt-snapshots`],
+    resources: [`arn:aws:dynamodb:${stack.region}:${stack.account}:table/${props.dynamodbTableName || 'crdt-snapshots'}`],
   }));
 
   // EventBridge permissions — allow publishing social events
@@ -75,7 +75,7 @@ export function createTaskDefinition(scope: Construct, props: TaskDefinitionProp
     environment.COGNITO_REGION = props.cognitoRegion;
   }
 
-  const imageUri = props?.imageUri || process.env.IMAGE_URI || '264161986065.dkr.ecr.us-east-1.amazonaws.com/websocket-gateway:latest';
+  const imageUri = props?.imageUri || process.env.IMAGE_URI || `${stack.account}.dkr.ecr.${stack.region}.amazonaws.com/websocket-gateway:latest`;
 
   taskDef.addContainer('WebSocketContainer', {
     image: ContainerImage.fromRegistry(imageUri),

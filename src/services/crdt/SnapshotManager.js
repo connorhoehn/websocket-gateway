@@ -481,6 +481,128 @@ class SnapshotManager {
     }
 
     // ------------------------------------------------------------------
+    // Y.Doc hydration (Redis → DynamoDB fallback)
+    // ------------------------------------------------------------------
+
+    /**
+     * Hydrate a Y.Doc from persisted state (Redis hot-cache first, DynamoDB fallback).
+     *
+     * @param {string} channel
+     * @param {object} state - { ydoc, operationsSinceSnapshot, subscriberCount }
+     */
+    async hydrateYDoc(channel, state) {
+        let base64 = null;
+        let source = 'none';
+
+        // Try Redis hot-cache first
+        try {
+            base64 = await this.getSnapshotFromRedis(channel);
+            if (base64) source = 'redis';
+        } catch (err) {
+            this.logger.error(`Redis hydration failed for ${channel}, falling back to DynamoDB:`, err.message);
+        }
+
+        // Fall back to DynamoDB
+        if (!base64) {
+            try {
+                const dbResult = await this.retrieveLatestSnapshot(channel);
+                if (dbResult.data) {
+                    base64 = dbResult.data;
+                    source = 'dynamodb';
+                }
+            } catch (err) {
+                this.logger.error(`DynamoDB hydration failed for ${channel}:`, err.message);
+            }
+        }
+
+        if (base64) {
+            try {
+                const update = new Uint8Array(Buffer.from(base64, 'base64'));
+                Y.applyUpdate(state.ydoc, update);
+                this.logger.info(`Y.Doc hydrated from ${source} for channel ${channel}`);
+            } catch (err) {
+                this.logger.error(`Failed to apply hydration update for ${channel}:`, err.message);
+            }
+        } else {
+            this.logger.info(`No existing snapshot for channel ${channel} — starting fresh`);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // handleClearDocument
+    // ------------------------------------------------------------------
+
+    /**
+     * Clear a document's content, saving a pre-clear checkpoint first.
+     *
+     * @param {string} clientId
+     * @param {object} data         - { channel }
+     * @param {Map}    channelStates
+     * @param {Function} sendToClient - (clientId, message) => void
+     * @param {Function} sendError    - (clientId, message) => void
+     */
+    async handleClearDocument(clientId, data, channelStates, sendToClient, sendError) {
+        const channel = data.channel;
+        if (!channel) {
+            sendError(clientId, 'Channel name is required');
+            return;
+        }
+
+        const state = channelStates.get(channel);
+        if (!state || !state.ydoc) {
+            sendError(clientId, 'No active document for channel');
+            return;
+        }
+
+        // Pre-clear checkpoint so the operation is reversible
+        try {
+            const currentState = Y.encodeStateAsUpdate(state.ydoc);
+            if (currentState.byteLength > 0) {
+                state.operationsSinceSnapshot = 1;
+                await this.writeSnapshot(channel, { type: 'pre-clear', author: clientId });
+                this.logger.info(`Pre-clear checkpoint saved for channel ${channel}`);
+            }
+        } catch (err) {
+            this.logger.error(`Failed pre-clear checkpoint for ${channel}:`, err.message);
+        }
+
+        // Replace with fresh Y.Doc
+        state.ydoc.destroy();
+        state.ydoc = new Y.Doc();
+        state.operationsSinceSnapshot = 0;
+
+        const emptyState = Buffer.from(Y.encodeStateAsUpdate(state.ydoc)).toString('base64');
+
+        // Persist the cleared state
+        await this.writeSnapshot(channel, { type: 'auto', author: clientId });
+
+        // Update Redis hot-cache
+        await this._saveSnapshotToRedis(channel, emptyState);
+
+        sendToClient(clientId, {
+            type: 'crdt',
+            action: 'documentCleared',
+            channel,
+            update: emptyState,
+        });
+
+        this.logger.info(`Document cleared for channel ${channel} by ${clientId}`);
+    }
+
+    // ------------------------------------------------------------------
+    // Shutdown
+    // ------------------------------------------------------------------
+
+    /**
+     * Graceful shutdown — flush all pending snapshots and clear timers.
+     *
+     * @param {Map<string, object>} channelStates
+     */
+    async shutdown(channelStates) {
+        return this.flushAndClearTimers(channelStates);
+    }
+
+    // ------------------------------------------------------------------
     // Redis hot-cache helpers (private)
     // ------------------------------------------------------------------
 
