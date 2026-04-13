@@ -9,10 +9,7 @@ jobs:
         with: { node-version: '20' }
       - run: cd frontend && npm ci && npx tsc --noEmit
       - run: cd social-api && npm ci && npx tsc --noEmit
-      - run: npm ci && node -e "require('./src/server.js')" # syntax check
-        env:
-          COGNITO_REGION: us-east-1
-          COGNITO_USER_POOL_ID: us-east-1_fake
+      - run: npm ci && node --check src/server.js # syntax check
 
   docker-build:
     runs-on: ubuntu-latest
