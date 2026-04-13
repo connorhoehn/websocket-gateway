@@ -678,17 +678,17 @@ export default function SectionComments({
                 onChange={handleDraftChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Add a comment... (type @ to mention)"
-                rows={1}
+                rows={2}
                 style={{
                   width: '100%',
                   border: '1px solid #e2e8f0',
                   borderRadius: 6,
-                  padding: '6px 10px',
+                  padding: '8px 10px',
                   fontSize: 13,
                   fontFamily: 'inherit',
                   outline: 'none',
-                  resize: 'none',
-                  minHeight: 32,
+                  resize: 'vertical',
+                  minHeight: 48,
                   boxSizing: 'border-box',
                   color: '#1e293b',
                   background: '#fff',

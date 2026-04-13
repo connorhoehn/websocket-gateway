@@ -530,7 +530,7 @@ export default function DocumentEditorPage({
             {/* Right: inline comment sidebar */}
             {commentSidebarOpen && commentSectionId && (
               <div style={{
-                width: 340,
+                width: 420,
                 flexShrink: 0,
                 position: 'sticky',
                 top: 16,
