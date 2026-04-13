@@ -14,7 +14,9 @@ const localstackConfig = endpoint
 const region = process.env.AWS_REGION ?? 'us-east-1';
 
 export const ddbClient = new DynamoDBClient({ region, ...localstackConfig });
-export const docClient = DynamoDBDocumentClient.from(ddbClient);
+export const docClient = DynamoDBDocumentClient.from(ddbClient, {
+  marshallOptions: { removeUndefinedValues: true },
+});
 export const eventBridgeClient = new EventBridgeClient({ region, ...localstackConfig });
 export const sqsClient = new SQSClient({ region, ...localstackConfig });
 
