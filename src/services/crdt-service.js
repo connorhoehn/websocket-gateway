@@ -225,8 +225,10 @@ class CRDTService {
                         const restored = await this.snapshotManager.handleRestoreSnapshot(data.channel, data.timestamp);
                         if (restored) {
                             // Broadcast restored state to all subscribers on this channel
+                            // Use crdt:doc-replaced so clients destroy & rebuild their Y.Doc
+                            // instead of merging (which is additive and keeps old content)
                             await this.messageRouter.sendToChannel(data.channel, {
-                                type: 'crdt:snapshot', channel: data.channel, snapshot: restored.base64State
+                                type: 'crdt:doc-replaced', channel: data.channel, snapshot: restored.base64State
                             });
                             this.sendToClient(clientId, { type: 'crdt', action: 'snapshotRestored', channel: data.channel, timestamp: restored.restoredTimestamp });
                             this.logger.info(`Restore complete for channel=${data.channel}`);

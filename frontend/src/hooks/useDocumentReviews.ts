@@ -76,7 +76,7 @@ export function useDocumentReviews(
 
   // ---- Fetch initial reviews on mount / documentId change ------------------
   useEffect(() => {
-    if (!documentId || !idToken || !SOCIAL_API_URL) return;
+    if (!documentId || !idToken) return;
 
     setLoading(true);
     fetch(`${SOCIAL_API_URL}/api/documents/${documentId}/reviews`, {
@@ -97,26 +97,8 @@ export function useDocumentReviews(
       });
   }, [documentId, idToken]);
 
-  // ---- Subscribe to document-events WS service ----------------------------
-  // The comments hook also subscribes — the gateway handles duplicate subscriptions
-  // gracefully, so both hooks can independently subscribe/unsubscribe.
-  useEffect(() => {
-    if (connectionState !== 'connected' || !documentId) return;
-
-    sendMessage({
-      service: 'document-events',
-      action: 'subscribe',
-      documentId,
-    });
-
-    return () => {
-      sendMessageRef.current({
-        service: 'document-events',
-        action: 'unsubscribe',
-        documentId,
-      });
-    };
-  }, [documentId, connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: document-events subscription is managed centrally by DocumentEditorPage,
+  // not by individual hooks. This avoids one hook's cleanup unsubscribing all hooks.
 
   // ---- WebSocket message handler -------------------------------------------
   useEffect(() => {
@@ -158,7 +140,7 @@ export function useDocumentReviews(
   // ---- reviewSection --------------------------------------------------------
   const reviewSection = useCallback(
     async (sectionId: string, status: string, comment?: string): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/sections/${sectionId}/reviews`,

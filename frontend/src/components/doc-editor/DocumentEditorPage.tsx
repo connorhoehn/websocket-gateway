@@ -4,11 +4,15 @@
 // Switches between editor, ack (review), and reader modes.
 // Accepts WebSocket and identity props from the parent layout.
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ViewMode, DocumentMeta, Participant } from '../../types/document';
 import type { UseWebSocketReturn } from '../../hooks/useWebSocket';
 import type { GatewayMessage } from '../../types/gateway';
 import { useCollaborativeDoc } from '../../hooks/useCollaborativeDoc';
+import { useDocumentComments } from '../../hooks/useDocumentComments';
+import { useDocumentReviews } from '../../hooks/useDocumentReviews';
+import { useDocumentItems } from '../../hooks/useDocumentItems';
+import { useIdentityContext } from '../../contexts/IdentityContext';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
@@ -16,6 +20,7 @@ import { useDocumentActions } from './useDocumentActions';
 import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
+import WorkflowPanel from './WorkflowPanel';
 import MyMentionsPanel from './MyMentionsPanel';
 import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
@@ -86,9 +91,12 @@ export default function DocumentEditorPage({
   const [mode, setMode] = useState<ViewMode>(getInitialMode);
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
+  const [showWorkflows, setShowWorkflows] = useState(false);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [commentSectionId, setCommentSectionId] = useState<string | null>(null);
+
+  const { idToken } = useIdentityContext();
 
   const {
     meta,
@@ -96,20 +104,11 @@ export default function DocumentEditorPage({
     updateMeta,
     addSection,
     updateSection,
-    addItem,
-    updateItem,
-    removeItem,
     getSectionFragment,
     ydoc,
     provider,
     exportJSON,
     participants,
-    comments,
-    addComment: addYjsComment,
-    resolveThread,
-    unresolveThread,
-    sectionReviews,
-    reviewSection,
     awareness,
   } = useCollaborativeDoc({
     documentId,
@@ -120,6 +119,67 @@ export default function DocumentEditorPage({
     color,
     onMessage,
   });
+
+  // ---- REST-backed hooks (decoupled from Y.js) ----------------------------
+  const {
+    comments,
+    addComment: restAddComment,
+    resolveThread: restResolveThread,
+    unresolveThread: restUnresolveThread,
+  } = useDocumentComments({
+    documentId,
+    idToken,
+    sendMessage: ws.sendMessage,
+    onMessage,
+    connectionState: ws.connectionState,
+  });
+
+  const {
+    sectionReviews,
+    reviewSection: restReviewSection,
+  } = useDocumentReviews({
+    documentId,
+    idToken,
+    sendMessage: ws.sendMessage,
+    onMessage,
+    connectionState: ws.connectionState,
+  });
+
+  const sectionIds = useMemo(() => sections.map(s => s.id), [sections]);
+
+  const {
+    items: restItems,
+    addItem: restAddItem,
+    updateItem: restUpdateItem,
+    removeItem: restRemoveItem,
+  } = useDocumentItems({
+    documentId,
+    sectionIds,
+    idToken,
+    sendMessage: ws.sendMessage,
+    onMessage,
+    connectionState: ws.connectionState,
+  });
+
+  // ------ Centralized document-events subscription --------------------------
+  // All REST hooks (comments, reviews, items, workflows) listen for events on
+  // these channels but none of them manage the subscription. This single effect
+  // subscribes once and unsubscribes on unmount, avoiding race conditions.
+  useEffect(() => {
+    if (ws.connectionState !== 'connected' || !documentId) return;
+    ws.sendMessage({
+      service: 'document-events',
+      action: 'subscribe',
+      documentId,
+    });
+    return () => {
+      ws.sendMessage({
+        service: 'document-events',
+        action: 'unsubscribe',
+        documentId,
+      });
+    };
+  }, [documentId, ws.connectionState, ws.sendMessage]);
 
   // ------ Document actions (demo, clear, export) ----------------------------
 
@@ -246,11 +306,10 @@ export default function DocumentEditorPage({
   // ------ Activity helpers --------------------------------------------------
 
   const handleAddItem = useCallback((sectionId: string, item: Omit<import('../../types/document').TaskItem, 'id'>) => {
-    const id = crypto.randomUUID();
-    addItem(sectionId, { ...item, id });
+    restAddItem(sectionId, item);
     const section = sections.find(s => s.id === sectionId);
     activityPublish('doc.add_item', { sectionTitle: section?.title, documentId, documentTitle: meta?.title });
-  }, [addItem, sections, activityPublish, documentId, meta?.title]);
+  }, [restAddItem, sections, activityPublish, documentId, meta?.title]);
 
   const handleAddSection = useCallback(() => {
     addSection({
@@ -312,13 +371,7 @@ export default function DocumentEditorPage({
   // ------ Section comments (Y.js-persisted) --------------------------------
 
   const handleAddComment = useCallback((sectionId: string, text: string, parentCommentId?: string | null) => {
-    addYjsComment(sectionId, {
-      text,
-      userId,
-      displayName,
-      color,
-      parentCommentId: parentCommentId ?? null,
-    });
+    restAddComment(sectionId, text, parentCommentId);
     activityPublish('doc.comment', { sectionId, text: text.slice(0, 50), documentId, documentTitle: meta?.title });
 
     // Extract @mentions and publish targeted mention events
@@ -336,17 +389,17 @@ export default function DocumentEditorPage({
         documentTitle: meta?.title,
       });
     }
-  }, [addYjsComment, userId, displayName, color, activityPublish, sections, documentId, meta?.title]);
+  }, [restAddComment, activityPublish, sections, displayName, documentId, meta?.title]);
 
   const handleResolveThread = useCallback((sectionId: string, commentId: string) => {
-    resolveThread(sectionId, commentId, displayName);
+    restResolveThread(sectionId, commentId);
     activityPublish('doc.resolve_thread', { sectionId, commentId, documentId, documentTitle: meta?.title });
-  }, [resolveThread, displayName, activityPublish, documentId, meta?.title]);
+  }, [restResolveThread, activityPublish, documentId, meta?.title]);
 
   const handleUnresolveThread = useCallback((sectionId: string, commentId: string) => {
-    unresolveThread(sectionId, commentId);
+    restUnresolveThread(sectionId, commentId);
     activityPublish('doc.unresolve_thread', { sectionId, commentId, reopenedBy: displayName, documentId, documentTitle: meta?.title });
-  }, [unresolveThread, activityPublish, displayName, documentId, meta?.title]);
+  }, [restUnresolveThread, activityPublish, displayName, documentId, meta?.title]);
 
   // ------ My mentions & tasks -----------------------------------------------
 
@@ -367,10 +420,18 @@ export default function DocumentEditorPage({
   const handleToggleMyItems = useCallback(() => {
     setShowMyItems(v => !v);
     setShowHistory(false);
+    setShowWorkflows(false);
   }, []);
 
   const handleToggleHistory = useCallback(() => {
     setShowHistory(v => !v);
+    setShowMyItems(false);
+    setShowWorkflows(false);
+  }, []);
+
+  const handleToggleWorkflows = useCallback(() => {
+    setShowWorkflows(v => !v);
+    setShowHistory(false);
     setShowMyItems(false);
   }, []);
 
@@ -478,6 +539,7 @@ export default function DocumentEditorPage({
         onUpdateMeta={updateMeta}
         onExport={handleExport}
         onToggleHistory={handleToggleHistory}
+        onToggleWorkflows={handleToggleWorkflows}
         onClearDocument={handleClearDocument}
         onJumpToUser={handleJumpToUser}
         sections={sections.map(s => ({ id: s.id, title: s.title }))}
@@ -552,7 +614,7 @@ export default function DocumentEditorPage({
             {/* Left: section content */}
             <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
               <SectionList
-                sections={sections}
+                sections={sections.map(s => ({ ...s, items: restItems[s.id] ?? s.items ?? [] }))}
                 getSectionFragment={getSectionFragment}
                 ydoc={ydoc}
                 provider={provider}
@@ -560,8 +622,8 @@ export default function DocumentEditorPage({
                 editable={!isFinalized}
                 onUpdateSection={updateSection}
                 onAddItem={handleAddItem}
-                onUpdateItem={updateItem}
-                onRemoveItem={removeItem}
+                onUpdateItem={restUpdateItem}
+                onRemoveItem={restRemoveItem}
                 onAddSection={handleAddSection}
                 participants={participants}
                 onSectionFocus={handleSectionFocus}
@@ -642,7 +704,7 @@ export default function DocumentEditorPage({
             provider={provider}
             sectionReviews={sectionReviews}
             reviewSection={(sectionId, status, comment) => {
-              reviewSection(sectionId, status, comment);
+              restReviewSection(sectionId, status, comment);
               const section = sections.find(s => s.id === sectionId);
               activityPublish(`doc.review_${status}`, {
                 sectionTitle: section?.title,
@@ -710,6 +772,19 @@ export default function DocumentEditorPage({
           items={myItems}
           onNavigateToSection={handleNavigateToSection}
           onClose={() => setShowMyItems(false)}
+        />
+      )}
+
+      {/* Workflow sidebar */}
+      {showWorkflows && (
+        <WorkflowPanel
+          documentId={documentId}
+          userId={userId}
+          idToken={idToken}
+          sendMessage={ws.sendMessage}
+          onMessage={onMessage}
+          connectionState={ws.connectionState}
+          onClose={() => setShowWorkflows(false)}
         />
       )}
     </div>

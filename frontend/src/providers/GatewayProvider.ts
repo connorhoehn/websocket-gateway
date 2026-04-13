@@ -19,6 +19,7 @@ export class GatewayProvider extends Observable<string> {
   private readonly _sendMessage: SendMessage;
   private _synced = false;
   private _awarenessTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly _updateHandler: (update: Uint8Array, origin: unknown) => void;
 
   constructor(doc: Y.Doc, channel: string, sendMessage: SendMessage) {
     super();
@@ -30,7 +31,7 @@ export class GatewayProvider extends Observable<string> {
 
     // Listen for local document updates and forward deltas to the gateway.
     // Use `origin === this` guard to avoid echoing back remote updates.
-    this.doc.on('update', (update: Uint8Array, origin: unknown) => {
+    this._updateHandler = (update: Uint8Array, origin: unknown) => {
       if (origin === this) return;
       const b64 = toBase64(update);
       this._sendMessage({
@@ -39,7 +40,8 @@ export class GatewayProvider extends Observable<string> {
         channel: this.channel,
         update: b64,
       });
-    });
+    };
+    this.doc.on('update', this._updateHandler);
 
     // Forward local awareness changes to the gateway (debounced to avoid flooding).
     this.awareness.on('update', ({ added, updated, removed }: {
@@ -101,7 +103,8 @@ export class GatewayProvider extends Observable<string> {
   }
 
   override destroy(): void {
-    this.doc.off('update', () => {});
+    this.doc.off('update', this._updateHandler);
+    if (this._awarenessTimer) clearTimeout(this._awarenessTimer);
     this.awareness.destroy();
     super.destroy();
   }

@@ -65,7 +65,7 @@ export function useDocumentItems(
 
   // ---- Fetch initial items on mount / documentId / sectionIds change -------
   useEffect(() => {
-    if (!documentId || !idToken || !SOCIAL_API_URL || sectionIds.length === 0) return;
+    if (!documentId || !idToken || sectionIds.length === 0) return;
 
     setLoading(true);
 
@@ -98,24 +98,8 @@ export function useDocumentItems(
       });
   }, [documentId, idToken, sectionIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Subscribe to document-events WS service ----------------------------
-  useEffect(() => {
-    if (connectionState !== 'connected' || !documentId) return;
-
-    sendMessage({
-      service: 'document-events',
-      action: 'subscribe',
-      documentId,
-    });
-
-    return () => {
-      sendMessageRef.current({
-        service: 'document-events',
-        action: 'unsubscribe',
-        documentId,
-      });
-    };
-  }, [documentId, connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: document-events subscription is managed centrally by DocumentEditorPage,
+  // not by individual hooks. This avoids one hook's cleanup unsubscribing all hooks.
 
   // ---- WebSocket message handler -------------------------------------------
   useEffect(() => {
@@ -208,7 +192,7 @@ export function useDocumentItems(
   // ---- addItem --------------------------------------------------------------
   const addItem = useCallback(
     async (sectionId: string, item: Partial<TaskItem>): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/sections/${sectionId}/items`,
@@ -236,7 +220,7 @@ export function useDocumentItems(
   // ---- updateItem -----------------------------------------------------------
   const updateItem = useCallback(
     async (sectionId: string, itemId: string, updates: Partial<TaskItem>): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/sections/${sectionId}/items/${itemId}`,
@@ -267,7 +251,7 @@ export function useDocumentItems(
   // ---- removeItem -----------------------------------------------------------
   const removeItem = useCallback(
     async (sectionId: string, itemId: string): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/sections/${sectionId}/items/${itemId}`,
@@ -296,7 +280,7 @@ export function useDocumentItems(
   // ---- ackItem --------------------------------------------------------------
   const ackItem = useCallback(
     async (sectionId: string, itemId: string): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/sections/${sectionId}/items/${itemId}/ack`,

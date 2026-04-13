@@ -6,11 +6,11 @@
 
 const url = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
 
-/** The configured social API base URL (empty string if not set). */
+/** The configured social API base URL. Empty string = same-origin (use proxy). */
 export const SOCIAL_API_URL = url;
 
-/** Whether the social API URL is configured at all. */
-export const isSocialApiConfigured = url.length > 0;
+/** Whether the social API is available (always true — empty URL uses same-origin proxy). */
+export const isSocialApiConfigured = true;
 
 let _reachable: boolean | null = null;
 let _checkPromise: Promise<boolean> | null = null;

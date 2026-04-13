@@ -56,6 +56,14 @@ function buildCommentTree(flat: CommentData[]): CommentThread[] {
   return roots;
 }
 
+/** Normalize API comment (which uses `commentId`) to frontend CommentData (which uses `id`). */
+function normalizeComment(raw: Record<string, unknown>): CommentData & { sectionId?: string } {
+  return {
+    ...(raw as CommentData & { sectionId?: string }),
+    id: (raw.id as string) ?? (raw.commentId as string) ?? '',
+  };
+}
+
 /** Group flat comments by sectionId and build trees for each section. */
 function groupBySectionAndBuildTrees(
   flatComments: CommentData[],
@@ -105,7 +113,7 @@ export function useDocumentComments(
 
   // ---- Fetch initial comments on mount / documentId change -----------------
   useEffect(() => {
-    if (!documentId || !idToken || !SOCIAL_API_URL) return;
+    if (!documentId || !idToken) return;
 
     setLoading(true);
     fetch(`${SOCIAL_API_URL}/api/documents/${documentId}/comments`, {
@@ -116,7 +124,7 @@ export function useDocumentComments(
         return res.json() as Promise<{ comments: CommentData[] }>;
       })
       .then((data) => {
-        setFlatComments(data.comments ?? []);
+        setFlatComments((data.comments ?? []).map((c: Record<string, unknown>) => normalizeComment(c)));
       })
       .catch((err: Error) => {
         console.warn('[useDocumentComments] fetch error:', err.message);
@@ -126,24 +134,8 @@ export function useDocumentComments(
       });
   }, [documentId, idToken]);
 
-  // ---- Subscribe to document-events WS service ----------------------------
-  useEffect(() => {
-    if (connectionState !== 'connected' || !documentId) return;
-
-    sendMessage({
-      service: 'document-events',
-      action: 'subscribe',
-      documentId,
-    });
-
-    return () => {
-      sendMessageRef.current({
-        service: 'document-events',
-        action: 'unsubscribe',
-        documentId,
-      });
-    };
-  }, [documentId, connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  // NOTE: document-events subscription is managed centrally by DocumentEditorPage,
+  // not by individual hooks. This avoids one hook's cleanup unsubscribing all hooks.
 
   // ---- WebSocket message handler -------------------------------------------
   useEffect(() => {
@@ -159,10 +151,10 @@ export function useDocumentComments(
       if (msgDocId && msgDocId !== documentIdRef.current) return;
 
       if (eventType === 'doc:comment_added') {
-        const comment = payload.comment as CommentData & { sectionId?: string } | undefined;
-        if (!comment) return;
+        const raw = payload.comment as Record<string, unknown> | undefined;
+        if (!raw) return;
+        const comment = normalizeComment(raw);
         setFlatComments((prev) => {
-          // Deduplicate by id
           if (prev.some((c) => c.id === comment.id)) return prev;
           return [...prev, comment];
         });
@@ -212,7 +204,7 @@ export function useDocumentComments(
   // ---- addComment -----------------------------------------------------------
   const addComment = useCallback(
     async (sectionId: string, text: string, parentCommentId?: string | null): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/comments`,
@@ -232,10 +224,11 @@ export function useDocumentComments(
       }
 
       // The broadcast will update other clients; optimistically add to local state
-      const data = (await res.json()) as { comment: CommentData };
+      const data = (await res.json()) as { comment: Record<string, unknown> };
+      const normalized = normalizeComment(data.comment);
       setFlatComments((prev) => {
-        if (prev.some((c) => c.id === data.comment.id)) return prev;
-        return [...prev, data.comment];
+        if (prev.some((c) => c.id === normalized.id)) return prev;
+        return [...prev, normalized];
       });
     },
     [idToken, authHeaders],
@@ -244,7 +237,7 @@ export function useDocumentComments(
   // ---- resolveThread --------------------------------------------------------
   const resolveThread = useCallback(
     async (sectionId: string, commentId: string): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/comments/${commentId}`,
@@ -280,7 +273,7 @@ export function useDocumentComments(
   // ---- unresolveThread ------------------------------------------------------
   const unresolveThread = useCallback(
     async (sectionId: string, commentId: string): Promise<void> => {
-      if (!idToken || !SOCIAL_API_URL) return;
+      if (!idToken) return;
 
       const res = await fetch(
         `${SOCIAL_API_URL}/api/documents/${documentIdRef.current}/comments/${commentId}`,

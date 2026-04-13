@@ -14,6 +14,7 @@ interface DocumentHeaderProps {
   onUpdateMeta: (patch: Partial<DocumentMeta>) => void;
   onExport: (format: 'markdown' | 'pdf' | 'json') => void;
   onToggleHistory: () => void;
+  onToggleWorkflows?: () => void;
   onClearDocument: () => void;
   onJumpToUser?: (participant: Participant) => void;
   sections?: { id: string; title: string }[];
@@ -154,6 +155,7 @@ export default function DocumentHeader({
   onUpdateMeta,
   onExport,
   onToggleHistory,
+  onToggleWorkflows,
   onClearDocument,
   onJumpToUser,
   sections,
@@ -269,6 +271,15 @@ export default function DocumentHeader({
         >
           History
         </button>
+        {onToggleWorkflows && (
+          <button
+            type="button"
+            style={exportBtnStyle}
+            onClick={onToggleWorkflows}
+          >
+            Workflows
+          </button>
+        )}
         {meta.status === 'final' ? (
           <button
             type="button"

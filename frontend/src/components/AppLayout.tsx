@@ -40,7 +40,7 @@ const DocumentListPage = lazy(() => import('./doc-editor/DocumentListPage'));
 interface Notification {
   id: string;
   message: string;
-  type: 'follow' | 'member_joined' | 'post_created' | 'mention';
+  type: 'follow' | 'member_joined' | 'post_created' | 'mention' | 'assignment';
   timestamp: number;
   /** For mention notifications: section ID to jump to */
   sectionId?: string;
@@ -57,7 +57,7 @@ function NotificationBanner({ notifications, onDismiss, onClick }: {
 }) {
   if (notifications.length === 0) return null;
 
-  const isClickable = (n: Notification) => n.type === 'mention' && !!n.sectionId;
+  const isClickable = (n: Notification) => (n.type === 'mention' || n.type === 'assignment') && !!n.sectionId;
 
   return (
     <div style={{
@@ -311,6 +311,25 @@ export function AppLayout({
         }
       }
 
+      // Handle item assignment notifications
+      if (!message && msg.type === 'social:post') {
+        const payload = msg.payload as Record<string, unknown> | undefined;
+        if (payload) {
+          const postType = payload.type as string | undefined;
+          if (postType === 'section:item:created' || postType === 'section:item:updated') {
+            const item = payload.item as { assignee?: string } | undefined;
+            const updates = payload.updates as { assignee?: string } | undefined;
+            const assignee = item?.assignee ?? updates?.assignee;
+
+            if (assignee && assignee === userIdRef.current) {
+              message = 'You were assigned an action item';
+              type = 'assignment';
+              sectionId = payload.sectionId as string | undefined;
+            }
+          }
+        }
+      }
+
       if (message && type) {
         const id = `${Date.now()}-${Math.random()}`;
         setNotifications(prev => {
@@ -320,7 +339,7 @@ export function AppLayout({
       }
     });
     return unregister;
-  }, []);  
+  }, []);
 
   // Auto-dismiss notifications after 4 seconds
   useEffect(() => {

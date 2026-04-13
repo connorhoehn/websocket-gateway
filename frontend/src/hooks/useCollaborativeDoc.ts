@@ -200,6 +200,7 @@ export function useCollaborativeDoc(
   // ---- Refs (mutable objects that survive renders) ------------------------
   const ydocRef = useRef<Y.Doc | null>(null);
   const providerRef = useRef<GatewayProvider | null>(null);
+  const replaceDocRef = useRef<((snapshotB64: string) => void) | null>(null);
 
   // ---- Setup / teardown ---------------------------------------------------
   useEffect(() => {
@@ -285,10 +286,12 @@ export function useCollaborativeDoc(
     // Observe awareness changes to track remote participants
     let prevParticipantKey = '';
     const awarenessHandler = () => {
-      const states = provider.awareness.getStates();
+      const prov = providerRef.current;
+      if (!prov) return;
+      const states = prov.awareness.getStates();
       const parts: Participant[] = [];
       states.forEach((state: Record<string, unknown>, clientId: number) => {
-        if (clientId === provider.awareness.clientID) return; // skip self
+        if (clientId === prov.awareness.clientID) return; // skip self
         const user = state.user as Record<string, unknown> | undefined;
         if (!user) return;
         parts.push({
@@ -320,6 +323,81 @@ export function useCollaborativeDoc(
     };
     provider.awareness.on('change', awarenessHandler);
 
+    // ---- doc-replaced handler (for version restore) -------------------------
+    // Destroys the current Y.Doc + provider and rebuilds from a fresh snapshot.
+    // Called from the message handler effect when `crdt:doc-replaced` arrives.
+    replaceDocRef.current = (snapshotB64: string) => {
+      // 1. Tear down old observers and provider
+      const oldDoc = ydocRef.current;
+      const oldProvider = providerRef.current;
+      if (oldProvider) {
+        oldProvider.awareness.off('change', awarenessHandler);
+        oldProvider.off('synced', onSynced);
+        oldProvider.destroy();
+      }
+      if (oldDoc) {
+        oldDoc.destroy();
+      }
+
+      // 2. Create fresh Y.Doc + provider
+      const newDoc = new Y.Doc({ gc: false });
+      ydocRef.current = newDoc;
+      const newProvider = new GatewayProvider(newDoc, channel, ws.sendMessage);
+      providerRef.current = newProvider;
+
+      // 3. Apply the restored snapshot
+      newProvider.applySnapshot(snapshotB64);
+
+      // 4. Re-register Y.js observers on the new doc
+      const newMeta = newDoc.getMap('meta');
+      const newMetaObs = () => {
+        if (newMeta.size > 0) setMeta(yMapToObject<DocumentMeta>(newMeta));
+      };
+      newMeta.observe(newMetaObs);
+
+      const newSections = newDoc.getArray<Y.Map<unknown>>('sections');
+      const newSectionsObs = () => {
+        const next = yArrayToSections(newSections);
+        setSections(next);
+        const nextComments: Record<string, CommentThread[]> = {};
+        for (let i = 0; i < newSections.length; i++) {
+          const ySection = newSections.get(i);
+          const sectionId = ySection.get('id') as string;
+          const yComments = ySection.get('comments');
+          if (yComments instanceof Y.Array) {
+            const flat = yCommentsToArray(yComments as Y.Array<Y.Map<unknown>>);
+            nextComments[sectionId] = buildCommentTree(flat);
+          }
+        }
+        setComments(nextComments);
+      };
+      newSections.observeDeep(newSectionsObs);
+
+      const newReviews = newDoc.getMap('sectionReviews');
+      const newReviewsObs = () => {
+        const next: Record<string, SectionReview[]> = {};
+        newReviews.forEach((value, key) => {
+          if (!(value instanceof Y.Map)) return;
+          const review = yMapToObject<SectionReview>(value);
+          const sectionId = key.split(':')[0];
+          if (!next[sectionId]) next[sectionId] = [];
+          next[sectionId].push(review);
+        });
+        setSectionReviews(next);
+      };
+      newReviews.observeDeep(newReviewsObs);
+
+      // 5. Re-register awareness + synced
+      newProvider.awareness.on('change', awarenessHandler);
+      newProvider.on('synced', onSynced);
+
+      // 6. Trigger initial reads
+      newMetaObs();
+      newSectionsObs();
+      newReviewsObs();
+      setSynced(true);
+    };
+
     return () => {
       clearTimeout(retryTimer);
       clearTimeout(retryTimer2);
@@ -342,6 +420,7 @@ export function useCollaborativeDoc(
 
       ydocRef.current = null;
       providerRef.current = null;
+      replaceDocRef.current = null;
       setSynced(false);
       setMeta(null);
       setSections([]);
@@ -385,6 +464,16 @@ export function useCollaborativeDoc(
     const unregister = onMessage((msg: GatewayMessage) => {
       const provider = providerRef.current;
       if (!provider) return;
+
+      // Server sends crdt:doc-replaced on version restore — destroy & rebuild Y.Doc
+      if (msg.type === 'crdt:doc-replaced') {
+        if (msg.channel !== channel) return;
+        const snapshotB64 = (msg as Record<string, unknown>).snapshot as string | undefined;
+        if (snapshotB64 && replaceDocRef.current) {
+          replaceDocRef.current(snapshotB64);
+        }
+        return;
+      }
 
       // Server sends type: 'crdt:snapshot' with snapshot field on subscribe
       if (msg.type === 'crdt:snapshot') {
