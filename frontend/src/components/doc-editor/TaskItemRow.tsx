@@ -114,14 +114,17 @@ const assigneeBadgeStyle = (hasAssignee: boolean): React.CSSProperties => ({
 });
 
 const assigneeInputStyle: React.CSSProperties = {
-  width: 120,
+  width: '100%',
   fontSize: 11,
   fontFamily: 'inherit',
-  padding: '2px 8px',
-  borderRadius: 12,
-  border: '1px solid #c7d2fe',
+  padding: '4px 8px',
+  borderRadius: 6,
+  border: '1px solid #d1d5db',
   outline: 'none',
-  height: 24,
+  height: 28,
+  background: '#fff',
+  color: '#1e293b',
+  boxSizing: 'border-box',
 };
 
 const assigneeDropdownStyle: React.CSSProperties = {
