@@ -177,12 +177,13 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
 
     receivedPushRef.current = false;
 
-    // Request document list on connect
-    console.log('[useDocuments] Sending listDocuments + getDocumentPresence');
-    sendMessage({ service: 'crdt', action: 'listDocuments' });
-
-    // Request initial presence snapshot (server will also push updates going forward)
-    sendMessage({ service: 'crdt', action: 'getDocumentPresence' });
+    // Request document list on connect (slight delay to ensure WS is fully ready)
+    const fetchTimer = setTimeout(() => {
+      console.log('[useDocuments] Sending listDocuments + getDocumentPresence');
+      sendMessageRef.current({ service: 'crdt', action: 'listDocuments' });
+      sendMessageRef.current({ service: 'crdt', action: 'getDocumentPresence' });
+    }, 100);
+    const cleanupFetch = () => clearTimeout(fetchTimer);
 
     // Wait for push-based presence. If none arrives within the timeout, start polling.
     pushTimeoutRef.current = setTimeout(() => {
@@ -195,6 +196,7 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
     }, PRESENCE_PUSH_TIMEOUT_MS);
 
     return () => {
+      cleanupFetch();
       if (pushTimeoutRef.current !== null) {
         clearTimeout(pushTimeoutRef.current);
         pushTimeoutRef.current = null;

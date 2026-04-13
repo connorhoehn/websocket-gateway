@@ -70,22 +70,29 @@ class CRDTService {
         // ---------------------------------------------------------------
         // Sub-services
         // ---------------------------------------------------------------
-        this.metadataService = new DocumentMetadataService(
-            this.dynamoClient, this.redisClient, this.messageRouter, this.logger
-        );
+        this.metadataService = new DocumentMetadataService({
+            dynamoClient: this.dynamoClient,
+            redisClient: this.redisClient,
+            logger: this.logger,
+            isRedisAvailable: () => this.redisConnected,
+        });
 
-        this.snapshotManager = new SnapshotManager(
-            this.dynamoClient, this.redisClient, this.eventBridgeClient,
-            this.messageRouter, this.logger, config
-        );
+        this.snapshotManager = new SnapshotManager({
+            dynamoClient: this.dynamoClient,
+            redisClient: this.redisClient,
+            eventBridgeClient: this.eventBridgeClient,
+            logger: this.logger,
+            getChannelState: (ch) => this.channelStates.get(ch),
+            isRedisAvailable: () => this.redisConnected,
+        });
 
         this.awarenessCoalescer = new AwarenessCoalescer(this.messageRouter, this.logger);
 
         this.presenceService = new DocumentPresenceService(this.messageRouter, this.logger);
 
         this.evictionManager = new IdleEvictionManager(this.logger, config);
-        // Wire eviction callback: when the eviction timer fires, flush snapshot + destroy Y.Doc
-        this.evictionManager.onEvict(async (channel) => {
+        // Eviction callback: when the eviction timer fires, flush snapshot + destroy Y.Doc
+        this._evictionCallback = async (channel) => {
             const state = this.channelStates.get(channel);
             if (!state) return;
             if (state.subscriberCount > 0) return; // someone re-joined during grace period
@@ -98,7 +105,7 @@ class CRDTService {
             this.channelStates.delete(channel);
             this.snapshotManager.cancelDebouncedSnapshot(channel);
             this.logger.info(`Y.Doc evicted for idle channel ${channel}`);
-        });
+        };
 
         // ---------------------------------------------------------------
         // Periodic snapshot sweep
@@ -220,31 +227,52 @@ class CRDTService {
                         (cid, msg) => this.sendError(cid, msg));
 
                 // Delegated to DocumentMetadataService
-                case 'listDocuments':
-                    return await this.metadataService.handleListDocuments(clientId, data,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
-                case 'createDocument':
-                    return await this.metadataService.handleCreateDocument(clientId, data,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
-                case 'deleteDocument':
+                case 'listDocuments': {
+                    const docs = await this.metadataService.handleListDocuments();
+                    this.sendToClient(clientId, { type: 'crdt', action: 'documentList', documents: docs });
+                    return;
+                }
+                case 'createDocument': {
+                    const doc = await this.metadataService.handleCreateDocument({
+                        meta: data.meta,
+                        createdBy: clientId,
+                    });
+                    // Broadcast to all clients so document lists update
+                    this.messageRouter.broadcastToAll({ type: 'crdt', action: 'documentCreated', document: doc });
+                    return;
+                }
+                case 'deleteDocument': {
                     if (!this._requireAuth(clientId, 'deleteDocument')) return;
-                    return await this.metadataService.handleDeleteDocument(clientId, data,
-                        this.channelStates, this.snapshotManager,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
-                case 'updateDocumentMeta':
-                    return await this.metadataService.handleUpdateDocumentMeta(clientId, data,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
+                    const docId = data.documentId;
+                    await this.metadataService.handleDeleteDocument(docId);
+                    // Clean up CRDT state if exists
+                    const channel = `doc:${docId}`;
+                    const state = this.channelStates.get(channel);
+                    if (state) {
+                        if (state.ydoc) state.ydoc.destroy();
+                        this.channelStates.delete(channel);
+                        this.snapshotManager.cancelDebouncedSnapshot(channel);
+                    }
+                    this.messageRouter.broadcastToAll({ type: 'crdt', action: 'documentDeleted', documentId: docId });
+                    return;
+                }
+                case 'updateDocumentMeta': {
+                    const updated = await this.metadataService.handleUpdateDocumentMeta(data.documentId, data.meta);
+                    this.messageRouter.broadcastToAll({ type: 'crdt', action: 'documentMetaUpdated', documentId: data.documentId, meta: updated });
+                    return;
+                }
 
                 // Delegated to DocumentPresenceService
-                case 'getDocumentPresence':
-                    return await this.presenceService.handleGetDocumentPresence(clientId,
-                        this.channelStates,
-                        (cid, msg) => this.sendToClient(cid, msg),
-                        (cid, msg) => this.sendError(cid, msg));
+                case 'getDocumentPresence': {
+                    const presence = {};
+                    const presenceMap = this.presenceService.getPresence();
+                    for (const [ch, usersMap] of presenceMap) {
+                        const users = Array.from(usersMap.values());
+                        if (users.length > 0) presence[ch] = users;
+                    }
+                    this.sendToClient(clientId, { type: 'crdt', action: 'documentPresence', presence });
+                    return;
+                }
 
                 default:
                     this.sendError(clientId, `Unknown CRDT action: ${action}`);
@@ -291,7 +319,7 @@ class CRDTService {
             await this.messageRouter.subscribeToChannel(clientId, channel);
 
             // Cancel idle eviction if someone is subscribing
-            this.evictionManager.cancel(channel);
+            this.evictionManager.cancelEviction(channel);
 
             // Initialize or reuse channel state
             let state = this.channelStates.get(channel);
@@ -407,7 +435,7 @@ class CRDTService {
                     if (state.operationsSinceSnapshot > 0) {
                         await this.snapshotManager.writeSnapshot(channel, state);
                     }
-                    this.evictionManager.start(channel);
+                    this.evictionManager.startEviction(channel, this._evictionCallback);
                 }
             }
 
@@ -534,13 +562,13 @@ class CRDTService {
                                 this.logger.error(`Error writing snapshot on disconnect for channel ${channel}:`, err.message);
                             }
                         }
-                        this.evictionManager.start(channel);
+                        this.evictionManager.startEviction(channel, this._evictionCallback);
                     }
                 }
             }
         }
 
-        this.presenceService.removeClientFromAll(clientId);
+        this.presenceService.removeAllForClient(clientId);
         this.logger.debug(`Client ${clientId} disconnected from CRDT service`);
     }
 

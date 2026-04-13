@@ -120,11 +120,16 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      // Ignore events from stale sockets (React StrictMode double-mount)
+      if (wsRef.current !== ws) return;
       retryCountRef.current = 0;
       setConnectionState('connected');
     };
 
     ws.onmessage = (event: MessageEvent) => {
+      // Ignore events from stale sockets
+      if (wsRef.current !== ws) return;
+
       let msg: GatewayMessage;
       try {
         msg = JSON.parse(event.data as string) as GatewayMessage;
@@ -151,6 +156,10 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     };
 
     ws.onclose = () => {
+      // Ignore close events from stale sockets (React StrictMode double-mount).
+      // Without this guard, ws1's late onclose clobbers ws2's 'connected' state.
+      if (wsRef.current !== ws) return;
+
       if (retryCountRef.current < MAX_RETRIES) {
         setConnectionState('reconnecting');
         const delay = BASE_BACKOFF_MS * Math.pow(2, retryCountRef.current);
@@ -164,9 +173,9 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     };
 
     ws.onerror = (event: Event) => {
-      // The server may have sent an error message; the onmessage handler
-      // covers structured error frames. This handler catches raw transport
-      // errors. Cast to ErrorEvent to extract message when available.
+      // Ignore errors from stale sockets
+      if (wsRef.current !== ws) return;
+
       const errEvent = event as ErrorEvent;
       if (errEvent.message) {
         setLastError({
