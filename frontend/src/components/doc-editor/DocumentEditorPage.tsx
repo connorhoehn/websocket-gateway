@@ -287,9 +287,22 @@ export default function DocumentEditorPage({
 
   // ------ Comment sidebar ---------------------------------------------------
 
+  const sectionListRef = useRef<HTMLDivElement>(null);
+  const [commentSidebarTop, setCommentSidebarTop] = useState(0);
+
   const handleOpenComments = useCallback((sectionId: string) => {
     setCommentSectionId(sectionId);
     setCommentSidebarOpen(true);
+    // Calculate the section's offset relative to the section list container
+    requestAnimationFrame(() => {
+      const sectionEl = document.getElementById(`section-${sectionId}`);
+      const containerEl = sectionListRef.current;
+      if (sectionEl && containerEl) {
+        const sectionRect = sectionEl.getBoundingClientRect();
+        const containerRect = containerEl.getBoundingClientRect();
+        setCommentSidebarTop(sectionRect.top - containerRect.top);
+      }
+    });
   }, []);
 
   const handleCloseComments = useCallback(() => {
@@ -500,7 +513,7 @@ export default function DocumentEditorPage({
 
         {/* Editor mode — centered content with inline comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', maxWidth: 1200, margin: '0 auto' }}>
+          <div ref={sectionListRef} style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', maxWidth: 1200, margin: '0 auto', position: 'relative' }}>
             {/* Left: section content */}
             <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
               <SectionList
@@ -532,9 +545,8 @@ export default function DocumentEditorPage({
               <div style={{
                 width: 420,
                 flexShrink: 0,
-                position: 'sticky',
-                top: 16,
                 alignSelf: 'flex-start',
+                marginTop: commentSidebarTop,
                 background: '#fafbfc',
                 border: '1px solid #e2e8f0',
                 borderRadius: 8,

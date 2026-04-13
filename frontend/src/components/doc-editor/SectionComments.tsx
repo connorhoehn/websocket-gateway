@@ -545,7 +545,7 @@ export default function SectionComments({
   onResolveThread,
   onUnresolveThread,
 }: SectionCommentsProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mentionRef = useRef<MentionDropdownHandle>(null);

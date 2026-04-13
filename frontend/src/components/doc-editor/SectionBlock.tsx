@@ -3,7 +3,7 @@
 // Renders a single document section with header, rich-text editor, and task list.
 // Includes presence-aware left border, avatar stack, and focus glow.
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
 import type { Section, TaskItem, Participant } from '../../types/document';
@@ -242,6 +242,7 @@ export default function SectionBlock({
   commentPresence,
 }: SectionBlockProps) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
+  const focusLastItemRef = useRef(false);
 
   const toggleCollapse = () => {
     const next = !collapsed;
@@ -259,6 +260,7 @@ export default function SectionBlock({
       priority: 'medium',
       notes: '',
     });
+    focusLastItemRef.current = true;
   };
 
   // Determine rendering mode from sectionType (if set), falling back to legacy type
@@ -429,6 +431,7 @@ export default function SectionBlock({
               editable={editable}
               onUpdateItem={onUpdateItem}
               onRemoveItem={onRemoveItem}
+              focusLastItem={focusLastItemRef}
             />
           )}
           {editable && (

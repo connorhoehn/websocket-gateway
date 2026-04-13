@@ -12,6 +12,10 @@ export interface TaskItemRowProps {
   editable: boolean;
   onUpdate: (patch: Partial<TaskItem>) => void;
   onRemove: () => void;
+  /** When true, auto-focus the text input on mount. */
+  autoFocusText?: boolean;
+  /** Called after auto-focus completes so parent can reset the flag. */
+  onDidAutoFocus?: () => void;
 }
 
 const statusColors: Record<TaskItem['status'], string> = {
@@ -101,10 +105,10 @@ const assigneeBadgeStyle = (hasAssignee: boolean): React.CSSProperties => ({
   fontSize: 11,
   fontWeight: 600,
   borderRadius: 12,
-  background: hasAssignee ? '#e0e7ff' : '#f1f5f9',
+  background: hasAssignee ? '#e0e7ff' : '#fff',
   color: hasAssignee ? '#4338ca' : '#94a3b8',
   cursor: 'pointer',
-  border: 'none',
+  border: hasAssignee ? 'none' : '1px dashed #cbd5e1',
   whiteSpace: 'nowrap',
   lineHeight: 1.4,
 });
@@ -166,12 +170,13 @@ const avatarCircleStyle = (color: string, size: number): React.CSSProperties => 
   lineHeight: 1,
 });
 
-export default function TaskItemRow({ item, editable, onUpdate, onRemove }: TaskItemRowProps) {
+export default function TaskItemRow({ item, editable, onUpdate, onRemove, autoFocusText, onDidAutoFocus }: TaskItemRowProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   const toggleStatus = () => {
     const next = item.status === 'done' ? 'pending' : 'done';
@@ -244,6 +249,14 @@ export default function TaskItemRow({ item, editable, onUpdate, onRemove }: Task
     setHighlightIdx(0);
   }, [filterText]);
 
+  // Auto-focus the text input when this item is newly added
+  useEffect(() => {
+    if (autoFocusText && textInputRef.current) {
+      textInputRef.current.focus();
+      onDidAutoFocus?.();
+    }
+  }, [autoFocusText, onDidAutoFocus]);
+
   const handlePickerKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       closePicker();
@@ -282,10 +295,11 @@ export default function TaskItemRow({ item, editable, onUpdate, onRemove }: Task
         checked={item.status === 'done'}
         onChange={toggleStatus}
         disabled={!editable}
-        style={{ cursor: editable ? 'pointer' : 'default', width: 16, height: 16 }}
+        style={{ cursor: editable ? 'pointer' : 'default', width: 16, height: 16, accentColor: '#3b82f6', background: '#fff', WebkitAppearance: 'checkbox' as never }}
       />
 
       <input
+        ref={textInputRef}
         type="text"
         value={item.text}
         onChange={(e) => onUpdate({ text: e.target.value })}
