@@ -422,6 +422,9 @@ export function useCollaborativeDoc(
         if (msg.channel !== channel) return;
         switch (msg.action) {
           case 'snapshot':
+            // Skip version-history snapshots (version: true) — those are handled
+            // by useVersionHistory for preview/compare, not for the live doc.
+            if (msg['version']) break;
             if (msg['update']) {
               provider.applySnapshot(msg['update'] as string);
             }
