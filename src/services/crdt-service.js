@@ -102,7 +102,7 @@ class CRDTService {
             if (state.subscriberCount > 0) return; // someone re-joined during grace period
 
             if (state.operationsSinceSnapshot > 0) {
-                await this.snapshotManager.writeSnapshot(channel, state);
+                await this.snapshotManager.writeSnapshot(channel);
                 this.logger.info(`Final snapshot written before evicting Y.Doc for channel ${channel}`);
             }
             if (state.ydoc) state.ydoc.destroy();
@@ -146,7 +146,7 @@ class CRDTService {
                             const updateBytes = new Uint8Array(Buffer.from(message.update, 'base64'));
                             Y.applyUpdate(state.ydoc, updateBytes);
                             state.operationsSinceSnapshot++;
-                            this.snapshotManager.scheduleDebouncedSnapshot(channel, state);
+                            this.snapshotManager.scheduleDebouncedSnapshot(channel);
                             this.logger.debug(`Applied remote CRDT update to local Y.Doc for channel ${channel}`);
                         } catch (err) {
                             this.logger.error(`Failed to apply remote CRDT update for ${channel}:`, err.message);
@@ -168,7 +168,7 @@ class CRDTService {
             for (const [channelId, state] of this.channelStates.entries()) {
                 if (state && state.operationsSinceSnapshot > 0) {
                     promises.push(
-                        this.snapshotManager.writeSnapshot(channelId, state).catch(err =>
+                        this.snapshotManager.writeSnapshot(channelId).catch(err =>
                             this.logger.error(`Failed to flush snapshot for ${channelId} on ${signal}:`, err.message)
                         )
                     );
@@ -416,9 +416,9 @@ class CRDTService {
 
             // Snapshot trigger: immediate after N ops, debounced otherwise
             if (state.operationsSinceSnapshot >= config.OPERATIONS_BEFORE_SNAPSHOT) {
-                await this.snapshotManager.writeSnapshot(channel, state);
+                await this.snapshotManager.writeSnapshot(channel);
             } else {
-                this.snapshotManager.scheduleDebouncedSnapshot(channel, state);
+                this.snapshotManager.scheduleDebouncedSnapshot(channel);
             }
 
             // Update Redis hot-cache (non-blocking)
@@ -455,7 +455,7 @@ class CRDTService {
                 if (state.subscriberCount <= 0) {
                     state.subscriberCount = 0;
                     if (state.operationsSinceSnapshot > 0) {
-                        await this.snapshotManager.writeSnapshot(channel, state);
+                        await this.snapshotManager.writeSnapshot(channel);
                     }
                     this.evictionManager.startEviction(channel, this._evictionCallback);
                 }
@@ -579,7 +579,7 @@ class CRDTService {
                         state.subscriberCount = 0;
                         if (state.operationsSinceSnapshot > 0) {
                             try {
-                                await this.snapshotManager.writeSnapshot(channel, state);
+                                await this.snapshotManager.writeSnapshot(channel);
                             } catch (err) {
                                 this.logger.error(`Error writing snapshot on disconnect for channel ${channel}:`, err.message);
                             }
@@ -643,7 +643,7 @@ class CRDTService {
     async _writePeriodicSnapshots() {
         for (const [channelId, state] of this.channelStates.entries()) {
             if (state.operationsSinceSnapshot > 0) {
-                await this.snapshotManager.writeSnapshot(channelId, state);
+                await this.snapshotManager.writeSnapshot(channelId);
             }
         }
     }

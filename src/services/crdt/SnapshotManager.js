@@ -245,33 +245,38 @@ class SnapshotManager {
      * @returns {Promise<object[]>}
      */
     async handleListSnapshots(channel, limit = 20) {
-        const command = new QueryCommand({
-            TableName: this.snapshotsTableName,
-            KeyConditionExpression: 'documentId = :docId',
-            ExpressionAttributeValues: {
-                ':docId': { S: channel }
-            },
-            ScanIndexForward: false, // Newest first
-            Limit: limit,
-            ProjectionExpression: 'channelId, #ts, versionType, author, versionName, sizeBytes',
-            ExpressionAttributeNames: {
-                '#ts': 'timestamp'
-            }
-        });
+        try {
+            const command = new QueryCommand({
+                TableName: this.snapshotsTableName,
+                KeyConditionExpression: 'documentId = :docId',
+                ExpressionAttributeValues: {
+                    ':docId': { S: channel }
+                },
+                ScanIndexForward: false, // Newest first
+                Limit: limit,
+                ProjectionExpression: '#ts, versionType, author, versionName, sizeBytes',
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp'
+                }
+            });
 
-        const result = await this.dynamoClient.send(command);
-        const now = Date.now();
-        return (result.Items || []).map(item => {
-            const timestamp = parseInt(item.timestamp.N, 10);
-            return {
-                timestamp,
-                age: now - timestamp,
-                type: item.versionType ? item.versionType.S : 'auto',
-                author: item.author ? item.author.S : 'auto',
-                name: item.versionName ? item.versionName.S : null,
-                sizeBytes: item.sizeBytes ? parseInt(item.sizeBytes.N, 10) : null,
-            };
-        });
+            const result = await this.dynamoClient.send(command);
+            const now = Date.now();
+            return (result.Items || []).map(item => {
+                const timestamp = parseInt(item.timestamp.N, 10);
+                return {
+                    timestamp,
+                    age: now - timestamp,
+                    type: item.versionType ? item.versionType.S : 'auto',
+                    author: item.author ? item.author.S : 'auto',
+                    name: item.versionName ? item.versionName.S : null,
+                    sizeBytes: item.sizeBytes ? parseInt(item.sizeBytes.N, 10) : null,
+                };
+            });
+        } catch (error) {
+            this.logger.error(`Failed to list snapshots for ${channel}:`, error.message);
+            return [];
+        }
     }
 
     /**

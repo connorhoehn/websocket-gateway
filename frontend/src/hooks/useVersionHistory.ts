@@ -127,6 +127,12 @@ export function useVersionHistory(
   // Register message handler via the onMessage registrar
   useEffect(() => {
     const handler = (msg: GatewayMessage) => {
+      // Handle error responses — clear loading state so UI doesn't hang
+      if (msg.type === 'error' && (msg as Record<string, unknown>).service === 'crdt') {
+        setLoading(false);
+        return;
+      }
+
       if (msg.type !== 'crdt') return;
       if (msg.channel !== channel) return;
 
