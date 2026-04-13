@@ -268,7 +268,9 @@ export function useCollaborativeDoc(
       });
       setSectionReviews(next);
     };
-    yReviews.observe(reviewsObserver);
+    yReviews.observeDeep(reviewsObserver);
+    // Trigger initial read to pick up reviews from snapshot
+    reviewsObserver();
 
     // Listen for synced event
     const onSynced = () => setSynced(true);
@@ -323,7 +325,7 @@ export function useCollaborativeDoc(
       if (sectionsTimer) clearTimeout(sectionsTimer);
       yMeta.unobserve(metaObserver);
       ySections.unobserveDeep(sectionsObserver);
-      yReviews.unobserve(reviewsObserver);
+      yReviews.unobserveDeep(reviewsObserver);
       provider.awareness.off('change', awarenessHandler);
       provider.off('synced', onSynced);
       provider.destroy();
