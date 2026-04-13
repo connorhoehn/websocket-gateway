@@ -83,6 +83,8 @@ export class RedisService extends Construct {
       cluster: props.cluster,
       taskDefinition: taskDef,
       desiredCount: 1,
+      minHealthyPercent: 0, // Single replica — allow 0 during deployment
+      maxHealthyPercent: 100,
       assignPublicIp: false,
       vpcSubnets: {
         subnetType: SubnetType.PRIVATE_ISOLATED,

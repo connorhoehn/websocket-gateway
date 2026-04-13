@@ -1,7 +1,7 @@
 import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { Cluster, KubernetesVersion } from 'aws-cdk-lib/aws-eks';
-import { Role, ServicePrincipal, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Cluster, KubernetesVersion, ServiceAccount } from 'aws-cdk-lib/aws-eks';
+import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { SubnetType } from 'aws-cdk-lib/aws-ec2';
 import { KubectlV31Layer } from '@aws-cdk/lambda-layer-kubectl-v31';
 import { SharedInfraStack } from './shared-infra-stack';
@@ -26,40 +26,7 @@ export class EksGatewayStack extends Stack {
       vpcSubnets: [{ subnetType: SubnetType.PRIVATE_ISOLATED }],
     });
 
-    // ---- IAM Role for pod execution ----
-    const podRole = new Role(this, 'GatewayPodRole', {
-      assumedBy: new ServicePrincipal('eks-fargate-pods.amazonaws.com'),
-    });
-
-    // DynamoDB permissions (matching ECS task role from task-definition.ts)
-    podRole.addToPolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:Query'],
-      resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/${crdtTableName}`],
-    }));
-
-    // EventBridge permissions
-    podRole.addToPolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: ['events:PutEvents'],
-      resources: ['*'],
-    }));
-
-    // SQS permissions
-    podRole.addToPolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: ['sqs:SendMessage'],
-      resources: [`arn:aws:sqs:${this.region}:${this.account}:social-*`],
-    }));
-
-    // CloudWatch metrics permissions
-    podRole.addToPolicy(new PolicyStatement({
-      effect: Effect.ALLOW,
-      actions: ['cloudwatch:PutMetricData'],
-      resources: ['*'],
-    }));
-
-    // Fargate profile for the gateway workload — with IAM role attached
+    // Fargate profile for the gateway workload
     eksCluster.addFargateProfile('GatewayProfile', {
       selectors: [
         { namespace: 'default' },
@@ -67,6 +34,43 @@ export class EksGatewayStack extends Stack {
       subnetSelection: { subnetType: SubnetType.PRIVATE_ISOLATED },
       fargateProfileName: 'websocket-gateway',
     });
+
+    // ---- IRSA: IAM Role for Service Account ----
+    // This creates a K8s ServiceAccount bound to an IAM role via OIDC,
+    // so pods using this SA get AWS permissions without static credentials.
+    const gatewayServiceAccount = new ServiceAccount(this, 'GatewayServiceAccount', {
+      cluster: eksCluster,
+      name: 'websocket-gateway-sa',
+      namespace: 'default',
+    });
+
+    // DynamoDB permissions (matching ECS task role from task-definition.ts)
+    gatewayServiceAccount.addToPrincipalPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:Query'],
+      resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/${crdtTableName}`],
+    }));
+
+    // EventBridge permissions
+    gatewayServiceAccount.addToPrincipalPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['events:PutEvents'],
+      resources: ['*'],
+    }));
+
+    // SQS permissions
+    gatewayServiceAccount.addToPrincipalPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['sqs:SendMessage'],
+      resources: [`arn:aws:sqs:${this.region}:${this.account}:social-*`],
+    }));
+
+    // CloudWatch metrics permissions
+    gatewayServiceAccount.addToPrincipalPolicy(new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['cloudwatch:PutMetricData'],
+      resources: ['*'],
+    }));
 
     // ---- Deploy Helm chart ----
     const imageUri = process.env.IMAGE_URI ||
@@ -78,6 +82,7 @@ export class EksGatewayStack extends Stack {
       values: {
         gateway: {
           replicaCount: 2,
+          serviceAccountName: gatewayServiceAccount.serviceAccountName,
           image: {
             repository: imageUri.split(':')[0],
             tag: imageUri.split(':')[1] || 'latest',
@@ -127,6 +132,11 @@ export class EksGatewayStack extends Stack {
     new CfnOutput(this, 'EksEndpoint', {
       value: eksCluster.clusterEndpoint,
       description: 'EKS API server endpoint',
+    });
+
+    new CfnOutput(this, 'GatewayServiceAccountRoleArn', {
+      value: gatewayServiceAccount.role.roleArn,
+      description: 'IRSA role ARN for gateway pods',
     });
   }
 }

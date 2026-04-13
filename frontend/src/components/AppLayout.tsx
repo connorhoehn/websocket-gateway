@@ -556,6 +556,7 @@ export function AppLayout({
           </div>
 
           {activeView === 'panels' && (
+            <ErrorBoundary name="PanelsView">
             <Suspense fallback={<div>Loading...</div>}>
               <PanelsView
                 connectionState={connectionState}
@@ -581,6 +582,7 @@ export function AppLayout({
                 onMessage={onMessage}
               />
             </Suspense>
+            </ErrorBoundary>
           )}
 
           {activeView === 'social' && (
@@ -592,7 +594,6 @@ export function AppLayout({
                   userEmail={userEmail}
                   connectionState={connectionState}
                   idToken={idToken}
-                  onMessage={onMessage}
                   rooms={rooms}
                   createRoom={createRoom}
                   createDM={createDM}

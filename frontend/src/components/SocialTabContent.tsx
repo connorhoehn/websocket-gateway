@@ -3,7 +3,6 @@
 // Lazy-loadable view for the "Social" tab — profile card + channels/groups/DMs + activity.
 
 import { useState } from 'react';
-import type { GatewayMessage } from '../types/gateway';
 import type { RoomItem } from '../hooks/useRooms';
 import type { ActivityEvent } from '../hooks/useActivityBus';
 
@@ -32,7 +31,6 @@ export interface SocialTabContentProps {
   userEmail: string;
   connectionState: string;
   idToken: string | null;
-  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
   rooms: RoomItem[];
   createRoom: (name: string) => Promise<void>;
   createDM: (targetUserId: string) => Promise<void>;
