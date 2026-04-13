@@ -25,6 +25,8 @@ export interface SnapshotSection {
   id: string;
   type: string;
   title: string;
+  /** Plain text extracted from the section's rich-text content. */
+  textContent: string;
   items: Array<{
     id: string;
     text: string;
@@ -97,7 +99,18 @@ function extractSectionsFromDoc(doc: Y.Doc): SnapshotSection[] {
       }
     }
 
-    result.push({ id, type, title, items });
+    // Extract rich-text content as plain text
+    let textContent = '';
+    const content = yMap.get('content');
+    if (content && typeof (content as Y.XmlFragment).toString === 'function') {
+      // XmlFragment.toString() returns XML markup; strip tags for plain text comparison
+      textContent = (content as Y.XmlFragment).toString()
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    result.push({ id, type, title, textContent, items });
   }
 
   return result;

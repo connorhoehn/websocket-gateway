@@ -33,6 +33,9 @@ interface SectionDiff {
   oldTitle?: string;
   newTitle?: string;
   titleChanged: boolean;
+  textChanged?: boolean;
+  oldTextContent?: string;
+  newTextContent?: string;
   itemDiffs: ItemDiff[];
 }
 
@@ -99,14 +102,18 @@ function diffSections(
       });
     } else {
       const titleChanged = old.title !== cur.title;
+      const textChanged = (old.textContent || '') !== (cur.textContent || '');
       const itemDiffs = diffItems(old.items, cur.items);
-      const hasChanges = titleChanged || itemDiffs.some(d => d.status !== 'unchanged');
+      const hasChanges = titleChanged || textChanged || itemDiffs.some(d => d.status !== 'unchanged');
       result.push({
         status: hasChanges ? 'modified' : 'unchanged',
         id: old.id,
         oldTitle: old.title,
         newTitle: cur.title,
         titleChanged,
+        textChanged,
+        oldTextContent: old.textContent,
+        newTextContent: cur.textContent,
         itemDiffs,
       });
     }
@@ -288,7 +295,23 @@ export default function DiffViewer({ oldSections, newSections, onClose }: DiffVi
                 );
               })}
 
-            {sd.status === 'modified' && sd.itemDiffs.every(d => d.status === 'unchanged') && sd.titleChanged && (
+            {/* Text content diff */}
+            {sd.textChanged && (
+              <div style={{ marginTop: 4, fontSize: 12 }}>
+                {sd.oldTextContent && (
+                  <div style={{ padding: '4px 8px', borderRadius: 3, background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', marginBottom: 2 }}>
+                    {sd.oldTextContent.substring(0, 200)}{(sd.oldTextContent?.length ?? 0) > 200 ? '...' : ''}
+                  </div>
+                )}
+                {sd.newTextContent && (
+                  <div style={{ padding: '4px 8px', borderRadius: 3, background: '#dcfce7', color: '#166534' }}>
+                    {sd.newTextContent.substring(0, 200)}{(sd.newTextContent?.length ?? 0) > 200 ? '...' : ''}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {sd.status === 'modified' && !sd.textChanged && sd.itemDiffs.every(d => d.status === 'unchanged') && sd.titleChanged && (
               <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                 Only the section title changed.
               </div>
