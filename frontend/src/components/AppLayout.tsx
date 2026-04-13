@@ -231,7 +231,7 @@ function SocialTabContent({
   activeRoomId: string | null;
   activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
 }) {
-  const [socialTab, setSocialTab] = useState<'groups' | 'channels' | 'activity'>('groups');
+  const [socialTab, setSocialTab] = useState<'groups' | 'channels' | 'dms'>('channels');
 
   const initials = displayName
     ? displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -246,23 +246,14 @@ function SocialTabContent({
         alignItems: 'center',
         gap: '1rem',
       }}>
-        {/* Avatar */}
         <div style={{
-          width: 48,
-          height: 48,
-          borderRadius: '50%',
+          width: 48, height: 48, borderRadius: '50%',
           background: 'linear-gradient(135deg, #646cff, #9b59b6)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          fontWeight: 700,
-          fontSize: '1rem',
-          flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0,
         }}>
           {initials}
         </div>
-        {/* Info */}
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {displayName || userId}
@@ -273,20 +264,13 @@ function SocialTabContent({
             </div>
           )}
         </div>
-        {/* Connection badge */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.375rem',
-          fontSize: '0.75rem',
-          fontWeight: 500,
-          color: connectionState === 'connected' ? '#16a34a' : '#ef4444',
-          flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: '0.375rem',
+          fontSize: '0.75rem', fontWeight: 500,
+          color: connectionState === 'connected' ? '#16a34a' : '#ef4444', flexShrink: 0,
         }}>
           <span style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
+            width: 8, height: 8, borderRadius: '50%',
             background: connectionState === 'connected' ? '#16a34a' : '#ef4444',
             display: 'inline-block',
           }} />
@@ -294,84 +278,96 @@ function SocialTabContent({
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        borderBottom: '1px solid #e2e8f0',
-        marginBottom: '0.5rem',
-      }}>
-        {([
-          ['groups', 'Groups'],
-          ['channels', 'Channels'],
-          ['activity', 'Activity'],
-        ] as const).map(([tab, label]) => (
-          <button
-            key={tab}
-            onClick={() => setSocialTab(tab)}
-            style={{
-              padding: '0.5rem 1rem',
-              border: 'none',
-              borderBottom: socialTab === tab ? '2px solid #646cff' : '2px solid transparent',
-              background: 'none',
-              color: socialTab === tab ? '#0f172a' : '#64748b',
-              fontWeight: socialTab === tab ? 600 : 400,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* Split layout: left tabs + right activity */}
+      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
+        {/* Left panel — Groups / Channels / DMs */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Sub-tabs */}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            borderBottom: '1px solid #e2e8f0', marginBottom: '0.75rem',
+          }}>
+            {([
+              ['channels', 'Channels'],
+              ['groups', 'Groups'],
+              ['dms', 'DMs'],
+            ] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                onClick={() => setSocialTab(tab)}
+                style={{
+                  padding: '0.5rem 1rem', border: 'none',
+                  borderBottom: socialTab === tab ? '2px solid #646cff' : '2px solid transparent',
+                  background: 'none',
+                  color: socialTab === tab ? '#0f172a' : '#64748b',
+                  fontWeight: socialTab === tab ? 600 : 400,
+                  fontSize: '0.875rem', cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-      {/* Tab content */}
-      {socialTab === 'groups' && (
-        <GroupPanel
-          idToken={idToken}
-          rooms={rooms}
-          createGroupRoom={createGroupRoom}
-          onRoomSelect={handleRoomSelect}
-          roomsLoading={roomsLoading}
-        />
-      )}
+          {socialTab === 'channels' && (
+            <RoomList
+              idToken={idToken}
+              rooms={rooms}
+              createRoom={createRoom}
+              createDM={createDM}
+              loading={roomsLoading}
+              onRoomSelect={handleRoomSelect}
+              activeRoomId={activeRoomId}
+            />
+          )}
 
-      {socialTab === 'channels' && (
-        <RoomList
-          idToken={idToken}
-          rooms={rooms}
-          createRoom={createRoom}
-          createDM={createDM}
-          loading={roomsLoading}
-          onRoomSelect={handleRoomSelect}
-          activeRoomId={activeRoomId}
-        />
-      )}
+          {socialTab === 'groups' && (
+            <GroupPanel
+              idToken={idToken}
+              rooms={rooms}
+              createGroupRoom={createGroupRoom}
+              onRoomSelect={handleRoomSelect}
+              roomsLoading={roomsLoading}
+            />
+          )}
 
-      {socialTab === 'activity' && (
-        <div style={sectionCardStyle}>
-          <p style={sectionHeaderStyle}>Recent Activity</p>
+          {socialTab === 'dms' && (
+            <div style={sectionCardStyle}>
+              <p style={sectionHeaderStyle}>Direct Messages</p>
+              <RoomList
+                idToken={idToken}
+                rooms={rooms}
+                createRoom={createRoom}
+                createDM={createDM}
+                loading={roomsLoading}
+                onRoomSelect={handleRoomSelect}
+                activeRoomId={activeRoomId}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Right panel — Activity (always visible) */}
+        <div style={{
+          width: 320, flexShrink: 0,
+          ...sectionCardStyle,
+          position: 'sticky', top: '1rem',
+          maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
+        }}>
+          <p style={sectionHeaderStyle}>Activity</p>
           {activityEvents.length === 0 ? (
             <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0 }}>No activity yet.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 400, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
               {activityEvents.slice().reverse().slice(0, 50).map((evt) => (
                 <div key={evt.id} style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.5rem',
-                  fontSize: '0.8125rem',
-                  padding: '0.5rem',
-                  borderRadius: 6,
-                  background: '#f8fafc',
+                  display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
+                  fontSize: '0.8125rem', padding: '0.375rem 0.5rem',
+                  borderRadius: 6, background: '#f8fafc',
                 }}>
                   <span style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: evt.color || '#646cff',
-                    flexShrink: 0,
-                    marginTop: 6,
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: evt.color || '#646cff', flexShrink: 0, marginTop: 6,
                   }} />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <span style={{ fontWeight: 600, color: '#0f172a' }}>
@@ -379,7 +375,7 @@ function SocialTabContent({
                     </span>
                     {' '}
                     <span style={{ color: '#64748b' }}>{evt.eventType}</span>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 2 }}>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 1 }}>
                       {new Date(evt.timestamp).toLocaleTimeString()}
                     </div>
                   </div>
@@ -388,7 +384,7 @@ function SocialTabContent({
             </div>
           )}
         </div>
-      )}
+      </div>
     </>
   );
 }
