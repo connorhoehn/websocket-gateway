@@ -51,8 +51,24 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
   const sessionIdRef = useRef(sessionId);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
+  // Clean up call on tab close / reload
+  useEffect(() => {
+    const handleUnload = () => {
+      const sid = sessionIdRef.current;
+      if (sid) {
+        // Use sendBeacon for reliable cleanup on tab close
+        navigator.sendBeacon(
+          `${SOCIAL_API_URL}/api/video/sessions/${sid}/end`,
+          new Blob([JSON.stringify({})], { type: 'application/json' }),
+        );
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
+
   // Detect if another user started a call via Y.js meta
-  const activeCallFromMeta = meta?.activeCallSessionId ?? null;
+  const activeCallFromMeta = meta?.activeCallSessionId || null;
   const hasActiveCall = !!activeCallFromMeta && !sessionId;
 
   const authHeaders = idToken

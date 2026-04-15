@@ -570,20 +570,24 @@ export default function DocumentEditorPage({
         onStopFollow={handleStopFollow}
       />
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
-        {/* Video call — inline box at top of document */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex' }}>
+        {/* Video call sidebar — left column, fixed to viewport */}
         {showVideoCall && (
-          <VideoCallPanel
-            documentId={documentId}
-            userId={userId}
-            idToken={idToken}
-            meta={meta}
-            updateMeta={updateMeta}
-            sendMessage={ws.sendMessage}
-            onClose={() => setShowVideoCall(false)}
-          />
+          <div style={{ width: 200, flexShrink: 0, padding: '0.5rem', position: 'sticky', top: 8, alignSelf: 'flex-start' }}>
+            <VideoCallPanel
+              documentId={documentId}
+              userId={userId}
+              idToken={idToken}
+              meta={meta}
+              updateMeta={updateMeta}
+              sendMessage={ws.sendMessage}
+              onClose={() => setShowVideoCall(false)}
+            />
+          </div>
         )}
 
+        {/* Main document content */}
+        <div style={{ flex: 1, minWidth: 0, padding: showVideoCall ? '0.5rem 0.5rem 0.5rem 0' : '1rem' }}>
         {/* Read-only banner for finalized documents */}
         {isFinalized && mode === 'editor' && (
           <div style={{
@@ -769,7 +773,10 @@ export default function DocumentEditorPage({
         )}
 
         {/* Activity feed removed — shown in the global left sidebar instead */}
+        </div>
+        {/* end main document content */}
       </div>
+      {/* end flex row */}
 
       {/* Version history sidebar */}
       {showHistory && (

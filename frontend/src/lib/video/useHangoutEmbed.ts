@@ -210,14 +210,27 @@ export function useHangoutEmbed({
     });
   }, []);
 
+  // IVS Stage SDK limits each participant to 1 video + 1 audio track.
+  // Screen sharing SWAPS the published video track (camera → screen).
+  // The camera stream stays in participants[].streams for local PiP display.
+
   const stopScreenShare = useCallback(() => {
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((t) => t.stop());
       screenStreamRef.current = null;
     }
-    localStageStreamsRef.current = localStageStreamsRef.current.filter(
-      (lss) => lss.mediaStreamTrack.contentHint !== 'detail',
-    );
+    // Restore camera video track as the published video
+    if (localStreamRef.current) {
+      const cameraVideoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (cameraVideoTrack) {
+        const cameraStageStream = new LocalStageStream(cameraVideoTrack);
+        // Replace: keep audio, swap video back to camera
+        localStageStreamsRef.current = [
+          ...localStageStreamsRef.current.filter((lss) => lss.mediaStreamTrack.kind === 'audio'),
+          cameraStageStream,
+        ];
+      }
+    }
     stageRef.current?.refreshStrategy();
     setParticipants((prev) => prev.map((p) => p.isLocal ? { ...p, screenStream: undefined } : p));
     setIsScreenSharing(false);
@@ -233,10 +246,18 @@ export function useHangoutEmbed({
       const videoTrack = screenStream.getVideoTracks()[0];
       videoTrack.contentHint = 'detail';
       const screenStageStream = new LocalStageStream(videoTrack);
-      localStageStreamsRef.current = [...localStageStreamsRef.current, screenStageStream];
+
+      // SWAP: replace camera video with screen video (keep audio)
+      localStageStreamsRef.current = [
+        ...localStageStreamsRef.current.filter((lss) => lss.mediaStreamTrack.kind === 'audio'),
+        screenStageStream,
+      ];
       stageRef.current?.refreshStrategy();
+
+      // Camera stays in streams[] for PiP, screen goes in screenStream
       setParticipants((prev) => prev.map((p) => p.isLocal ? { ...p, screenStream } : p));
       setIsScreenSharing(true);
+
       videoTrack.addEventListener('ended', () => { stopScreenShare(); });
     } catch (err: any) {
       if (err.name === 'AbortError' || err.name === 'NotAllowedError') return;

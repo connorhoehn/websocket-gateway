@@ -28,21 +28,18 @@ interface VideoCallPanelProps {
 // Styles
 // ---------------------------------------------------------------------------
 
-const panelStyle: React.CSSProperties = {
+const basePanelStyle: React.CSSProperties = {
   background: '#111827',
   border: '1px solid #374151',
   borderRadius: 12,
-  marginBottom: 16,
   overflow: 'hidden',
-  maxWidth: 1200,
-  margin: '0 auto 16px',
 };
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '8px 12px',
+  padding: '4px 8px',
   borderBottom: '1px solid #374151',
   flexShrink: 0,
 };
@@ -73,6 +70,21 @@ const dangerBtnStyle: React.CSSProperties = {
   border: '1px solid #dc2626',
 };
 
+const iconBtnStyle: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  borderRadius: '50%',
+  cursor: 'pointer',
+  fontSize: 16,
+  padding: 0,
+  fontFamily: 'inherit',
+  transition: 'background 0.15s',
+};
+
 // ---------------------------------------------------------------------------
 // ParticipantTile (inline, adapted for narrow panel)
 // ---------------------------------------------------------------------------
@@ -92,9 +104,8 @@ function ParticipantTile({ participant, isSpeaking }: { participant: HangoutPart
   return (
     <div style={{
       position: 'relative',
-      aspectRatio: '16 / 9',
       background: '#111827',
-      borderRadius: 10,
+      borderRadius: 8,
       overflow: 'hidden',
       transition: 'box-shadow 0.3s ease',
       boxShadow: isSpeaking
@@ -145,15 +156,24 @@ function ParticipantTile({ participant, isSpeaking }: { participant: HangoutPart
 // ScreenShareTile
 // ---------------------------------------------------------------------------
 
-function ScreenShareTile({ stream, userId }: { stream: MediaStream; userId: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+function ScreenShareTile({ stream, userId, cameraStream, isLocal }: {
+  stream: MediaStream;
+  userId: string;
+  cameraStream?: MediaStream;
+  isLocal: boolean;
+}) {
+  const screenRef = useRef<HTMLVideoElement>(null);
+  const pipRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const el = videoRef.current;
-    if (el && el.srcObject !== stream) {
-      el.srcObject = stream;
-    }
+    const el = screenRef.current;
+    if (el && el.srcObject !== stream) el.srcObject = stream;
   }, [stream]);
+
+  useEffect(() => {
+    const el = pipRef.current;
+    if (el && cameraStream && el.srcObject !== cameraStream) el.srcObject = cameraStream;
+  }, [cameraStream]);
 
   return (
     <div style={{
@@ -165,12 +185,31 @@ function ScreenShareTile({ stream, userId }: { stream: MediaStream; userId: stri
       border: '2px solid #3b82f6',
     }}>
       <video
-        ref={videoRef}
+        ref={screenRef}
         autoPlay
         playsInline
         muted
         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
       />
+      {/* PiP camera overlay for the screen sharer */}
+      {isLocal && cameraStream && (
+        <video
+          ref={pipRef}
+          autoPlay
+          playsInline
+          muted
+          style={{
+            position: 'absolute',
+            bottom: 8,
+            right: 8,
+            width: 144,
+            aspectRatio: '16 / 9',
+            objectFit: 'cover',
+            borderRadius: 8,
+            border: '2px solid rgba(255,255,255,0.3)',
+          }}
+        />
+      )}
       <div style={{
         position: 'absolute',
         bottom: 6,
@@ -208,6 +247,7 @@ function ActiveCallView({ stageToken, participantId, userId, onEndCall }: {
 
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
+  const [showControls, setShowControls] = useState(false);
 
   const participantsWithSpeaking = useMemo(() =>
     participants.map(p => ({
@@ -244,76 +284,72 @@ function ActiveCallView({ stageToken, participantId, userId, onEndCall }: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      style={{ display: 'flex', flexDirection: 'column' }}
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
+    >
       {/* Screen share — large pinned tile when someone is sharing */}
       {screenSharer?.screenStream && (
-        <div style={{ padding: 8, paddingBottom: 0 }}>
-          <ScreenShareTile stream={screenSharer.screenStream} userId={screenSharer.userId} />
+        <div style={{ padding: 6, paddingBottom: 0 }}>
+          <ScreenShareTile
+            stream={screenSharer.screenStream}
+            userId={screenSharer.userId}
+            cameraStream={screenSharer.streams[0]}
+            isLocal={screenSharer.isLocal}
+          />
         </div>
       )}
 
-      {/* Video tiles — horizontal row */}
-      <div style={{ display: 'flex', gap: 8, padding: 8, overflow: 'auto' }}>
+      {/* Video tiles — responsive grid: 1x1, 1x2, 2x2 */}
+      <div style={{
+        flex: 1,
+        display: 'grid',
+        gridTemplateColumns: participantsWithSpeaking.length <= 1 ? '1fr' : '1fr 1fr',
+        gap: 4,
+        padding: 6,
+        alignContent: 'start',
+      }}>
         {participantsWithSpeaking.map(p => (
-          <div key={p.participantId} style={{ flex: '1 1 0', minWidth: screenSharer ? 120 : 180, maxWidth: screenSharer ? 200 : 360 }}>
-            <ParticipantTile participant={p} isSpeaking={p.isSpeaking} />
-          </div>
+          <ParticipantTile key={p.participantId} participant={p} isSpeaking={p.isSpeaking} />
         ))}
       </div>
 
-      {/* Controls */}
+      {/* Controls — icon buttons, visible on hover */}
       <div style={{
         display: 'flex',
         justifyContent: 'center',
-        gap: 8,
-        padding: '8px 12px',
+        gap: 4,
+        padding: '6px 8px',
         borderTop: '1px solid #374151',
+        opacity: showControls ? 1 : 0,
+        transition: 'opacity 0.2s',
         flexShrink: 0,
       }}>
-        <button
-          type="button"
-          onClick={() => { setIsMuted(!isMuted); toggleMute(!isMuted); }}
-          style={{
-            ...btnStyle,
-            background: isMuted ? '#fef2f2' : '#fff',
-            color: isMuted ? '#dc2626' : '#374151',
-            border: isMuted ? '1px solid #dc2626' : '1px solid #d1d5db',
-          }}
-        >
-          {isMuted ? 'Unmute' : 'Mute'}
+        <button type="button" onClick={() => { setIsMuted(!isMuted); toggleMute(!isMuted); }}
+          title={isMuted ? 'Unmute' : 'Mute'}
+          style={{ ...iconBtnStyle, background: isMuted ? '#dc2626' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+          {isMuted ? '\u{1F507}' : '\u{1F50A}'}
         </button>
-        <button
-          type="button"
-          onClick={() => { setIsCameraOff(!isCameraOff); toggleCamera(isCameraOff); }}
-          style={{
-            ...btnStyle,
-            background: isCameraOff ? '#fef2f2' : '#fff',
-            color: isCameraOff ? '#dc2626' : '#374151',
-            border: isCameraOff ? '1px solid #dc2626' : '1px solid #d1d5db',
-          }}
-        >
-          {isCameraOff ? 'Camera On' : 'Camera Off'}
+        <button type="button" onClick={() => { setIsCameraOff(!isCameraOff); toggleCamera(isCameraOff); }}
+          title={isCameraOff ? 'Camera On' : 'Camera Off'}
+          style={{ ...iconBtnStyle, background: isCameraOff ? '#dc2626' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+          {isCameraOff ? '\u{1F6AB}' : '\u{1F4F7}'}
         </button>
-        <button
-          type="button"
-          onClick={() => isScreenSharing ? stopScreenShare() : startScreenShare()}
-          style={{
-            ...btnStyle,
-            background: isScreenSharing ? '#dbeafe' : '#fff',
-            color: isScreenSharing ? '#1d4ed8' : '#374151',
-            border: isScreenSharing ? '1px solid #3b82f6' : '1px solid #d1d5db',
-          }}
-        >
-          {isScreenSharing ? 'Stop Share' : 'Share'}
+        <button type="button" onClick={() => isScreenSharing ? stopScreenShare() : startScreenShare()}
+          title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+          style={{ ...iconBtnStyle, background: isScreenSharing ? '#3b82f6' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+          {'\u{1F4BB}'}
         </button>
-        <button type="button" onClick={handleEndCall} style={dangerBtnStyle}>
-          Leave
+        <button type="button" onClick={handleEndCall} title="Leave Call"
+          style={{ ...iconBtnStyle, background: '#dc2626', color: '#fff' }}>
+          {'\u{1F4DE}'}
         </button>
       </div>
 
       {/* Participant count */}
-      <div style={{ textAlign: 'center', fontSize: 11, color: '#6b7280', padding: '4px 0 8px' }}>
-        {participants.length} participant{participants.length !== 1 ? 's' : ''}
+      <div style={{ textAlign: 'center', fontSize: 10, color: '#6b7280', padding: '2px 0 4px' }}>
+        {participants.length} in call
       </div>
     </div>
   );
@@ -347,15 +383,19 @@ export default function VideoCallPanel({
   const activeCallSessionId = meta?.activeCallSessionId;
 
   return (
-    <div style={panelStyle}>
+    <div style={basePanelStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#e5e7eb', margin: 0 }}>Video Call</h3>
-        <button type="button" onClick={onClose} style={{ ...btnStyle, background: 'transparent', color: '#9ca3af', border: '1px solid #4b5563' }}>Close</button>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', margin: 0 }}>Video</span>
+        <button type="button" onClick={onClose} title="Close video" style={{
+          width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: 'none', borderRadius: 4, background: 'transparent', color: '#9ca3af',
+          cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0,
+        }}>{'\u2715'}</button>
       </div>
 
       {/* Content */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div>
         {/* Active call */}
         {callState === 'active' && stageToken && participantId && callUserId && (
           <ActiveCallView
