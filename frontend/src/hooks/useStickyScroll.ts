@@ -1,78 +1,60 @@
 // frontend/src/hooks/useStickyScroll.ts
 //
-// Makes an element "sticky" by switching to position:fixed when the user
-// scrolls past its original position. Works in nested flex/overflow contexts
-// where CSS position:sticky fails.
+// Returns position info for a fixed sidebar element.
+// Reads the placeholder's bounding rect to determine left/width,
+// and uses the actual element's position relative to viewport top.
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-
-interface UseStickyScrollOptions {
-  /** The scrollable container element (defaults to document scroll). */
-  scrollContainer?: HTMLElement | null;
-  /** Offset from top when fixed (px). */
-  topOffset?: number;
-}
+import { useState, useEffect, useRef } from 'react';
 
 interface UseStickyScrollReturn {
-  /** Ref to attach to the placeholder element (reserves space in layout). */
-  placeholderRef: React.RefObject<HTMLDivElement | null>;
-  /** Whether the element should be fixed. */
-  isFixed: boolean;
-  /** The left position when fixed (matches placeholder's left). */
-  fixedLeft: number;
-  /** The width when fixed (matches placeholder's width). */
-  fixedWidth: number;
+  ref: React.RefObject<HTMLDivElement | null>;
+  style: React.CSSProperties;
 }
 
-export function useStickyScroll(options: UseStickyScrollOptions = {}): UseStickyScrollReturn {
-  const { topOffset = 0 } = options;
-  const placeholderRef = useRef<HTMLDivElement | null>(null);
-  const [isFixed, setIsFixed] = useState(false);
-  const [fixedLeft, setFixedLeft] = useState(0);
-  const [fixedWidth, setFixedWidth] = useState(0);
-
-  const handleScroll = useCallback(() => {
-    const el = placeholderRef.current;
-    if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-    // Switch to fixed when the placeholder scrolls above the viewport
-    if (rect.top < topOffset) {
-      setIsFixed(true);
-      setFixedLeft(rect.left);
-      setFixedWidth(rect.width);
-    } else {
-      setIsFixed(false);
-    }
-  }, [topOffset]);
+export function useStickyScroll(topOffset = 8): UseStickyScrollReturn {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
-    // Find the scrollable ancestor
-    const container = options.scrollContainer || findScrollParent(placeholderRef.current);
-    if (!container) return;
+    const el = ref.current;
+    if (!el) return;
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll, { passive: true });
-    handleScroll(); // Initial check
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [handleScroll, options.scrollContainer]);
-
-  return { placeholderRef, isFixed, fixedLeft, fixedWidth };
-}
-
-function findScrollParent(el: HTMLElement | null): HTMLElement | null {
-  let node = el?.parentElement;
-  while (node) {
-    const style = getComputedStyle(node);
-    if (style.overflow === 'auto' || style.overflow === 'scroll' ||
-        style.overflowY === 'auto' || style.overflowY === 'scroll') {
-      return node;
+    // Find scroll parent
+    let scrollParent: HTMLElement | null = el.parentElement;
+    while (scrollParent) {
+      const s = getComputedStyle(scrollParent);
+      if (s.overflow === 'auto' || s.overflow === 'scroll' ||
+          s.overflowY === 'auto' || s.overflowY === 'scroll') break;
+      scrollParent = scrollParent.parentElement;
     }
-    node = node.parentElement;
-  }
-  return document.documentElement;
+
+    const scroller = scrollParent || document.documentElement;
+    // Store initial rect before any fixed positioning
+    const initialRect = el.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const offsetInScroller = initialRect.top - scrollerRect.top + scroller.scrollTop;
+
+    const onScroll = () => {
+      const currentRect = el.getBoundingClientRect();
+      const scrollTop = scroller.scrollTop;
+
+      // When scrolled past the element's initial position, go fixed
+      if (scrollTop > offsetInScroller - topOffset) {
+        setStyle({
+          position: 'fixed',
+          top: topOffset,
+          left: currentRect.left,
+          width: currentRect.width,
+          zIndex: 30,
+        });
+      } else {
+        setStyle({});
+      }
+    };
+
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [topOffset]);
+
+  return { ref, style };
 }
