@@ -15,6 +15,8 @@ interface DocumentHeaderProps {
   onExport: (format: 'markdown' | 'pdf' | 'json') => void;
   onToggleHistory: () => void;
   onToggleWorkflows?: () => void;
+  onToggleVideoCall?: () => void;
+  isCallActive?: boolean;
   onClearDocument: () => void;
   onJumpToUser?: (participant: Participant) => void;
   sections?: { id: string; title: string }[];
@@ -156,6 +158,8 @@ export default function DocumentHeader({
   onExport,
   onToggleHistory,
   onToggleWorkflows,
+  onToggleVideoCall,
+  isCallActive,
   onClearDocument,
   onJumpToUser,
   sections,
@@ -278,6 +282,18 @@ export default function DocumentHeader({
             onClick={onToggleWorkflows}
           >
             Workflows
+          </button>
+        )}
+        {onToggleVideoCall && (
+          <button
+            type="button"
+            style={{
+              ...exportBtnStyle,
+              ...(isCallActive ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : {}),
+            }}
+            onClick={onToggleVideoCall}
+          >
+            {isCallActive ? 'In Call' : 'Call'}
           </button>
         )}
         {meta.status === 'final' ? (

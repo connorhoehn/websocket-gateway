@@ -8,6 +8,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1030.0",
     "@aws-sdk/client-dynamodb": "^3.1010.0",
     "@aws-sdk/client-eventbridge": "^3.1011.0",
     "@aws-sdk/client-sqs": "^3.1011.0",

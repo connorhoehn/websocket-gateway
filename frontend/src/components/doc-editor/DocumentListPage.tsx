@@ -20,6 +20,7 @@ export interface DocumentInfo {
   updatedAt: string;
   icon: string;
   description?: string;
+  activeCallSessionId?: string;
 }
 
 export interface PresenceInfo {
@@ -346,6 +347,23 @@ export default function DocumentListPage({
                       {doc.title}
                     </span>
                     <StatusBadge status={doc.status} />
+                    {doc.activeCallSessionId && (
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        borderRadius: 9999,
+                        background: '#dcfce7',
+                        color: '#166534',
+                        lineHeight: '18px',
+                      }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', animation: 'pulse 1.5s infinite' }} />
+                        Live Call
+                      </span>
+                    )}
                   </div>
                   {doc.description && (
                     <div

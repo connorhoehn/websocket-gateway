@@ -24,6 +24,7 @@
     "@tiptap/starter-kit": "^3.22.3",
     "@tiptap/y-tiptap": "^3.0.3",
     "amazon-cognito-identity-js": "^6.3.16",
+    "amazon-ivs-web-broadcast": "^1.34.0",
     "lib0": "^0.2.117",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

@@ -234,7 +234,7 @@ class DocumentMetadataService {
         if (!existing) return null;
 
         // Merge only allowed fields
-        const allowedFields = ['title', 'status', 'description', 'icon', 'type'];
+        const allowedFields = ['title', 'status', 'description', 'icon', 'type', 'activeCallSessionId'];
         for (const field of allowedFields) {
             if (meta[field] !== undefined) {
                 existing[field] = meta[field];

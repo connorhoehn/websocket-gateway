@@ -23,6 +23,7 @@ export interface DocumentInfo {
   updatedAt: string;
   icon: string;
   description?: string;
+  activeCallSessionId?: string;
 }
 
 export interface DocumentPresenceUser {

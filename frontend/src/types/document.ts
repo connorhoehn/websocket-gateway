@@ -13,6 +13,7 @@ export interface DocumentMeta {
   status: 'draft' | 'review' | 'final';
   documentType?: string;   // template type identifier (e.g. 'meeting', 'retro', 'sprint')
   updatedAt?: string;      // ISO timestamp of last modification
+  activeCallSessionId?: string;  // VNL session ID when a video call is active
 }
 
 export interface TaskItem {

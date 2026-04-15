@@ -16,6 +16,7 @@ import { sectionReviewsRouter, documentReviewsRouter, myReviewsRouter } from './
 import { sectionItemsRouter, myItemsRouter } from './sectionItems';
 import { approvalWorkflowsRouter, pendingWorkflowsRouter } from './approvalWorkflows';
 import { documentImportExportRouter } from './documentImportExport';
+import { videoSessionsRouter } from './videoSessions';
 
 const router = Router();
 
@@ -43,5 +44,6 @@ router.use('/items', myItemsRouter);
 router.use('/documents/:documentId', documentImportExportRouter);
 router.use('/documents/:documentId/workflows', approvalWorkflowsRouter);
 router.use('/workflows', pendingWorkflowsRouter);
+router.use('/video', videoSessionsRouter);
 
 export default router;

@@ -21,6 +21,7 @@ import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import WorkflowPanel from './WorkflowPanel';
+import VideoCallPanel from './VideoCallPanel';
 import MyMentionsPanel from './MyMentionsPanel';
 import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
@@ -92,6 +93,7 @@ export default function DocumentEditorPage({
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
   const [showWorkflows, setShowWorkflows] = useState(false);
+  const [showVideoCall, setShowVideoCall] = useState(false);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [commentSectionId, setCommentSectionId] = useState<string | null>(null);
@@ -433,6 +435,14 @@ export default function DocumentEditorPage({
     setShowWorkflows(v => !v);
     setShowHistory(false);
     setShowMyItems(false);
+    setShowVideoCall(false);
+  }, []);
+
+  const handleToggleVideoCall = useCallback(() => {
+    setShowVideoCall(v => !v);
+    setShowHistory(false);
+    setShowMyItems(false);
+    setShowWorkflows(false);
   }, []);
 
   // Cmd+M / Ctrl+M to toggle My Items panel
@@ -540,6 +550,8 @@ export default function DocumentEditorPage({
         onExport={handleExport}
         onToggleHistory={handleToggleHistory}
         onToggleWorkflows={handleToggleWorkflows}
+        onToggleVideoCall={handleToggleVideoCall}
+        isCallActive={!!meta?.activeCallSessionId}
         onClearDocument={handleClearDocument}
         onJumpToUser={handleJumpToUser}
         sections={sections.map(s => ({ id: s.id, title: s.title }))}
@@ -559,6 +571,19 @@ export default function DocumentEditorPage({
       />
 
       <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+        {/* Video call — inline box at top of document */}
+        {showVideoCall && (
+          <VideoCallPanel
+            documentId={documentId}
+            userId={userId}
+            idToken={idToken}
+            meta={meta}
+            updateMeta={updateMeta}
+            sendMessage={ws.sendMessage}
+            onClose={() => setShowVideoCall(false)}
+          />
+        )}
+
         {/* Read-only banner for finalized documents */}
         {isFinalized && mode === 'editor' && (
           <div style={{
@@ -787,6 +812,7 @@ export default function DocumentEditorPage({
           onClose={() => setShowWorkflows(false)}
         />
       )}
+
     </div>
   );
 }
