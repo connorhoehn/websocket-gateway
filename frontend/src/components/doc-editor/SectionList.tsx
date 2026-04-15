@@ -38,7 +38,7 @@ const containerStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 0,
-  padding: '16px 0',
+  padding: '0 0 16px 0',
 };
 
 const addSectionBtnStyle: React.CSSProperties = {

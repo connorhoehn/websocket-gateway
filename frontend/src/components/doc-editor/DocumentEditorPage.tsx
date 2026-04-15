@@ -27,7 +27,9 @@ import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
 import SectionComments from './SectionComments';
+import TableOfContents from './TableOfContents';
 import ActivityFeed from './ActivityFeed';
+import { useStickyScroll } from '../../hooks/useStickyScroll';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,6 +96,10 @@ export default function DocumentEditorPage({
   const [showMyItems, setShowMyItems] = useState(false);
   const [showWorkflows, setShowWorkflows] = useState(false);
   const [showVideoCall, setShowVideoCall] = useState(false);
+
+  // Sticky scroll for video and TOC — starts in flow, switches to fixed on scroll
+  const videoSticky = useStickyScroll({ topOffset: 8 });
+  const tocSticky = useStickyScroll({ topOffset: 8 });
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [commentSectionId, setCommentSectionId] = useState<string | null>(null);
@@ -570,24 +576,7 @@ export default function DocumentEditorPage({
         onStopFollow={handleStopFollow}
       />
 
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex' }}>
-        {/* Video call sidebar — left column, fixed to viewport */}
-        {showVideoCall && (
-          <div style={{ width: 200, flexShrink: 0, padding: '0.5rem', position: 'sticky', top: 8, alignSelf: 'flex-start' }}>
-            <VideoCallPanel
-              documentId={documentId}
-              userId={userId}
-              idToken={idToken}
-              meta={meta}
-              updateMeta={updateMeta}
-              sendMessage={ws.sendMessage}
-              onClose={() => setShowVideoCall(false)}
-            />
-          </div>
-        )}
-
-        {/* Main document content */}
-        <div style={{ flex: 1, minWidth: 0, padding: showVideoCall ? '0.5rem 0.5rem 0.5rem 0' : '1rem' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
         {/* Read-only banner for finalized documents */}
         {isFinalized && mode === 'editor' && (
           <div style={{
@@ -639,8 +628,43 @@ export default function DocumentEditorPage({
 
         {/* Editor mode — centered content with inline comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <div ref={sectionListRef} style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', maxWidth: 1200, margin: '0 auto', position: 'relative' }}>
-            {/* Left: section content */}
+          <div ref={sectionListRef} style={{ display: 'flex', gap: '1rem', maxWidth: 1600, margin: '0 auto', position: 'relative' }}>
+
+            {/* Left: video sidebar — spacer div reserves width in flex, inner content is sticky */}
+            {(showVideoCall || true /* TEMP: always show fake */) && (
+              <div ref={videoSticky.placeholderRef} style={{ width: 240, flexShrink: 0 }}>
+                <div style={videoSticky.isFixed ? { position: 'fixed', top: 8, left: videoSticky.fixedLeft, width: videoSticky.fixedWidth, zIndex: 30 } : {}}>
+                  {showVideoCall ? (
+                    <VideoCallPanel
+                      documentId={documentId}
+                      userId={userId}
+                      idToken={idToken}
+                      meta={meta}
+                      updateMeta={updateMeta}
+                      sendMessage={ws.sendMessage}
+                      onClose={() => setShowVideoCall(false)}
+                    />
+                  ) : (
+                    /* TEMP: Fake video placeholder for layout testing */
+                    <div style={{ background: '#fafbfc', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                      <div style={{ padding: '4px 8px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Video</span>
+                      </div>
+                      <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, margin: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>
+                        Fake Video 1
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, padding: '0 4px 4px' }}>
+                        <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 10 }}>User 2</div>
+                        <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 10 }}>User 3</div>
+                      </div>
+                      <div style={{ padding: '4px 8px', textAlign: 'center', fontSize: 10, color: '#94a3b8' }}>3 in call</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Center: section content */}
             <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
               <SectionList
                 sections={sections.map(s => ({ ...s, items: restItems[s.id] ?? s.items ?? [] }))}
@@ -666,13 +690,21 @@ export default function DocumentEditorPage({
               />
             </div>
 
+            {/* Right: table of contents */}
+            {!commentSidebarOpen && sections.length > 1 && (
+              <div ref={tocSticky.placeholderRef} style={{ width: 140, flexShrink: 0 }}>
+                <div style={tocSticky.isFixed ? { position: 'fixed', top: 8, left: tocSticky.fixedLeft, width: tocSticky.fixedWidth, zIndex: 30 } : {}}>
+                  <TableOfContents sections={sections.map(s => ({ id: s.id, title: s.title }))} focusedSectionId={focusedSectionId} />
+                </div>
+              </div>
+            )}
+
             {/* Right: inline comment sidebar */}
             {commentSidebarOpen && commentSectionId && (
               <div style={{
                 width: 420,
                 flexShrink: 0,
-                alignSelf: 'flex-start',
-                marginTop: commentSidebarTop,
+                                marginTop: commentSidebarTop,
                 background: '#fafbfc',
                 border: '1px solid #e2e8f0',
                 borderRadius: 8,
@@ -773,10 +805,7 @@ export default function DocumentEditorPage({
         )}
 
         {/* Activity feed removed — shown in the global left sidebar instead */}
-        </div>
-        {/* end main document content */}
       </div>
-      {/* end flex row */}
 
       {/* Version history sidebar */}
       {showHistory && (
