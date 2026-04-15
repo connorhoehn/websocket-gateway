@@ -59,9 +59,12 @@ export default function TableOfContents({ sections, focusedSectionId }: TableOfC
     }
   }, []);
 
-  if (sections.length === 0) return null;
+  // Deduplicate sections by ID
+  const uniqueSections = sections.filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i);
 
-  const currentIndex = sections.findIndex(s => s.id === currentId);
+  if (uniqueSections.length === 0) return null;
+
+  const currentIndex = uniqueSections.findIndex(s => s.id === currentId);
 
   return (
     <div style={{
@@ -70,13 +73,15 @@ export default function TableOfContents({ sections, focusedSectionId }: TableOfC
       gap: 0,
       fontSize: 11,
       width: 140,
+      maxHeight: 'calc(100vh - 160px)',
+      overflowY: 'auto',
     }}>
       {/* Header */}
       <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
         Contents
       </div>
 
-      {sections.map((section, idx) => {
+      {uniqueSections.map((section, idx) => {
         const isActive = section.id === currentId;
         const isPast = currentIndex >= 0 && idx < currentIndex;
 
@@ -128,7 +133,7 @@ export default function TableOfContents({ sections, focusedSectionId }: TableOfC
       {/* Progress indicator */}
       {currentIndex >= 0 && (
         <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 8 }}>
-          {currentIndex + 1} / {sections.length}
+          {currentIndex + 1} / {uniqueSections.length}
         </div>
       )}
     </div>

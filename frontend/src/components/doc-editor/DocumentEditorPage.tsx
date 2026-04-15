@@ -97,13 +97,21 @@ export default function DocumentEditorPage({
   const [showVideoCall, setShowVideoCall] = useState(false);
 
   // Sticky scroll for video and TOC — starts in flow, switches to fixed on scroll
-  // Video and TOC: start in normal flow, switch to fixed when scrolled past.
   const [sidebarFixed, setSidebarFixed] = useState(false);
+  const videoSpacerRef = useRef<HTMLDivElement>(null);
+  const tocSpacerRef = useRef<HTMLDivElement>(null);
+  const [videoLeft, setVideoLeft] = useState(0);
+  const [tocLeft, setTocLeft] = useState(0);
 
-  // Listen to window scroll — the page scrolls via body, not any overflow div
   useEffect(() => {
     const onScroll = () => {
-      setSidebarFixed(window.scrollY > 150);
+      const shouldFix = window.scrollY > 150;
+      setSidebarFixed(shouldFix);
+      // Capture left positions from the spacer divs while they're in flow
+      if (shouldFix) {
+        if (videoSpacerRef.current) setVideoLeft(videoSpacerRef.current.getBoundingClientRect().left);
+        if (tocSpacerRef.current) setTocLeft(tocSpacerRef.current.getBoundingClientRect().left);
+      }
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -640,8 +648,8 @@ export default function DocumentEditorPage({
 
             {/* Left: video sidebar — spacer div reserves width in flex, inner content is sticky */}
             {(showVideoCall || true /* TEMP: always show fake */) && (
-              <div style={{ width: 240, flexShrink: 0 }}>
-                <div style={sidebarFixed ? { position: 'fixed', top: 120, width: 240, zIndex: 30 } : {}}>
+              <div ref={videoSpacerRef} style={{ width: 240, flexShrink: 0 }}>
+                <div style={sidebarFixed ? { position: 'fixed', top: 120, left: videoLeft, width: 240, zIndex: 30 } : {}}>
                   {showVideoCall ? (
                     <VideoCallPanel
                       documentId={documentId}
@@ -700,8 +708,8 @@ export default function DocumentEditorPage({
 
             {/* Right: table of contents */}
             {!commentSidebarOpen && sections.length > 1 && (
-              <div style={{ width: 140, flexShrink: 0 }}>
-                <div style={sidebarFixed ? { position: 'fixed', top: 120, width: 140, zIndex: 30 } : {}}>
+              <div ref={tocSpacerRef} style={{ width: 140, flexShrink: 0 }}>
+                <div style={sidebarFixed ? { position: 'fixed', top: 120, left: tocLeft, width: 140, zIndex: 30 } : {}}>
                   <TableOfContents sections={sections.map(s => ({ id: s.id, title: s.title }))} focusedSectionId={focusedSectionId} />
                 </div>
               </div>
