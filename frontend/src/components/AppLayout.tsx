@@ -5,10 +5,9 @@
 // Replaces the monolithic vertical stack in GatewayDemo.
 
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router';
 import type { GatewayError } from '../types/gateway';
 import type { EphemeralReaction } from '../hooks/useReactions';
-import type { ChatMessage } from '../hooks/useChat';
-import type { CursorMode, RemoteCursor, TextSelectionData } from '../hooks/useCursors';
 import type { LogEntry } from './EventLog';
 import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
@@ -26,12 +25,8 @@ import NewDocumentModal from './doc-editor/NewDocumentModal';
 import { useDocuments } from '../hooks/useDocuments';
 import { ErrorBoundary } from './ErrorBoundary';
 
-// Lazy-loaded views for code splitting
-const PanelsView = lazy(() => import('./PanelsView'));
-const SocialTabContent = lazy(() => import('./SocialTabContent'));
-const BigBrotherPanel = lazy(() => import('./BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
+// Lazy-loaded: only DocumentEditorPage needed for docked video persistence
 const DocumentEditorPage = lazy(() => import('./doc-editor/DocumentEditorPage'));
-const DocumentListPage = lazy(() => import('./doc-editor/DocumentListPage'));
 
 // ---------------------------------------------------------------------------
 // Types
@@ -132,36 +127,15 @@ export interface AppLayoutProps {
   onDisconnect: () => void;
   onReconnect: () => void;
 
-  // Reactions overlay + buttons
+  // Reactions overlay
   activeReactions: EphemeralReaction[];
-  onReact: (emoji: string) => void;
-
-  // Chat
-  chatMessages: ChatMessage[];
-  onChatSend: (content: string) => void;
-
-  // Cursors
-  cursors: Map<string, RemoteCursor>;
-  localCursor: RemoteCursor | null;
-  activeMode: CursorMode;
-  onModeChange: (mode: CursorMode) => void;
-  onFreeformMove: (x: number, y: number) => void;
-  onTableClick: (row: number, col: number) => void;
-  onTextChange: (position: number, selectionData: TextSelectionData | null, hasSelection: boolean) => void;
-  onCanvasMove: (x: number, y: number, tool: import('../hooks/useCursors').CanvasTool, color: string, size: number) => void;
-
-  // CRDT
-  crdtContent: string;
-  applyLocalEdit: (newText: string) => void;
-  hasConflict?: boolean;
-  onDismissConflict?: () => void;
 
   // Dev tools
   logEntries: LogEntry[];
   errors: GatewayError[];
   lastError: GatewayError | null;
 
-  // Unified activity bus (lifted to GatewayDemo so it persists across tab switches)
+  // Activity bus
   activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
   activityPublish: (eventType: string, detail: Record<string, unknown>) => void;
   activityIsLive: boolean;
@@ -178,21 +152,6 @@ export function AppLayout({
   onDisconnect,
   onReconnect,
   activeReactions,
-  onReact,
-  chatMessages,
-  onChatSend,
-  cursors,
-  localCursor,
-  activeMode,
-  onModeChange,
-  onFreeformMove,
-  onTableClick,
-  onTextChange,
-  onCanvasMove,
-  crdtContent,
-  applyLocalEdit,
-  hasConflict,
-  onDismissConflict,
   logEntries,
   errors,
   lastError,
@@ -204,12 +163,23 @@ export function AppLayout({
   const { connectionState, sendMessage, onMessage, ws, clientId, sessionToken } = useWebSocketContext();
   const { userId, displayName, userEmail, idToken, onSignOut } = useIdentityContext();
   const { presenceUsers, currentClientId, setTyping: onTyping } = usePresenceContext();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derive active view from URL path
+  const activeView: 'panels' | 'social' | 'dashboard' | 'doc-editor' =
+    location.pathname.startsWith('/documents') ? 'doc-editor' :
+    location.pathname.startsWith('/social') ? 'social' :
+    location.pathname.startsWith('/dashboard') ? 'dashboard' : 'panels';
+
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'panels' | 'social' | 'dashboard' | 'doc-editor'>('panels');
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
-  const [activeDocumentType, setActiveDocumentType] = useState<string | undefined>(undefined);
   const [showDevTools, setShowDevTools] = useState(false);
   const [showNewDocModal, setShowNewDocModal] = useState(false);
+  // Video call docked to sidebar — persists across document navigation
+  const [dockedVideoDocId, setDockedVideoDocId] = useState<string | null>(null);
+  // Collapsible left sidebar
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const SIDEBAR_WIDTH = sidebarOpen ? 260 : 0;
 
   const {
     rooms,
@@ -359,7 +329,7 @@ export function AppLayout({
 
   const handleNotificationClick = useCallback((notification: Notification) => {
     if (notification.sectionId) {
-      setActiveView('doc-editor');
+      navigate('/documents');
       dismissNotification(notification.id);
       // Allow the doc editor view to mount before scrolling
       setTimeout(() => {
@@ -367,17 +337,6 @@ export function AppLayout({
       }, 300);
     }
   }, [dismissNotification]);
-
-  // Derive typingUsers from presenceUsers, excluding self
-  const typingUsers = presenceUsers
-    .filter(
-      (u) => u.metadata.isTyping === true && u.clientId !== currentClientId
-    )
-    .map(
-      (u) =>
-        (u.metadata.displayName as string | undefined) ??
-        u.clientId.slice(0, 8)
-    );
 
   return (
     <div
@@ -404,6 +363,9 @@ export function AppLayout({
           background: '#ffffff',
           borderBottom: '1px solid #e2e8f0',
           gap: '1rem',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
         }}
       >
         {/* Left: app title */}
@@ -476,6 +438,22 @@ export function AppLayout({
       {/* Body — sidebar + main */}
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 53px)' }}>
 
+        {/* Sidebar toggle button — visible when sidebar is collapsed */}
+        {!sidebarOpen && (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            style={{
+              position: 'fixed', top: 60, left: 8, zIndex: 41,
+              width: 28, height: 28, borderRadius: 6,
+              border: '1px solid #e2e8f0', background: '#fff',
+              cursor: 'pointer', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontSize: 14, color: '#64748b',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+            }}
+            title="Open sidebar"
+          >{'\u2630'}</button>
+        )}
+
         {/* Sidebar */}
         <div
           style={{
@@ -484,10 +462,29 @@ export function AppLayout({
             padding: '1rem',
             borderRight: '1px solid #e2e8f0',
             background: '#ffffff',
-            display: 'flex',
+            display: sidebarOpen ? 'flex' : 'none',
             flexDirection: 'column',
+            position: 'fixed',
+            top: 53,
+            left: 0,
+            bottom: 0,
+            overflowY: 'auto',
+            zIndex: 40,
+            boxSizing: 'border-box',
           }}
         >
+          {/* Collapse button */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              position: 'absolute', top: 8, right: 8,
+              width: 22, height: 22, borderRadius: 4,
+              border: 'none', background: 'transparent',
+              cursor: 'pointer', fontSize: 14, color: '#94a3b8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            title="Collapse sidebar"
+          >{'\u2715'}</button>
           <CollapsibleSidebar
             connectionState={connectionState}
             onDisconnect={onDisconnect}
@@ -499,23 +496,25 @@ export function AppLayout({
             userId={userId}
             documents={documents}
             onOpenDocument={(id: string) => {
-              const doc = documents.find(d => d.id === id);
-              setActiveDocumentType(doc?.type);
-              setActiveDocumentId(id);
-              setActiveView('doc-editor');
+              navigate(`/documents/${id}`);
             }}
+            videoSlot={dockedVideoDocId ? <div id="sidebar-video-slot" /> : undefined}
           />
         </div>
 
-        {/* Main content */}
+        {/* Main content — offset by fixed sidebar width */}
         <div
           style={{
-            flex: 1,
-            padding: '1.5rem',
+            marginLeft: SIDEBAR_WIDTH,
+            width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
+            padding: '1.5rem 2rem',
             display: 'flex',
             flexDirection: 'column',
             gap: '1.5rem',
-            overflowY: 'auto',
+            minHeight: 0,
+            background: '#f8fafc',
+            position: 'relative',
+            zIndex: 1,
           }}
         >
 
@@ -525,16 +524,20 @@ export function AppLayout({
             alignItems: 'center',
             borderBottom: '1px solid #e2e8f0',
             marginBottom: '0.5rem',
+            position: 'sticky',
+            top: 53,
+            background: '#f8fafc',
+            zIndex: 33,
           }}>
             {([
-              ['panels', 'Previews'],
-              ['social', 'Social'],
-              ['dashboard', 'Live Activity'],
-              ['doc-editor', 'Documents'],
-            ] as const).map(([view, label]) => (
+              ['/previews', 'panels', 'Previews'],
+              ['/social', 'social', 'Social'],
+              ['/dashboard', 'dashboard', 'Live Activity'],
+              ['/documents', 'doc-editor', 'Documents'],
+            ] as const).map(([path, view, label]) => (
               <button
                 key={view}
-                onClick={() => setActiveView(view)}
+                onClick={() => navigate(path)}
                 style={{
                   padding: '0.5rem 1rem',
                   border: 'none',
@@ -550,7 +553,7 @@ export function AppLayout({
               </button>
             ))}
             {/* New Document button — shown in toolbar when on Documents tab */}
-            {activeView === 'doc-editor' && !activeDocumentId && (
+            {activeView === 'doc-editor' && location.pathname === '/documents' && (
               <button
                 onClick={() => setShowNewDocModal(true)}
                 style={{
@@ -574,105 +577,32 @@ export function AppLayout({
             )}
           </div>
 
-          {activeView === 'panels' && (
-            <ErrorBoundary name="PanelsView">
-            <Suspense fallback={<div>Loading...</div>}>
-              <PanelsView
-                connectionState={connectionState}
-                onReact={onReact}
-                chatMessages={chatMessages}
-                onChatSend={onChatSend}
-                cursors={cursors}
-                localCursor={localCursor}
-                activeMode={activeMode}
-                onModeChange={onModeChange}
-                onFreeformMove={onFreeformMove}
-                onTableClick={onTableClick}
-                onTextChange={onTextChange}
-                onCanvasMove={onCanvasMove}
-                crdtContent={crdtContent}
-                applyLocalEdit={applyLocalEdit}
-                hasConflict={hasConflict}
-                onDismissConflict={onDismissConflict}
-                onTyping={onTyping}
-                typingUsers={typingUsers}
-                idToken={idToken}
-                sendMessage={sendMessage}
-                onMessage={onMessage}
-              />
-            </Suspense>
-            </ErrorBoundary>
-          )}
+          {/* Route content — rendered by React Router */}
+          <Suspense fallback={<div>Loading...</div>}>
+            <Outlet />
+          </Suspense>
 
-          {activeView === 'social' && (
-            <ErrorBoundary name="SocialPanels">
+          {/* Docked-video document — stays mounted across navigation to preserve IVS connection */}
+          {dockedVideoDocId && (
+            <ErrorBoundary name="DockedVideoEditor">
               <Suspense fallback={<div>Loading...</div>}>
-                <SocialTabContent
-                  userId={userId}
-                  displayName={displayName}
-                  userEmail={userEmail}
-                  connectionState={connectionState}
-                  idToken={idToken}
-                  rooms={rooms}
-                  createRoom={createRoom}
-                  createDM={createDM}
-                  createGroupRoom={createGroupRoom}
-                  roomsLoading={roomsLoading}
-                  handleRoomSelect={handleRoomSelect}
-                  activeRoomId={activeRoomId}
-                  activityEvents={activityEvents}
-                />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-
-          {activeView === 'dashboard' && (
-            <Suspense fallback={<div>Loading...</div>}>
-            <BigBrotherPanel
-              rooms={rooms}
-              presenceUsers={presenceUsers}
-              activityEvents={activityEvents}
-              activityIsLive={activityIsLive}
-            />
-            </Suspense>
-          )}
-
-          {activeView === 'doc-editor' && !activeDocumentId && (
-            <Suspense fallback={<div>Loading...</div>}>
-            <DocumentListPage
-              documents={documents}
-              presence={docPresence}
-              hideHeader
-              onOpenDocument={(id: string) => {
-                const doc = documents.find(d => d.id === id);
-                setActiveDocumentType(doc?.type);
-                setActiveDocumentId(id);
-              }}
-              onCreateDocument={(meta) => {
-                createDocument(meta);
-              }}
-              onDeleteDocument={deleteDocument}
-              onJumpToUser={(docId: string, _userId: string) => {
-                setActiveDocumentId(docId);
-              }}
-            />
-            </Suspense>
-          )}
-
-          {activeView === 'doc-editor' && activeDocumentId && (
-            <ErrorBoundary name="DocumentEditor">
-              <Suspense fallback={<div>Loading...</div>}>
-              <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{
+                flex: location.pathname === `/documents/${dockedVideoDocId}` ? 1 : 0,
+                minHeight: 0,
+                display: location.pathname === `/documents/${dockedVideoDocId}` ? 'block' : 'none',
+              }}>
                 <DocumentEditorPage
-                  documentId={activeDocumentId}
-                  documentType={activeDocumentType}
+                  documentId={dockedVideoDocId}
                   ws={ws}
                   userId={userId}
                   displayName={displayName}
                   onMessage={onMessage}
                   activityPublish={activityPublish}
                   activityEvents={activityEvents}
-                  onBack={() => { setActiveDocumentId(null); setActiveDocumentType(undefined); }}
+                  onBack={() => navigate('/documents')}
+                  isVideoDocked
+                  onDockVideo={() => setDockedVideoDocId(dockedVideoDocId)}
+                  onUndockVideo={() => setDockedVideoDocId(null)}
                 />
               </div>
               </Suspense>

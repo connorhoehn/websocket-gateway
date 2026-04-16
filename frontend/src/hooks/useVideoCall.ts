@@ -17,6 +17,8 @@ export interface UseVideoCallOptions {
   updateMeta: (partial: Partial<DocumentMeta>) => void;
   /** Send WebSocket message to gateway (for document list metadata sync). */
   sendMessage: (msg: Record<string, unknown>) => void;
+  /** Display name for participant tracking. */
+  displayName?: string;
 }
 
 export type CallState = 'idle' | 'creating' | 'joining' | 'active' | 'error';
@@ -39,7 +41,7 @@ export interface UseVideoCallReturn {
 }
 
 export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
-  const { documentId, idToken, meta, updateMeta, sendMessage } = options;
+  const { documentId, idToken, meta, updateMeta, sendMessage, displayName } = options;
 
   const [callState, setCallState] = useState<CallState>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -56,11 +58,14 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
     const handleUnload = () => {
       const sid = sessionIdRef.current;
       if (sid) {
-        // Use sendBeacon for reliable cleanup on tab close
+        // End the VNL session — best-effort via sendBeacon
         navigator.sendBeacon(
           `${SOCIAL_API_URL}/api/video/sessions/${sid}/end`,
-          new Blob([JSON.stringify({})], { type: 'application/json' }),
+          new Blob([JSON.stringify({ documentId })], { type: 'application/json' }),
         );
+        // Note: Y.js meta and Redis metadata can't be cleared via sendBeacon
+        // (no REST endpoint). The VNL end handler will clean up server-side.
+        // Stale activeCallSessionId is handled by the frontend checking session validity.
       }
     };
     window.addEventListener('beforeunload', handleUnload);
@@ -71,9 +76,16 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
   const activeCallFromMeta = meta?.activeCallSessionId || null;
   const hasActiveCall = !!activeCallFromMeta && !sessionId;
 
-  const authHeaders = idToken
-    ? { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json' };
+  // Use refs for values that change but shouldn't re-create callbacks
+  const idTokenRef = useRef(idToken);
+  useEffect(() => { idTokenRef.current = idToken; }, [idToken]);
+
+  const getAuthHeaders = useCallback(() => {
+    const token = idTokenRef.current;
+    return token
+      ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      : { 'Content-Type': 'application/json' };
+  }, []);
 
   const joinSession = useCallback(async (sid: string) => {
     setCallState('joining');
@@ -81,10 +93,21 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
     try {
       const res = await fetch(
         `${SOCIAL_API_URL}/api/video/sessions/${sid}/join`,
-        { method: 'POST', headers: authHeaders },
+        { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ documentId, displayName }) },
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Join failed' }));
+        const status = res.status;
+        // If session doesn't exist on VNL (404/410), clear stale meta
+        if (status === 404 || status === 410) {
+          console.warn('[useVideoCall] Session', sid, 'no longer exists, clearing stale meta');
+          updateMeta({ activeCallSessionId: '' });
+          sendMessage({
+            service: 'crdt', action: 'updateDocumentMeta', documentId,
+            meta: { activeCallSessionId: '' },
+          });
+          throw new Error('This call has ended. The page has been updated.');
+        }
         throw new Error((body as { error: string }).error);
       }
       const data = (await res.json()) as { token: string; participantId: string; userId: string };
@@ -97,16 +120,16 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
       setError((err as Error).message);
       setCallState('error');
     }
-  }, [authHeaders]);
+  }, [documentId, displayName, getAuthHeaders, updateMeta, sendMessage]);
 
   const startCall = useCallback(async () => {
     setCallState('creating');
     setError(null);
     try {
-      // Create session
+      // Create session on VNL
       const createRes = await fetch(
         `${SOCIAL_API_URL}/api/video/sessions`,
-        { method: 'POST', headers: authHeaders },
+        { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ documentId, displayName }) },
       );
       if (!createRes.ok) {
         const body = await createRes.json().catch(() => ({ error: 'Create failed' }));
@@ -115,24 +138,23 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
       const createData = (await createRes.json()) as { sessionId: string };
       const newSessionId = createData.sessionId;
 
-      // Write to Y.js meta so other editors see the call
-      updateMeta({ activeCallSessionId: newSessionId });
+      // Join FIRST — only persist activeCallSessionId after successful join
+      // (prevents phantom calls if join fails due to permissions/network)
+      await joinSession(newSessionId);
 
-      // Also sync to document list metadata (Redis) so the doc list shows call indicator
+      // Only write meta after join succeeds (callState is now 'active')
+      updateMeta({ activeCallSessionId: newSessionId });
       sendMessage({
         service: 'crdt',
         action: 'updateDocumentMeta',
         documentId,
         meta: { activeCallSessionId: newSessionId },
       });
-
-      // Join the session
-      await joinSession(newSessionId);
     } catch (err) {
       setError((err as Error).message);
       setCallState('error');
     }
-  }, [authHeaders, updateMeta, joinSession]);
+  }, [documentId, displayName, getAuthHeaders, updateMeta, sendMessage, joinSession]);
 
   const joinCall = useCallback(async (sid: string) => {
     await joinSession(sid);
@@ -141,11 +163,14 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
   const endCall = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (sid) {
-      // Best-effort end session
+      // Best-effort end session — log failures for debugging
       fetch(`${SOCIAL_API_URL}/api/video/sessions/${sid}/end`, {
         method: 'POST',
-        headers: authHeaders,
-      }).catch(() => {});
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ documentId }),
+      }).catch((err) => {
+        console.error('[useVideoCall] Failed to end session on server:', err);
+      });
     }
 
     // Clear Y.js meta
@@ -165,7 +190,7 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
     setUserId(null);
     setCallState('idle');
     setError(null);
-  }, [authHeaders, updateMeta]);
+  }, [documentId, getAuthHeaders, updateMeta, sendMessage]);
 
   return {
     callState,

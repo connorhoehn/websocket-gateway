@@ -4,6 +4,8 @@
 
 import { useState } from 'react';
 import type { MyItem, MentionItem, TaskAssignment } from '../../hooks/useMyMentionsAndTasks';
+import { Panel, PanelHeader, PanelBody, Button } from '../ui/Panel';
+import { colors, fontSize } from '../../styles/tokens';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -47,83 +49,34 @@ function getInitials(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles (item-level — panel/header/body handled by shared components)
 // ---------------------------------------------------------------------------
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  right: 0,
-  width: 340,
-  height: '100%',
-  background: '#fff',
-  borderLeft: '1px solid #e5e7eb',
-  zIndex: 40,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '-4px 0 12px rgba(0,0,0,0.08)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '0.75rem 1rem',
-  borderBottom: '1px solid #e5e7eb',
-  flexShrink: 0,
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 15,
-  fontWeight: 600,
-  color: '#111827',
-  margin: 0,
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  fontSize: 16,
-  fontWeight: 500,
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  lineHeight: 1,
-};
 
 const tabBarStyle: React.CSSProperties = {
   display: 'flex',
   gap: 0,
-  borderBottom: '1px solid #e5e7eb',
+  borderBottom: `1px solid ${colors.border}`,
   flexShrink: 0,
 };
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   flex: 1,
   padding: '8px 0',
-  fontSize: 13,
+  fontSize: fontSize.sm,
   fontWeight: active ? 600 : 400,
-  color: active ? '#3b82f6' : '#6b7280',
+  color: active ? colors.primary : colors.textSecondary,
   background: 'transparent',
   border: 'none',
-  borderBottom: active ? '2px solid #3b82f6' : '2px solid transparent',
+  borderBottom: active ? `2px solid ${colors.primary}` : '2px solid transparent',
   cursor: 'pointer',
   fontFamily: 'inherit',
 });
 
-const listStyle: React.CSSProperties = {
-  flex: 1,
-  overflow: 'auto',
-  padding: '0.5rem 0',
-};
-
 const emptyStyle: React.CSSProperties = {
   padding: '2rem 1rem',
   textAlign: 'center',
-  color: '#9ca3af',
-  fontSize: 13,
+  color: colors.textMuted,
+  fontSize: fontSize.sm,
 };
 
 const itemStyle: React.CSSProperties = {
@@ -141,7 +94,7 @@ const avatarStyle = (color: string): React.CSSProperties => ({
   borderRadius: '50%',
   background: color,
   color: '#fff',
-  fontSize: 11,
+  fontSize: fontSize.xs,
   fontWeight: 600,
   display: 'flex',
   alignItems: 'center',
@@ -155,28 +108,39 @@ const itemBodyStyle: React.CSSProperties = {
 };
 
 const commentTextStyle: React.CSSProperties = {
-  fontSize: 13,
-  color: '#374151',
+  fontSize: fontSize.sm,
+  color: colors.textPrimary,
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 };
 
 const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: '#9ca3af',
+  fontSize: fontSize.xs,
+  color: colors.textMuted,
   marginTop: 2,
 };
 
 const timestampStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: '#9ca3af',
+  fontSize: fontSize.xs,
+  color: colors.textMuted,
   flexShrink: 0,
   marginTop: 2,
 };
 
+const dismissBtnStyle: React.CSSProperties = {
+  padding: '2px 6px',
+  fontSize: fontSize.sm,
+  color: colors.textMuted,
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  lineHeight: 1,
+  flexShrink: 0,
+};
+
 const priorityDotStyle = (priority: string): React.CSSProperties => {
-  const colors: Record<string, string> = {
+  const dotColors: Record<string, string> = {
     high: '#ef4444',
     medium: '#f59e0b',
     low: '#22c55e',
@@ -185,20 +149,20 @@ const priorityDotStyle = (priority: string): React.CSSProperties => {
     width: 8,
     height: 8,
     borderRadius: '50%',
-    background: colors[priority] ?? '#9ca3af',
+    background: dotColors[priority] ?? colors.textMuted,
     flexShrink: 0,
     marginTop: 4,
   };
 };
 
 const statusBadgeStyle = (status: string): React.CSSProperties => {
-  const colors: Record<string, { bg: string; text: string }> = {
+  const badgeColors: Record<string, { bg: string; text: string }> = {
     pending: { bg: '#fef3c7', text: '#92400e' },
     acked: { bg: '#dbeafe', text: '#1e40af' },
     done: { bg: '#d1fae5', text: '#065f46' },
     rejected: { bg: '#fee2e2', text: '#991b1b' },
   };
-  const c = colors[status] ?? colors.pending;
+  const c = badgeColors[status] ?? badgeColors.pending;
   return {
     display: 'inline-block',
     fontSize: 10,
@@ -247,16 +211,7 @@ function MentionRow({
         type="button"
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
         aria-label="Dismiss mention"
-        style={{
-          padding: '2px 6px',
-          fontSize: 13,
-          color: '#9ca3af',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          lineHeight: 1,
-          flexShrink: 0,
-        }}
+        style={dismissBtnStyle}
       >
         x
       </button>
@@ -296,16 +251,7 @@ function TaskRow({
         type="button"
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
         aria-label="Dismiss task"
-        style={{
-          padding: '2px 6px',
-          fontSize: 13,
-          color: '#9ca3af',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          lineHeight: 1,
-          flexShrink: 0,
-        }}
+        style={dismissBtnStyle}
       >
         x
       </button>
@@ -353,36 +299,18 @@ export default function MyMentionsPanel({
   });
 
   return (
-    <div style={panelStyle}>
-      {/* Header */}
-      <div style={headerStyle}>
-        <h3 style={titleStyle}>My Mentions &amp; Tasks</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {filtered.length > 0 && (
-            <button
-              type="button"
-              onClick={clearAll}
-              style={{
-                padding: '3px 8px',
-                fontSize: 11,
-                fontWeight: 500,
-                border: '1px solid #d1d5db',
-                borderRadius: 6,
-                background: '#fff',
-                color: '#6b7280',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                lineHeight: 1.2,
-              }}
-            >
+    <Panel width={340}>
+      <PanelHeader
+        title="My Mentions &amp; Tasks"
+        onClose={onClose}
+        actions={
+          filtered.length > 0 ? (
+            <Button variant="default" size="sm" onClick={clearAll}>
               Clear all
-            </button>
-          )}
-          <button type="button" style={closeBtnStyle} onClick={onClose}>
-            ✕
-          </button>
-        </div>
-      </div>
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* Filter tabs */}
       <div style={tabBarStyle}>
@@ -399,7 +327,7 @@ export default function MyMentionsPanel({
       </div>
 
       {/* Item list */}
-      <div style={listStyle}>
+      <PanelBody padding="0.5rem 0">
         {filtered.length === 0 && (
           <div style={emptyStyle}>No mentions or tasks for you</div>
         )}
@@ -421,7 +349,7 @@ export default function MyMentionsPanel({
             />
           ),
         )}
-      </div>
-    </div>
+      </PanelBody>
+    </Panel>
   );
 }

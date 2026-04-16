@@ -63,10 +63,14 @@ interface RemoteCursorInfo {
 // Styles
 // ---------------------------------------------------------------------------
 
-const wrapperStyle: React.CSSProperties = {
+const wrapperStyleEditable: React.CSSProperties = {
   border: '1px solid #e2e8f0',
   borderRadius: 8,
   overflow: 'hidden',
+  position: 'relative',
+};
+
+const wrapperStyleReadOnly: React.CSSProperties = {
   position: 'relative',
 };
 
@@ -413,7 +417,7 @@ export default function TiptapEditor({
   }, [provider, updateCursors]);
 
   return (
-    <div style={wrapperStyle}>
+    <div style={editable ? wrapperStyleEditable : wrapperStyleReadOnly}>
       {editable && <EditorToolbar editor={editor} />}
       <div ref={editorAreaRef} style={editorAreaStyle}>
         <EditorContent editor={editor} />

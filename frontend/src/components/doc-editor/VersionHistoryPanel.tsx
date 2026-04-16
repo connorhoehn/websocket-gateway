@@ -3,6 +3,8 @@
 // Slide-out sidebar for browsing and comparing document versions (view-only).
 
 import type { VersionEntry, SnapshotSection } from '../../hooks/useVersionHistory';
+import { Panel, PanelHeader, PanelBody, Button } from '../ui/Panel';
+import { colors, fontSize as fs, borderRadius } from '../../styles/tokens';
 import DiffViewer from './DiffViewer';
 
 // ---------------------------------------------------------------------------
@@ -55,63 +57,14 @@ function formatRelativeTime(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles (kept: list-item-level styles not covered by shared components)
 // ---------------------------------------------------------------------------
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  right: 0,
-  width: 320,
-  height: '100%',
-  background: '#fff',
-  borderLeft: '1px solid #e5e7eb',
-  zIndex: 40,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '-4px 0 12px rgba(0,0,0,0.08)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '0.75rem 1rem',
-  borderBottom: '1px solid #e5e7eb',
-  flexShrink: 0,
-};
-
-const titleStyle: React.CSSProperties = {
-  fontSize: 15,
-  fontWeight: 600,
-  color: '#111827',
-  margin: 0,
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  fontSize: 16,
-  fontWeight: 500,
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  lineHeight: 1,
-};
-
-const listStyle: React.CSSProperties = {
-  flex: 1,
-  overflow: 'auto',
-  padding: '0.5rem 0',
-};
 
 const emptyStyle: React.CSSProperties = {
   padding: '2rem 1rem',
   textAlign: 'center',
-  color: '#9ca3af',
-  fontSize: 13,
+  color: colors.textMuted,
+  fontSize: fs.sm,
 };
 
 const versionItemStyle = (active: boolean): React.CSSProperties => ({
@@ -122,38 +75,13 @@ const versionItemStyle = (active: boolean): React.CSSProperties => ({
   cursor: 'pointer',
   background: active ? '#eff6ff' : 'transparent',
   borderLeft: active ? '3px solid #3b82f6' : '3px solid transparent',
-  fontSize: 13,
-  color: '#374151',
+  fontSize: fs.sm,
+  color: colors.textPrimary,
 });
 
 const timestampLabel: React.CSSProperties = {
-  fontSize: 11,
-  color: '#9ca3af',
-};
-
-const compareBtnStyle: React.CSSProperties = {
-  padding: '3px 8px',
-  fontSize: 11,
-  fontWeight: 500,
-  border: '1px solid #d1d5db',
-  borderRadius: 4,
-  background: '#fff',
-  color: '#6b7280',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
-};
-
-const saveBtnStyle: React.CSSProperties = {
-  padding: '4px 10px',
-  fontSize: 12,
-  fontWeight: 600,
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  background: '#f9fafb',
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontSize: fs.xs,
+  color: colors.textMuted,
 };
 
 const versionNameStyle: React.CSSProperties = {
@@ -171,13 +99,26 @@ const versionTypeBadge = (type?: string): React.CSSProperties => ({
   borderRadius: 3,
   marginLeft: 6,
   background: type === 'pre-restore' ? '#fef3c7' : type === 'auto' ? '#f3f4f6' : '#e0f2fe',
-  color: type === 'pre-restore' ? '#92400e' : type === 'auto' ? '#9ca3af' : '#0369a1',
+  color: type === 'pre-restore' ? '#92400e' : type === 'auto' ? colors.textMuted : '#0369a1',
 });
 
 const authorStyle: React.CSSProperties = {
   fontSize: 10,
-  color: '#9ca3af',
+  color: colors.textMuted,
   display: 'block',
+};
+
+const compareBtnStyle: React.CSSProperties = {
+  padding: '3px 8px',
+  fontSize: fs.xs,
+  fontWeight: 500,
+  border: `1px solid ${colors.border}`,
+  borderRadius: borderRadius.sm,
+  background: colors.surface,
+  color: '#6b7280',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
 };
 
 // ---------------------------------------------------------------------------
@@ -229,22 +170,20 @@ export default function VersionHistoryPanel({
   };
 
   return (
-    <div style={panelStyle}>
+    <Panel width={320}>
       {/* Header */}
-      <div style={headerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <h3 style={titleStyle}>Version History</h3>
-          <button type="button" style={saveBtnStyle} onClick={handleSaveVersion}>
+      <PanelHeader
+        title="Version History"
+        onClose={handleClose}
+        actions={
+          <Button size="sm" onClick={handleSaveVersion}>
             Save Version
-          </button>
-        </div>
-        <button type="button" style={closeBtnStyle} onClick={handleClose}>
-          ✕
-        </button>
-      </div>
+          </Button>
+        }
+      />
 
       {/* Version list */}
-      <div style={listStyle}>
+      <PanelBody padding="0.5rem 0">
         {loading && <div style={emptyStyle}>Loading...</div>}
 
         {!loading && versions.length === 0 && (
@@ -287,7 +226,7 @@ export default function VersionHistoryPanel({
               </button>
             </div>
           ))}
-      </div>
+      </PanelBody>
 
       {/* Diff viewer */}
       {compareSections != null && (
@@ -300,9 +239,9 @@ export default function VersionHistoryPanel({
 
       {/* Restore button — shown when a version is selected for compare */}
       {onRestore && compareTimestamp != null && (
-        <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid #e5e7eb', flexShrink: 0 }}>
-          <button
-            type="button"
+        <div style={{ padding: '0.75rem 1rem', borderTop: `1px solid ${colors.border}`, flexShrink: 0 }}>
+          <Button
+            variant="primary"
             onClick={() => {
               if (window.confirm(
                 'Restore this version?\n\n' +
@@ -319,22 +258,17 @@ export default function VersionHistoryPanel({
               padding: '10px 16px',
               fontSize: 14,
               fontWeight: 600,
-              border: 'none',
-              borderRadius: 8,
-              background: '#3b82f6',
-              color: '#fff',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
+              borderRadius: borderRadius.lg,
             }}
           >
             Restore this version
-          </button>
-          <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 6 }}>
+          </Button>
+          <div style={{ fontSize: fs.xs, color: colors.textMuted, textAlign: 'center', marginTop: 6 }}>
             A pre-restore checkpoint will be saved automatically
           </div>
         </div>
       )}
 
-    </div>
+    </Panel>
   );
 }

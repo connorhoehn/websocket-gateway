@@ -9,6 +9,8 @@ import { useVideoCall } from '../../hooks/useVideoCall';
 import { useHangoutEmbed } from '../../lib/video/useHangoutEmbed';
 import { useActiveSpeaker } from '../../lib/video/useActiveSpeaker';
 import type { HangoutParticipant } from '../../lib/video/types';
+import { Button, IconButton } from '../ui/Panel';
+import { colors, borderRadius } from '../../styles/tokens';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -22,6 +24,14 @@ interface VideoCallPanelProps {
   updateMeta: (partial: Partial<DocumentMeta>) => void;
   sendMessage: (msg: Record<string, unknown>) => void;
   onClose: () => void;
+  /** When provided, shows a dock button that moves the panel to the left sidebar */
+  onDockToSidebar?: () => void;
+  /** When true, the panel is rendered in the sidebar (compact mode) */
+  isDocked?: boolean;
+  /** Undock from sidebar back to inline */
+  onUndock?: () => void;
+  /** Called when the call transitions to ended/idle (so parent can auto-close docked panel) */
+  onCallEnd?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,46 +54,7 @@ const headerStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-const btnStyle: React.CSSProperties = {
-  padding: '6px 12px',
-  fontSize: 13,
-  fontWeight: 500,
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  ...btnStyle,
-  background: '#16a34a',
-  color: '#fff',
-  border: '1px solid #16a34a',
-};
-
-const dangerBtnStyle: React.CSSProperties = {
-  ...btnStyle,
-  background: '#dc2626',
-  color: '#fff',
-  border: '1px solid #dc2626',
-};
-
-const iconBtnStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  border: 'none',
-  borderRadius: '50%',
-  cursor: 'pointer',
-  fontSize: 16,
-  padding: 0,
-  fontFamily: 'inherit',
-  transition: 'background 0.15s',
-};
+// Styles removed — using shared Button/IconButton from ../ui/Panel
 
 // ---------------------------------------------------------------------------
 // ParticipantTile (inline, adapted for narrow panel)
@@ -270,7 +241,7 @@ function ActiveCallView({ stageToken, participantId, userId, onEndCall }: {
       <div style={{ padding: 16, textAlign: 'center', color: '#dc2626', fontSize: 13 }}>
         {error}
         <br />
-        <button type="button" onClick={onEndCall} style={{ ...btnStyle, marginTop: 12 }}>Close</button>
+        <Button onClick={onEndCall} style={{ marginTop: 12 }}>Close</Button>
       </div>
     );
   }
@@ -326,25 +297,25 @@ function ActiveCallView({ stageToken, participantId, userId, onEndCall }: {
         transition: 'opacity 0.2s',
         flexShrink: 0,
       }}>
-        <button type="button" onClick={() => { setIsMuted(!isMuted); toggleMute(!isMuted); }}
-          title={isMuted ? 'Unmute' : 'Mute'}
-          style={{ ...iconBtnStyle, background: isMuted ? '#dc2626' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+        <IconButton onClick={() => { setIsMuted(!isMuted); toggleMute(!isMuted); }}
+          title={isMuted ? 'Unmute' : 'Mute'} active={isMuted}
+          activeColor={colors.danger} style={{ color: '#fff', background: isMuted ? colors.danger : 'rgba(255,255,255,0.1)' }}>
           {isMuted ? '\u{1F507}' : '\u{1F50A}'}
-        </button>
-        <button type="button" onClick={() => { setIsCameraOff(!isCameraOff); toggleCamera(isCameraOff); }}
-          title={isCameraOff ? 'Camera On' : 'Camera Off'}
-          style={{ ...iconBtnStyle, background: isCameraOff ? '#dc2626' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+        </IconButton>
+        <IconButton onClick={() => { setIsCameraOff(!isCameraOff); toggleCamera(isCameraOff); }}
+          title={isCameraOff ? 'Camera On' : 'Camera Off'} active={isCameraOff}
+          activeColor={colors.danger} style={{ color: '#fff', background: isCameraOff ? colors.danger : 'rgba(255,255,255,0.1)' }}>
           {isCameraOff ? '\u{1F6AB}' : '\u{1F4F7}'}
-        </button>
-        <button type="button" onClick={() => isScreenSharing ? stopScreenShare() : startScreenShare()}
-          title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
-          style={{ ...iconBtnStyle, background: isScreenSharing ? '#3b82f6' : 'rgba(255,255,255,0.1)', color: '#fff' }}>
+        </IconButton>
+        <IconButton onClick={() => isScreenSharing ? stopScreenShare() : startScreenShare()}
+          title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'} active={isScreenSharing}
+          activeColor={colors.primary} style={{ color: '#fff', background: isScreenSharing ? colors.primary : 'rgba(255,255,255,0.1)' }}>
           {'\u{1F4BB}'}
-        </button>
-        <button type="button" onClick={handleEndCall} title="Leave Call"
-          style={{ ...iconBtnStyle, background: '#dc2626', color: '#fff' }}>
+        </IconButton>
+        <IconButton onClick={handleEndCall} title="Leave Call"
+          style={{ color: '#fff', background: colors.danger }}>
           {'\u{1F4DE}'}
-        </button>
+        </IconButton>
       </div>
 
       {/* Participant count */}
@@ -367,6 +338,10 @@ export default function VideoCallPanel({
   updateMeta,
   sendMessage,
   onClose,
+  onDockToSidebar,
+  isDocked,
+  onUndock,
+  onCallEnd,
 }: VideoCallPanelProps) {
   const {
     callState,
@@ -378,7 +353,16 @@ export default function VideoCallPanel({
     startCall,
     joinCall,
     endCall,
-  } = useVideoCall({ documentId, idToken, meta, updateMeta, sendMessage });
+  } = useVideoCall({ documentId, idToken, meta, updateMeta, sendMessage, displayName: userId });
+
+  // Notify parent when call ends so docked panel can auto-close
+  const prevCallStateRef = useRef(callState);
+  useEffect(() => {
+    if (prevCallStateRef.current === 'active' && callState === 'idle') {
+      onCallEnd?.();
+    }
+    prevCallStateRef.current = callState;
+  }, [callState, onCallEnd]);
 
   const activeCallSessionId = meta?.activeCallSessionId;
 
@@ -387,11 +371,28 @@ export default function VideoCallPanel({
       {/* Header */}
       <div style={headerStyle}>
         <span style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', margin: 0 }}>Video</span>
-        <button type="button" onClick={onClose} title="Close video" style={{
-          width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: 'none', borderRadius: 4, background: 'transparent', color: '#9ca3af',
-          cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0,
-        }}>{'\u2715'}</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Dock/undock button */}
+          {onDockToSidebar && !isDocked && (
+            <button type="button" onClick={onDockToSidebar} title="Dock to sidebar" style={{
+              width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 4, background: 'transparent', color: '#9ca3af',
+              cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0,
+            }}>{'\u2190'}</button>
+          )}
+          {isDocked && onUndock && (
+            <button type="button" onClick={onUndock} title="Undock from sidebar" style={{
+              width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', borderRadius: 4, background: 'transparent', color: '#9ca3af',
+              cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0,
+            }}>{'\u2192'}</button>
+          )}
+          <button type="button" onClick={onClose} title="Close video" style={{
+            width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: 'none', borderRadius: 4, background: 'transparent', color: '#9ca3af',
+            cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0,
+          }}>{'\u2715'}</button>
+        </div>
       </div>
 
       {/* Content */}
@@ -417,7 +418,7 @@ export default function VideoCallPanel({
         {callState === 'error' && (
           <div style={{ padding: 16, textAlign: 'center' }}>
             <div style={{ color: '#f87171', fontSize: 13, marginBottom: 12 }}>{error}</div>
-            <button type="button" onClick={() => startCall()} style={primaryBtnStyle}>Try Again</button>
+            <Button variant="primary" onClick={() => startCall()}>Try Again</Button>
           </div>
         )}
 
@@ -429,18 +430,18 @@ export default function VideoCallPanel({
                 <div style={{ fontSize: 13, color: '#d1d5db', marginBottom: 12 }}>
                   A call is in progress on this document.
                 </div>
-                <button type="button" onClick={() => joinCall(activeCallSessionId)} style={primaryBtnStyle}>
+                <Button variant="primary" onClick={() => joinCall(activeCallSessionId)}>
                   Join Call
-                </button>
+                </Button>
               </>
             ) : (
               <>
                 <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 12 }}>
                   Start a video call with collaborators on this document.
                 </div>
-                <button type="button" onClick={startCall} style={primaryBtnStyle}>
+                <Button variant="primary" onClick={startCall}>
                   Start Call
-                </button>
+                </Button>
               </>
             )}
           </div>

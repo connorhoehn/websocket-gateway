@@ -7,6 +7,7 @@ import { DocumentSectionRepository } from './DocumentSectionRepository';
 import { DocumentCommentRepository } from './DocumentCommentRepository';
 import { SectionReviewRepository } from './SectionReviewRepository';
 import { ApprovalWorkflowRepository } from './ApprovalWorkflowRepository';
+import { VideoSessionRepository } from './VideoSessionRepository';
 
 // Singleton instances — share the same docClient across all repositories
 export const profileRepo = new ProfileRepository(docClient);
@@ -17,6 +18,7 @@ export const documentSectionRepo = new DocumentSectionRepository(docClient);
 export const documentCommentRepo = new DocumentCommentRepository(docClient);
 export const sectionReviewRepo = new SectionReviewRepository(docClient);
 export const approvalWorkflowRepo = new ApprovalWorkflowRepository(docClient);
+export const videoSessionRepo = new VideoSessionRepository(docClient);
 
 export { BaseRepository } from './BaseRepository';
 export { ProfileRepository, ProfileItem } from './ProfileRepository';
@@ -27,3 +29,4 @@ export { DocumentSectionRepository, DocumentSectionFields, CreateDocumentSection
 export { DocumentCommentRepository, DocumentComment } from './DocumentCommentRepository';
 export { SectionReviewRepository, SectionReview } from './SectionReviewRepository';
 export { ApprovalWorkflowRepository, ApprovalWorkflow, WorkflowStep, WorkflowApprover } from './ApprovalWorkflowRepository';
+export { VideoSessionRepository, VideoSessionRecord, VideoSessionParticipant } from './VideoSessionRepository';

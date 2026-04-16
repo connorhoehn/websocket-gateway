@@ -5,6 +5,7 @@
 import { useState, useCallback } from 'react';
 import type { GatewayMessage } from '../../types/gateway';
 import { useWorkflows, type ApprovalWorkflow, type WorkflowStep } from '../../hooks/useWorkflows';
+import { Panel, PanelHeader, PanelBody, Button } from '../ui/Panel';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -23,48 +24,6 @@ interface WorkflowPanelProps {
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  right: 0,
-  width: 360,
-  height: '100%',
-  background: '#fff',
-  borderLeft: '1px solid #e5e7eb',
-  zIndex: 40,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '-4px 0 12px rgba(0,0,0,0.08)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: '0.75rem 1rem',
-  borderBottom: '1px solid #e5e7eb',
-  flexShrink: 0,
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: '6px 12px',
-  fontSize: 13,
-  fontWeight: 500,
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#374151',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  ...btnStyle,
-  background: '#3b82f6',
-  color: '#fff',
-  border: '1px solid #3b82f6',
-};
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -188,15 +147,15 @@ function CreateWorkflowForm({ onCreate, onCancel }: {
             placeholder="user1, user2"
           />
           {steps.length > 1 && (
-            <button type="button" onClick={() => removeStep(idx)} style={{ ...btnStyle, padding: '4px 8px', fontSize: 12 }}>x</button>
+            <Button type="button" size="sm" onClick={() => removeStep(idx)} style={{ padding: '4px 8px' }}>x</Button>
           )}
         </div>
       ))}
-      <button type="button" onClick={addStep} style={{ ...btnStyle, fontSize: 12, marginBottom: 10 }}>+ Add Step</button>
+      <Button type="button" size="sm" onClick={addStep} style={{ marginBottom: 10 }}>+ Add Step</Button>
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} style={btnStyle}>Cancel</button>
-        <button type="button" onClick={handleSubmit} style={primaryBtnStyle}>Create</button>
+        <Button type="button" onClick={onCancel}>Cancel</Button>
+        <Button type="button" variant="primary" onClick={handleSubmit}>Create</Button>
       </div>
     </div>
   );
@@ -220,7 +179,7 @@ function WorkflowDetail({ workflow, userId, onAdvance, onBack }: {
 
   return (
     <div style={{ padding: '12px 16px' }}>
-      <button type="button" onClick={onBack} style={{ ...btnStyle, fontSize: 12, marginBottom: 10 }}>Back</button>
+      <Button type="button" size="sm" onClick={onBack} style={{ marginBottom: 10 }}>Back</Button>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{workflow.name}</div>
@@ -274,15 +233,15 @@ function WorkflowDetail({ workflow, userId, onAdvance, onBack }: {
 
       {isPendingApprover && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center' }}>
-          <button type="button" onClick={() => onAdvance('approve')} style={{ ...primaryBtnStyle, background: '#16a34a', borderColor: '#16a34a' }}>
+          <Button type="button" variant="primary" onClick={() => onAdvance('approve')}>
             Approve
-          </button>
-          <button type="button" onClick={() => onAdvance('reject')} style={{ ...btnStyle, color: '#dc2626', borderColor: '#dc2626' }}>
+          </Button>
+          <Button type="button" variant="danger" onClick={() => onAdvance('reject')}>
             Reject
-          </button>
-          <button type="button" onClick={() => onAdvance('skip')} style={btnStyle}>
+          </Button>
+          <Button type="button" onClick={() => onAdvance('skip')}>
             Skip
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -338,15 +297,10 @@ export default function WorkflowPanel({
   }, [selectedWorkflowId, advanceWorkflow]);
 
   return (
-    <div style={panelStyle}>
-      {/* Header */}
-      <div style={headerStyle}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0 }}>Workflows</h3>
-        <button type="button" onClick={onClose} style={btnStyle}>Close</button>
-      </div>
+    <Panel width={360}>
+      <PanelHeader title="Workflows" onClose={onClose} />
 
-      {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <PanelBody>
         {/* Detail view */}
         {selectedWorkflow && !showCreate && (
           <WorkflowDetail
@@ -368,13 +322,14 @@ export default function WorkflowPanel({
         {/* Workflow list */}
         {!selectedWorkflow && !showCreate && (
           <div style={{ padding: '12px 16px' }}>
-            <button
+            <Button
               type="button"
+              variant="primary"
               onClick={() => setShowCreate(true)}
-              style={{ ...primaryBtnStyle, width: '100%', marginBottom: 12 }}
+              style={{ width: '100%', marginBottom: 12 }}
             >
               + New Workflow
-            </button>
+            </Button>
 
             {loading && <div style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', padding: 20 }}>Loading...</div>}
 
@@ -413,7 +368,7 @@ export default function WorkflowPanel({
             ))}
           </div>
         )}
-      </div>
-    </div>
+      </PanelBody>
+    </Panel>
   );
 }

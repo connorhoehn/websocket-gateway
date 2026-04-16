@@ -57,3 +57,40 @@ export async function requireAuth(
     res.status(401).json({ error: message });
   }
 }
+
+/**
+ * Optional auth — sets req.user if a valid token is present, but allows
+ * unauthenticated requests through (for sendBeacon cleanup calls).
+ */
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  if (process.env.SKIP_AUTH === 'true') {
+    req.user = { sub: 'dev-user', email: 'dev@local' };
+    next();
+    return;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    next();
+    return;
+  }
+  const token = authHeader.slice(7);
+  try {
+    const decoded = jwt.decode(token, { complete: true });
+    if (decoded && typeof decoded !== 'string' && decoded.header.kid) {
+      const publicKey = await getPublicKey(decoded.header.kid);
+      const verified = jwt.verify(token, publicKey, {
+        algorithms: ['RS256'],
+        issuer,
+      }) as jwt.JwtPayload;
+      req.user = { sub: verified.sub!, email: verified.email as string | undefined };
+    }
+  } catch {
+    // Token invalid — proceed without user
+  }
+  next();
+}

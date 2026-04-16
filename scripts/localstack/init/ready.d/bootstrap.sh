@@ -63,6 +63,12 @@ awslocal dynamodb create-table --table-name user-activity \
   --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+# ---- Document Video Sessions table ----
+awslocal dynamodb create-table --table-name document-video-sessions \
+  --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sessionId,AttributeType=S \
+  --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sessionId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
 # ---- Outbox table (Phase 43 Transactional Outbox) ----
 awslocal dynamodb create-table --table-name social-outbox \
   --attribute-definitions \

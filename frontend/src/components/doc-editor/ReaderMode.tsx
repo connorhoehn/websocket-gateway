@@ -157,45 +157,70 @@ function ProgressCard({
   );
 }
 
-function WhosHereCard({ participants }: { participants: Participant[] }) {
+function ContributorsCard({ participants, meta }: { participants: Participant[]; meta: DocumentMeta }) {
+  // Deduplicate by userId, showing unique contributors
+  const seen = new Set<string>();
+  const contributors: { name: string; color: string; mode?: string; isOnline: boolean }[] = [];
+
+  for (const p of participants) {
+    const key = p.userId || p.clientId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contributors.push({ name: p.displayName, color: p.color, mode: p.mode, isOnline: true });
+  }
+
+  // Add document creator if not already in the list
+  if (meta.createdBy && !seen.has(meta.createdBy)) {
+    contributors.push({ name: meta.createdBy, color: '#6b7280', isOnline: false });
+  }
+
   return (
     <div style={sidebarCard}>
-      <h3 style={sectionHeader}>Who's Here</h3>
-      {participants.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
-          No participants online
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {participants.map((p) => (
-            <div
-              key={p.clientId}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                fontSize: 13,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: MODE_DOT_COLORS[p.mode] ?? '#94a3b8',
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ fontWeight: 500, color: '#334155', flex: 1 }}>
-                {p.displayName}
-              </span>
-              <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                {MODE_LABELS[p.mode] ?? p.mode}
-              </span>
+      <h3 style={sectionHeader}>Contributors</h3>
+      {/* Bubble row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {contributors.map((c, i) => {
+          const initials = c.name.split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2);
+          return (
+            <div key={`${c.name}-${i}`} title={`${c.name}${c.mode ? ` (${MODE_LABELS[c.mode] ?? c.mode})` : ''}`} style={{ position: 'relative' }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: c.color, color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700,
+              }}>
+                {initials}
+              </div>
+              {c.isOnline && (
+                <div style={{
+                  position: 'absolute', bottom: 0, right: 0,
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: MODE_DOT_COLORS[c.mode ?? 'reader'] ?? '#94a3b8',
+                  border: '2px solid #fff',
+                }} />
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+      {/* Detail list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {contributors.map((c, i) => (
+          <div key={`detail-${c.name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: c.isOnline ? (MODE_DOT_COLORS[c.mode ?? 'reader'] ?? '#94a3b8') : '#d1d5db',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontWeight: 500, color: '#334155', flex: 1 }}>
+              {c.name}
+            </span>
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>
+              {c.isOnline ? (MODE_LABELS[c.mode ?? ''] ?? 'online') : 'offline'}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -248,9 +273,15 @@ function DocumentStatsCard({
         </div>
       )}
       {meta.createdAt && (
-        <div style={{ ...statRow, borderBottom: 'none' }}>
+        <div style={statRow}>
           <span style={{ color: '#64748b' }}>Created</span>
           <span style={{ fontWeight: 500, fontSize: 12 }}>{formatDate(meta.createdAt)}</span>
+        </div>
+      )}
+      {meta.updatedAt && (
+        <div style={{ ...statRow, borderBottom: 'none' }}>
+          <span style={{ color: '#64748b' }}>Last changed</span>
+          <span style={{ fontWeight: 500, fontSize: 12 }}>{formatDate(meta.updatedAt)}</span>
         </div>
       )}
     </div>
@@ -316,7 +347,7 @@ export default function ReaderMode({
       {/* Sidebar column */}
       <div>
         <ProgressCard reviewed={reviewed} total={allItems.length} />
-        <WhosHereCard participants={participants} />
+        <ContributorsCard participants={participants} meta={meta} />
         <DocumentStatsCard
           sections={sections}
           allItems={allItems}

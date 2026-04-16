@@ -16,7 +16,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
+          'vendor-react': ['react', 'react-dom', 'react-router'],
           'vendor-yjs': ['yjs'],
           'vendor-tiptap': ['@tiptap/core', '@tiptap/react', '@tiptap/starter-kit'],
         },

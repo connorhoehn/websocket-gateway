@@ -1,5 +1,6 @@
 // frontend/src/app/App.tsx
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePresence } from '../hooks/usePresence';
@@ -15,9 +16,20 @@ import { AppLayout } from '../components/AppLayout';
 import { WebSocketProvider } from '../contexts/WebSocketContext';
 import { IdentityProvider } from '../contexts/IdentityContext';
 import { PresenceProvider } from '../contexts/PresenceContext';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useDocuments } from '../hooks/useDocuments';
+import { useRooms } from '../hooks/useRooms';
+import type { RoomItem } from '../hooks/useRooms';
 import type { LogEntry } from '../components/EventLog';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
+
+// Lazy-loaded views
+const PanelsView = lazy(() => import('../components/PanelsView'));
+const SocialTabContent = lazy(() => import('../components/SocialTabContent'));
+const BigBrotherPanel = lazy(() => import('../components/BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
+const DocumentEditorPage = lazy(() => import('../components/doc-editor/DocumentEditorPage'));
+const DocumentListPage = lazy(() => import('../components/doc-editor/DocumentListPage'));
 
 // ---------------------------------------------------------------------------
 // Identity helper
@@ -250,6 +262,21 @@ function GatewayDemo({
     displayName,
   });
 
+  // Shared props for AppLayout (the layout route)
+  const layoutProps = {
+    currentChannel,
+    onSwitchChannel: switchChannel,
+    onDisconnect: disconnect,
+    onReconnect: reconnect,
+    activeReactions,
+    logEntries,
+    errors,
+    lastError,
+    activityEvents: activityBus.events,
+    activityPublish: activityBus.publish,
+    activityIsLive: activityBus.isLive,
+  };
+
   return (
     <WebSocketProvider value={{
       connectionState,
@@ -271,36 +298,185 @@ function GatewayDemo({
           currentClientId: clientId,
           setTyping,
         }}>
-          <AppLayout
-            currentChannel={currentChannel}
-            onSwitchChannel={switchChannel}
-            onDisconnect={disconnect}
-            onReconnect={reconnect}
-            activeReactions={activeReactions}
-            onReact={react}
-            chatMessages={chatMessages}
-            onChatSend={sendChat}
-            cursors={cursors}
-            localCursor={localCursor}
-            activeMode={activeMode}
-            onModeChange={switchMode}
-            onFreeformMove={sendFreeformUpdate}
-            onTableClick={sendTableUpdate}
-            onTextChange={sendTextUpdate}
-            onCanvasMove={sendCanvasUpdate}
-            crdtContent={content}
-            applyLocalEdit={applyLocalEdit}
-            hasConflict={hasConflict}
-            onDismissConflict={dismissConflict}
-            logEntries={logEntries}
-            errors={errors}
-            lastError={lastError}
-            activityEvents={activityBus.events}
-            activityPublish={activityBus.publish}
-            activityIsLive={activityBus.isLive}
-          />
+          <Routes>
+            <Route element={<AppLayout {...layoutProps} />}>
+              <Route path="/previews" element={
+                <ErrorBoundary name="PanelsView">
+                  <PanelsView
+                    connectionState={connectionState}
+                    onReact={react}
+                    chatMessages={chatMessages}
+                    onChatSend={sendChat}
+                    cursors={cursors}
+                    localCursor={localCursor}
+                    activeMode={activeMode}
+                    onModeChange={switchMode}
+                    onFreeformMove={sendFreeformUpdate}
+                    onTableClick={sendTableUpdate}
+                    onTextChange={sendTextUpdate}
+                    onCanvasMove={sendCanvasUpdate}
+                    crdtContent={content}
+                    applyLocalEdit={applyLocalEdit}
+                    hasConflict={hasConflict}
+                    onDismissConflict={dismissConflict}
+                    onTyping={setTyping}
+                    typingUsers={presenceUsers
+                      .filter(u => u.metadata.isTyping === true && u.clientId !== clientId)
+                      .map(u => (u.metadata.displayName as string | undefined) ?? u.clientId.slice(0, 8))}
+                    idToken={auth.idToken}
+                    sendMessage={loggedSendMessage}
+                    onMessage={onMessage}
+                  />
+                </ErrorBoundary>
+              } />
+              <Route path="/social" element={
+                <ErrorBoundary name="SocialPanels">
+                  <SocialRoute
+                    userId={clientId ?? 'anonymous'}
+                    displayName={displayName}
+                    userEmail={auth.email}
+                    connectionState={connectionState}
+                    idToken={auth.idToken}
+                    activityEvents={activityBus.events}
+                    onMessage={onMessage}
+                    sendMessage={loggedSendMessage}
+                    onSwitchChannel={switchChannel}
+                  />
+                </ErrorBoundary>
+              } />
+              <Route path="/dashboard" element={
+                <BigBrotherPanel
+                  rooms={[]}
+                  presenceUsers={presenceUsers}
+                  activityEvents={activityBus.events}
+                  activityIsLive={activityBus.isLive}
+                />
+              } />
+              <Route path="/documents" element={
+                <DocumentListRoute
+                  sendMessage={loggedSendMessage}
+                  onMessage={onMessage}
+                  connectionState={connectionState}
+                />
+              } />
+              <Route path="/documents/:documentId" element={
+                <ErrorBoundary name="DocumentEditor">
+                  <DocumentEditorRoute
+                    ws={wsReturn}
+                    userId={clientId ?? 'anonymous'}
+                    displayName={displayName}
+                    onMessage={onMessage}
+                    activityPublish={activityBus.publish}
+                    activityEvents={activityBus.events}
+                  />
+                </ErrorBoundary>
+              } />
+              <Route index element={<Navigate to="/previews" replace />} />
+              <Route path="*" element={<Navigate to="/previews" replace />} />
+            </Route>
+          </Routes>
         </PresenceProvider>
       </IdentityProvider>
     </WebSocketProvider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Route wrapper components — read URL params and provide view-specific props
+// ---------------------------------------------------------------------------
+
+function SocialRoute(props: {
+  userId: string;
+  displayName: string;
+  userEmail: string | null;
+  connectionState: string;
+  idToken: string | null;
+  activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
+  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
+  sendMessage: (msg: Record<string, unknown>) => void;
+  onSwitchChannel: (channel: string) => void;
+}) {
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const { rooms, createRoom, createDM, createGroupRoom, loading: roomsLoading } = useRooms({
+    idToken: props.idToken!,
+    onMessage: props.onMessage,
+  });
+
+  const handleRoomSelect = useCallback((room: RoomItem) => {
+    setActiveRoomId(room.roomId);
+    props.onSwitchChannel(room.channelId);
+    props.sendMessage({ service: 'social', action: 'subscribe', channelId: room.channelId });
+  }, [props.onSwitchChannel, props.sendMessage]);
+
+  return (
+    <SocialTabContent
+      userId={props.userId}
+      displayName={props.displayName}
+      userEmail={props.userEmail}
+      connectionState={props.connectionState}
+      idToken={props.idToken}
+      rooms={rooms}
+      createRoom={createRoom}
+      createDM={createDM}
+      createGroupRoom={createGroupRoom}
+      roomsLoading={roomsLoading}
+      handleRoomSelect={handleRoomSelect}
+      activeRoomId={activeRoomId}
+      activityEvents={props.activityEvents}
+    />
+  );
+}
+
+function DocumentListRoute(props: {
+  sendMessage: (msg: Record<string, unknown>) => void;
+  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
+  connectionState: string;
+}) {
+  const navigate = useNavigate();
+  const { documents, presence: docPresence, createDocument, deleteDocument } = useDocuments({
+    sendMessage: props.sendMessage,
+    onMessage: props.onMessage,
+    connectionState: props.connectionState,
+  });
+
+  return (
+    <DocumentListPage
+      documents={documents}
+      presence={docPresence}
+      hideHeader
+      onOpenDocument={(id: string) => navigate(`/documents/${id}`)}
+      onCreateDocument={createDocument}
+      onDeleteDocument={deleteDocument}
+      onJumpToUser={(docId: string) => navigate(`/documents/${docId}`)}
+    />
+  );
+}
+
+function DocumentEditorRoute(props: {
+  ws: ReturnType<typeof useWebSocket>;
+  userId: string;
+  displayName: string;
+  onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
+  activityPublish: (eventType: string, detail: Record<string, unknown>) => void;
+  activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
+}) {
+  const { documentId } = useParams<{ documentId: string }>();
+  const navigate = useNavigate();
+
+  if (!documentId) return <Navigate to="/documents" replace />;
+
+  return (
+    <div style={{ flex: 1, minHeight: 0 }}>
+      <DocumentEditorPage
+        documentId={documentId}
+        ws={props.ws}
+        userId={props.userId}
+        displayName={props.displayName}
+        onMessage={props.onMessage}
+        activityPublish={props.activityPublish}
+        activityEvents={props.activityEvents}
+        onBack={() => navigate('/documents')}
+      />
+    </div>
   );
 }

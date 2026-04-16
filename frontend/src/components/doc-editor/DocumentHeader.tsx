@@ -16,6 +16,7 @@ interface DocumentHeaderProps {
   onToggleHistory: () => void;
   onToggleWorkflows?: () => void;
   onToggleVideoCall?: () => void;
+  onToggleVideoHistory?: () => void;
   isCallActive?: boolean;
   onClearDocument: () => void;
   onJumpToUser?: (participant: Participant) => void;
@@ -38,6 +39,9 @@ const headerStyle: React.CSSProperties = {
   borderBottom: '1px solid #e5e7eb',
   flexShrink: 0,
   gap: 6,
+  position: 'sticky',
+  top: 53,
+  zIndex: 34,
 };
 
 const leftStyle: React.CSSProperties = {
@@ -55,8 +59,8 @@ const centerStyle: React.CSSProperties = {
 const rightStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 12,
-  flex: 1,
+  gap: 8,
+  flexWrap: 'wrap',
   justifyContent: 'flex-end',
 };
 
@@ -159,6 +163,7 @@ export default function DocumentHeader({
   onToggleHistory,
   onToggleWorkflows,
   onToggleVideoCall,
+  onToggleVideoHistory,
   isCallActive,
   onClearDocument,
   onJumpToUser,
@@ -207,6 +212,19 @@ export default function DocumentHeader({
               Auto-saved
             </span>
           )}
+          {meta.updatedAt && (
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>
+              Last edited {(() => {
+                const diff = Date.now() - new Date(meta.updatedAt).getTime();
+                const mins = Math.floor(diff / 60000);
+                if (mins < 1) return 'just now';
+                if (mins < 60) return `${mins}m ago`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h ago`;
+                return `${Math.floor(hrs / 24)}d ago`;
+              })()}
+            </span>
+          )}
           {commentCount != null && commentCount > 0 && (
             <span style={{
               display: 'inline-flex',
@@ -232,7 +250,7 @@ export default function DocumentHeader({
       </div>
 
       {/* Row 2: mode selector + actions */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
         <div style={centerStyle}>
           {modeLabels.map(({ mode: m, label }) => (
             <button
@@ -294,6 +312,11 @@ export default function DocumentHeader({
             onClick={onToggleVideoCall}
           >
             {isCallActive ? 'In Call' : 'Call'}
+          </button>
+        )}
+        {onToggleVideoHistory && (
+          <button type="button" style={exportBtnStyle} onClick={onToggleVideoHistory}>
+            Past Calls
           </button>
         )}
         {meta.status === 'final' ? (

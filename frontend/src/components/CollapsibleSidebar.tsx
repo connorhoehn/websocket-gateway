@@ -38,6 +38,9 @@ export interface CollapsibleSidebarProps {
   // Documents
   documents: DocumentInfo[];
   onOpenDocument: (id: string) => void;
+
+  // Docked video panel slot (rendered between Activity and Documents)
+  videoSlot?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +216,7 @@ export function CollapsibleSidebar({
   userId,
   documents,
   onOpenDocument,
+  videoSlot,
 }: CollapsibleSidebarProps) {
   ensureKeyframes();
 
@@ -465,6 +469,16 @@ export function CollapsibleSidebar({
           ))}
         </div>
       </CollapsibleSection>
+
+      {/* ---- Docked Video (bottom) ---- */}
+      {videoSlot && (
+        <>
+          <hr style={separatorStyle} />
+          <CollapsibleSection title="Video">
+            {videoSlot}
+          </CollapsibleSection>
+        </>
+      )}
     </div>
   );
 }

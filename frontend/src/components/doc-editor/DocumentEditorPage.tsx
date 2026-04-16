@@ -5,6 +5,7 @@
 // Accepts WebSocket and identity props from the parent layout.
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { ViewMode, DocumentMeta, Participant } from '../../types/document';
 import type { UseWebSocketReturn } from '../../hooks/useWebSocket';
 import type { GatewayMessage } from '../../types/gateway';
@@ -16,19 +17,20 @@ import { useIdentityContext } from '../../contexts/IdentityContext';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
+import { useVideoSessions } from '../../hooks/useVideoSessions';
 import { useDocumentActions } from './useDocumentActions';
 import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import WorkflowPanel from './WorkflowPanel';
 import VideoCallPanel from './VideoCallPanel';
+import VideoHistoryPanel from './VideoHistoryPanel';
 import MyMentionsPanel from './MyMentionsPanel';
 import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
 import SectionComments from './SectionComments';
 import TableOfContents from './TableOfContents';
-import ActivityFeed from './ActivityFeed';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,6 +65,12 @@ export interface DocumentEditorPageProps {
   activityPublish: (eventType: string, detail: Record<string, unknown>) => void;
   activityEvents: import('../../hooks/useActivityBus').ActivityEvent[];
   onBack?: () => void;
+  /** Whether the video call is docked to the left sidebar (managed by AppLayout) */
+  isVideoDocked?: boolean;
+  /** Dock the video panel to the left sidebar */
+  onDockVideo?: () => void;
+  /** Undock the video panel from the left sidebar */
+  onUndockVideo?: () => void;
 }
 
 function getInitialMode(): ViewMode {
@@ -89,12 +97,26 @@ export default function DocumentEditorPage({
   activityPublish,
   activityEvents,
   onBack,
+  isVideoDocked,
+  onDockVideo,
+  onUndockVideo,
 }: DocumentEditorPageProps) {
   const [mode, setMode] = useState<ViewMode>(getInitialMode);
   const [showHistory, setShowHistory] = useState(false);
   const [showMyItems, setShowMyItems] = useState(false);
   const [showWorkflows, setShowWorkflows] = useState(false);
-  const [showVideoCall, setShowVideoCall] = useState(false);
+  const [showVideoCall, setShowVideoCall] = useState(isVideoDocked ?? false);
+  const [showVideoHistory, setShowVideoHistory] = useState(false);
+
+  // Track window width for responsive TOC/video hiding
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1400);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const showTOC = windowWidth >= 1200;
+  const showInlineVideo = windowWidth >= 900;
 
   // Sticky scroll for video and TOC — starts in flow, switches to fixed on scroll
   const [sidebarFixed, setSidebarFixed] = useState(false);
@@ -102,25 +124,55 @@ export default function DocumentEditorPage({
   const tocSpacerRef = useRef<HTMLDivElement>(null);
   const [videoLeft, setVideoLeft] = useState(0);
   const [tocLeft, setTocLeft] = useState(0);
+  // Remember the initial top offset of the spacer divs (measured once on first scroll)
+  const spacerInitialTopRef = useRef<number | null>(null);
+  // Fixed top = AppLayout header (53px) + sticky doc header (~93px)
+  const FIXED_TOP = 146;
+
+  const updatePositions = useCallback(() => {
+    // Measure the initial offset once from whichever spacer is present
+    if (spacerInitialTopRef.current === null) {
+      const spacer = videoSpacerRef.current ?? tocSpacerRef.current;
+      if (spacer) {
+        spacerInitialTopRef.current = spacer.getBoundingClientRect().top + window.scrollY;
+      }
+    }
+    const threshold = spacerInitialTopRef.current ?? 250;
+    const shouldFix = window.scrollY > threshold - FIXED_TOP;
+    setSidebarFixed(shouldFix);
+    // Capture left positions from the spacer divs
+    if (videoSpacerRef.current) setVideoLeft(videoSpacerRef.current.getBoundingClientRect().left);
+    if (tocSpacerRef.current) setTocLeft(tocSpacerRef.current.getBoundingClientRect().left);
+  }, []);
 
   useEffect(() => {
-    const onScroll = () => {
-      const shouldFix = window.scrollY > 150;
-      setSidebarFixed(shouldFix);
-      // Capture left positions from the spacer divs while they're in flow
-      if (shouldFix) {
-        if (videoSpacerRef.current) setVideoLeft(videoSpacerRef.current.getBoundingClientRect().left);
-        if (tocSpacerRef.current) setTocLeft(tocSpacerRef.current.getBoundingClientRect().left);
-      }
+    const onResize = () => {
+      spacerInitialTopRef.current = null;
+      updatePositions();
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    window.addEventListener('scroll', updatePositions, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', updatePositions);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [updatePositions]);
+
+  // Re-evaluate fixed positioning when video panel toggles
+  useEffect(() => {
+    // Small delay to let the spacer div mount
+    const t = setTimeout(() => {
+      spacerInitialTopRef.current = null;
+      updatePositions();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [showVideoCall, updatePositions]);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [commentSidebarOpen, setCommentSidebarOpen] = useState(false);
   const [commentSectionId, setCommentSectionId] = useState<string | null>(null);
 
   const { idToken } = useIdentityContext();
+  const videoSessions = useVideoSessions(documentId, idToken);
 
   const {
     meta,
@@ -465,6 +517,14 @@ export default function DocumentEditorPage({
     setShowHistory(false);
     setShowMyItems(false);
     setShowWorkflows(false);
+    setShowVideoHistory(false);
+  }, []);
+
+  const handleToggleVideoHistory = useCallback(() => {
+    setShowVideoHistory(v => !v);
+    setShowHistory(false);
+    setShowMyItems(false);
+    setShowWorkflows(false);
   }, []);
 
   // Cmd+M / Ctrl+M to toggle My Items panel
@@ -557,12 +617,44 @@ export default function DocumentEditorPage({
     activityPublish('doc.unlock', { documentId, documentTitle: meta?.title });
   }, [updateMeta, activityPublish, documentId, meta?.title]);
 
+  // ------ Auto-dock video on navigate away --------------------------------
+  const handleBack = useCallback(() => {
+    if (showVideoCall && !isVideoDocked) {
+      // Auto-dock the video to sidebar so the call persists
+      onDockVideo?.();
+    }
+    onBack?.();
+  }, [showVideoCall, isVideoDocked, onDockVideo, onBack]);
+
   // ------ Render ---------------------------------------------------------
 
   const isEmpty = sections.length === 0 && !demoLoaded;
 
+  // Portal: docked video to sidebar container — rendered at top level so it
+  // persists regardless of editor mode, empty state, or ydoc readiness.
+  const dockedVideoPortal = showVideoCall && isVideoDocked ? (() => {
+    const container = document.getElementById('sidebar-video-slot');
+    if (!container) return null;
+    return createPortal(
+      <VideoCallPanel
+        documentId={documentId}
+        userId={userId}
+        idToken={idToken}
+        meta={meta}
+        updateMeta={updateMeta}
+        sendMessage={ws.sendMessage}
+        onClose={() => { setShowVideoCall(false); onUndockVideo?.(); }}
+        isDocked
+        onUndock={() => { onUndockVideo?.(); }}
+        onCallEnd={() => { setShowVideoCall(false); onUndockVideo?.(); }}
+      />,
+      container,
+    );
+  })() : null;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {dockedVideoPortal}
       <DocumentHeader
         meta={headerMeta}
         mode={mode}
@@ -573,6 +665,7 @@ export default function DocumentEditorPage({
         onToggleHistory={handleToggleHistory}
         onToggleWorkflows={handleToggleWorkflows}
         onToggleVideoCall={handleToggleVideoCall}
+        onToggleVideoHistory={handleToggleVideoHistory}
         isCallActive={!!meta?.activeCallSessionId}
         onClearDocument={handleClearDocument}
         onJumpToUser={handleJumpToUser}
@@ -580,7 +673,7 @@ export default function DocumentEditorPage({
         onToggleMyItems={handleToggleMyItems}
         myItemCount={myItems.length}
         commentCount={Object.values(comments).reduce((sum, threads) => sum + threads.length, 0)}
-        onBack={onBack}
+        onBack={handleBack}
         onFollowUser={handleFollowUser}
         followingUserId={followingUserId}
         onFinalize={handleFinalize}
@@ -644,41 +737,26 @@ export default function DocumentEditorPage({
 
         {/* Editor mode — centered content with inline comment sidebar */}
         {!isEmpty && mode === 'editor' && ydoc && (
-          <div ref={sectionListRef} style={{ display: 'flex', gap: '1rem', maxWidth: 1600, margin: '0 auto', position: 'relative' }}>
+          <div ref={sectionListRef} style={{ display: 'flex', gap: '1rem', position: 'relative', minWidth: 0 }}>
 
-            {/* Left: video sidebar — spacer div reserves width in flex, inner content is sticky */}
-            {(showVideoCall || true /* TEMP: always show fake */) && (
+            {/* Left: video sidebar — spacer div reserves width in flex, inner content goes fixed on scroll */}
+            {showVideoCall && !isVideoDocked && showInlineVideo && (
               <div ref={videoSpacerRef} style={{ width: 240, flexShrink: 0 }}>
-                <div style={sidebarFixed ? { position: 'fixed', top: 120, left: videoLeft, width: 240, zIndex: 30 } : {}}>
-                  {showVideoCall ? (
-                    <VideoCallPanel
-                      documentId={documentId}
-                      userId={userId}
-                      idToken={idToken}
-                      meta={meta}
-                      updateMeta={updateMeta}
-                      sendMessage={ws.sendMessage}
-                      onClose={() => setShowVideoCall(false)}
-                    />
-                  ) : (
-                    /* TEMP: Fake video placeholder for layout testing */
-                    <div style={{ background: '#fafbfc', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                      <div style={{ padding: '4px 8px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Video</span>
-                      </div>
-                      <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, margin: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>
-                        Fake Video 1
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3, padding: '0 4px 4px' }}>
-                        <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 10 }}>User 2</div>
-                        <div style={{ aspectRatio: '4/3', background: '#1e293b', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 10 }}>User 3</div>
-                      </div>
-                      <div style={{ padding: '4px 8px', textAlign: 'center', fontSize: 10, color: '#94a3b8' }}>3 in call</div>
-                    </div>
-                  )}
+                <div style={sidebarFixed ? { position: 'fixed', top: FIXED_TOP, left: videoLeft, width: 240, zIndex: 30 } : {}}>
+                  <VideoCallPanel
+                    documentId={documentId}
+                    userId={userId}
+                    idToken={idToken}
+                    meta={meta}
+                    updateMeta={updateMeta}
+                    sendMessage={ws.sendMessage}
+                    onClose={() => setShowVideoCall(false)}
+                    onDockToSidebar={() => { onDockVideo?.(); }}
+                  />
                 </div>
               </div>
             )}
+            {/* (docked video portal is rendered outside this conditional — see below) */}
 
             {/* Center: section content */}
             <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
@@ -706,14 +784,7 @@ export default function DocumentEditorPage({
               />
             </div>
 
-            {/* Right: table of contents */}
-            {!commentSidebarOpen && sections.length > 1 && (
-              <div ref={tocSpacerRef} style={{ width: 140, flexShrink: 0 }}>
-                <div style={sidebarFixed ? { position: 'fixed', top: 120, left: tocLeft, width: 140, zIndex: 30 } : {}}>
-                  <TableOfContents sections={sections.map(s => ({ id: s.id, title: s.title }))} focusedSectionId={focusedSectionId} />
-                </div>
-              </div>
-            )}
+            {/* TOC rendered as fixed bottom-right overlay — see below */}
 
             {/* Right: inline comment sidebar */}
             {commentSidebarOpen && commentSectionId && (
@@ -863,6 +934,36 @@ export default function DocumentEditorPage({
           connectionState={ws.connectionState}
           onClose={() => setShowWorkflows(false)}
         />
+      )}
+
+      {/* Past video conversations panel */}
+      {showVideoHistory && (
+        <VideoHistoryPanel
+          sessions={videoSessions.sessions}
+          loading={videoSessions.loading}
+          onFetch={videoSessions.fetchSessions}
+          onClose={() => setShowVideoHistory(false)}
+        />
+      )}
+
+      {/* Table of contents — fixed bottom-right */}
+      {showTOC && !commentSidebarOpen && sections.length > 1 && mode === 'editor' && (
+        <div style={{
+          position: 'fixed',
+          bottom: 16,
+          right: 16,
+          width: 160,
+          maxHeight: 280,
+          overflowY: 'auto',
+          background: '#fff',
+          border: '1px solid #e2e8f0',
+          borderRadius: 10,
+          padding: '10px 12px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+          zIndex: 30,
+        }}>
+          <TableOfContents sections={sections.map(s => ({ id: s.id, title: s.title }))} focusedSectionId={focusedSectionId} />
+        </div>
       )}
 
     </div>
