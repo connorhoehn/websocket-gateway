@@ -1,0 +1,62 @@
+global:
+  environment: development
+
+signaling:
+  replicaCount: 1
+  image:
+    repository: live-video-broadcaster/signaling
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3000
+  logLevel: info
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+mediasoup:
+  replicaCount: 1
+  image:
+    repository: live-video-broadcaster/mediasoup
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3001
+  hostNetwork: true
+  logLevel: info
+  workerLogLevel: warn
+  workers: 4
+  rtcBasePort: 40000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+coturn:
+  enabled: true
+  image:
+    repository: coturn/coturn
+    tag: 4.6.2-alpine
+  realm: "webrtc.local"
+  credentials:
+    username: "webrtc"
+    password: "webrtc123"
+  ports:
+    listening: 3478
+    relayMin: 49152
+    relayMax: 49252
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+testing:
+  enabled: true

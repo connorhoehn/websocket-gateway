@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lvb.fullname" . }}-mediasoup
+  labels:
+    app: mediasoup
+    {{- include "lvb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mediasoup.replicaCount }}
+  selector:
+    matchLabels:
+      app: mediasoup
+  template:
+    metadata:
+      labels:
+        app: mediasoup
+    spec:
+      {{- if .Values.mediasoup.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: mediasoup
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: mediasoup
+        image: "{{ .Values.mediasoup.image.repository }}:{{ .Values.mediasoup.image.tag }}"
+        imagePullPolicy: {{ .Values.mediasoup.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.mediasoup.port }}
+          protocol: TCP
+          name: http
+        {{- range $i := until (int .Values.mediasoup.workers) }}
+        - containerPort: {{ add (int $.Values.mediasoup.rtcBasePort) $i }}
+          protocol: UDP
+          name: rtc-udp-{{ $i }}
+        - containerPort: {{ add (int $.Values.mediasoup.rtcBasePort) $i }}
+          protocol: TCP
+          name: rtc-tcp-{{ $i }}
+        {{- end }}
+        env:
+        - name: PORT
+          value: {{ .Values.mediasoup.port | quote }}
+        - name: NODE_ENV
+          value: {{ .Values.global.environment }}
+        - name: MEDIASOUP_LISTEN_IP
+          value: "0.0.0.0"
+        - name: MEDIASOUP_ANNOUNCED_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: RTC_BASE_PORT
+          value: {{ .Values.mediasoup.rtcBasePort | quote }}
+        - name: MEDIASOUP_WORKERS
+          value: {{ .Values.mediasoup.workers | quote }}
+        - name: MEDIASOUP_WORKER_LOG_LEVEL
+          value: {{ .Values.mediasoup.workerLogLevel }}
+        - name: LOG_LEVEL
+          value: {{ .Values.mediasoup.logLevel }}
+        {{- if .Values.coturn.enabled }}
+        - name: COTURN_URLS
+          value: "stun:{{ include "lvb.fullname" . }}-coturn:{{ .Values.coturn.ports.listening }},turn:{{ include "lvb.fullname" . }}-coturn:{{ .Values.coturn.ports.listening }}"
+        - name: COTURN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "lvb.fullname" . }}-coturn
+              key: username
+        - name: COTURN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "lvb.fullname" . }}-coturn
+              key: password
+        {{- end }}
+        - name: SIGNALING_URL
+          value: "http://{{ include "lvb.fullname" . }}-signaling:{{ .Values.signaling.port }}"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.mediasoup.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.mediasoup.port }}
+          failureThreshold: 10
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.mediasoup.resources | nindent 10 }}

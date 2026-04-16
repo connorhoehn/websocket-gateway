@@ -1,0 +1,15 @@
+Live Video Broadcaster has been installed!
+
+To access the signaling server:
+  kubectl port-forward svc/{{ include "lvb.fullname" . }}-signaling {{ .Values.signaling.port }}:{{ .Values.signaling.port }}
+
+Then open: http://localhost:{{ .Values.signaling.port }}
+
+To check health:
+  curl http://localhost:{{ .Values.signaling.port }}/health
+
+To run connectivity tests:
+  helm test {{ .Release.Name }}
+
+Mediasoup workers: {{ .Values.mediasoup.workers }}
+RTC base port: {{ .Values.mediasoup.rtcBasePort }}

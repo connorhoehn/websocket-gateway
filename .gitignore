@@ -24,8 +24,7 @@ cdk.out/
 credentials
 
 # IDE and editors
-.vscode/*
-!.vscode/launch.json
+.vscode/
 .idea/
 *.swp
 *.swo

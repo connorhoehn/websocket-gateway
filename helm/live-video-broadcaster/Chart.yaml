@@ -1,0 +1,6 @@
+apiVersion: v2
+name: live-video-broadcaster
+description: Local IVS replacement — WebRTC streaming with mediasoup SFU
+version: 0.1.0
+appVersion: "1.0.0"
+type: application

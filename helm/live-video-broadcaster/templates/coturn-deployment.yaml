@@ -1,0 +1,45 @@
+{{- if .Values.coturn.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lvb.fullname" . }}-coturn
+  labels:
+    app: coturn
+    {{- include "lvb.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coturn
+  template:
+    metadata:
+      labels:
+        app: coturn
+    spec:
+      containers:
+      - name: coturn
+        image: "{{ .Values.coturn.image.repository }}:{{ .Values.coturn.image.tag }}"
+        args:
+        - "-n"
+        - "--log-file=stdout"
+        - "--listening-ip=0.0.0.0"
+        - "--relay-ip=0.0.0.0"
+        - "--external-ip=0.0.0.0"
+        - "--min-port={{ .Values.coturn.ports.relayMin }}"
+        - "--max-port={{ .Values.coturn.ports.relayMax }}"
+        - "--lt-cred-mech"
+        - "--fingerprint"
+        - "--no-multicast-peers"
+        - "--no-cli"
+        - "--realm={{ .Values.coturn.realm }}"
+        - "--user={{ .Values.coturn.credentials.username }}:{{ .Values.coturn.credentials.password }}"
+        ports:
+        - containerPort: {{ .Values.coturn.ports.listening }}
+          protocol: UDP
+          name: stun-udp
+        - containerPort: {{ .Values.coturn.ports.listening }}
+          protocol: TCP
+          name: stun-tcp
+        resources:
+          {{- toYaml .Values.coturn.resources | nindent 10 }}
+{{- end }}

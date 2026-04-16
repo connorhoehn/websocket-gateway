@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lvb.fullname" . }}-mediasoup
+  labels:
+    app: mediasoup
+    {{- include "lvb.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: mediasoup
+  ports:
+  - port: {{ .Values.mediasoup.port }}
+    targetPort: {{ .Values.mediasoup.port }}
+    protocol: TCP
+    name: http
+---
+# Headless service for pod discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "lvb.fullname" . }}-mediasoup-headless
+  labels:
+    app: mediasoup
+    {{- include "lvb.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app: mediasoup
+  ports:
+  - port: {{ .Values.mediasoup.port }}
+    name: http

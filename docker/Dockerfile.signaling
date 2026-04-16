@@ -1,0 +1,36 @@
+# Signaling Server Dockerfile
+FROM node:20-alpine
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Create app directory
+WORKDIR /app
+
+# Create non-root user (use different ID to avoid conflicts)
+RUN addgroup -g 1001 signaling && \
+    adduser -D -s /bin/sh -u 1001 -G signaling signaling
+
+# Copy package files and source
+COPY docker/signaling-package.json ./package.json
+COPY src/signaling-server.js ./
+COPY src/static/ ./static/
+
+# Install dependencies (only what signaling server needs)
+RUN npm install --production
+
+# Change ownership to signaling user
+RUN chown -R signaling:signaling /app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# Switch to non-root user
+USER signaling
+
+# Expose port
+EXPOSE 3000
+
+# Start command
+CMD ["node", "signaling-server.js"]

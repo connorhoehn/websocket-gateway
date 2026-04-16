@@ -1,0 +1,64 @@
+# Multi-stage build for faster Mediasoup container startup
+# Stage 1: Build dependencies
+FROM node:20-alpine as builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    git \
+    linux-headers \
+    libc-dev \
+    pkgconfig
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY src/package-local.json ./package.json
+
+# Install ALL dependencies (including dev dependencies for building)
+RUN npm install
+
+# Stage 2: Production runtime
+FROM node:20-alpine
+
+# Install runtime dependencies + ffmpeg for recording
+RUN apk add --no-cache \
+    curl \
+    tini \
+    ffmpeg
+
+# Create app directory
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 -S mediasoup && \
+    adduser -S mediasoup -u 1001 -G mediasoup
+
+# Copy package files
+COPY src/package-local.json ./package.json
+
+# Copy pre-built node_modules from builder stage
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy application code
+COPY src/mediasoup-server.js ./
+
+# Change ownership to mediasoup user
+RUN chown -R mediasoup:mediasoup /app
+
+# Switch to non-root user
+USER mediasoup
+
+# Expose port
+EXPOSE 3001
+
+# Start command with production optimizations
+ENV NODE_ENV=production
+
+# Use tini as init system for proper signal handling and faster shutdown
+ENTRYPOINT ["tini", "--"]
+CMD ["node", "--enable-source-maps", "mediasoup-server.js"]

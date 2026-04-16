@@ -1,0 +1,35 @@
+# Coturn STUN/TURN Server Dockerfile
+FROM coturn/coturn:4.6.2-alpine
+
+# Switch to root to install packages
+USER root
+
+# Install networking and debugging tools available in Alpine
+RUN apk add --no-cache \
+    curl \
+    net-tools \
+    netcat-openbsd \
+    tcpdump \
+    iptables \
+    procps \
+    bind-tools \
+    nmap \
+    wget \
+    busybox-extras \
+    htop \
+    lsof \
+    bash \
+    iproute2
+
+# Create directories
+RUN mkdir -p /var/lib/coturn /var/log/coturn /etc/coturn
+
+# Health check using netcat (nc) which is now available
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD nc -z localhost 3478 || exit 1
+
+# Run as root for now to avoid user issues
+# USER coturn
+
+# Default command (will be overridden by ECS)
+CMD ["turnserver"]

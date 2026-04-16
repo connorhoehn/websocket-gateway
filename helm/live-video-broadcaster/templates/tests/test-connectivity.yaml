@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "lvb.fullname" . }}-test-connectivity
+  labels:
+    {{- include "lvb.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+  - name: test
+    image: curlimages/curl:latest
+    command: ['sh', '-c']
+    args:
+    - |
+      set -e
+      echo "Testing signaling health..."
+      curl -sf http://{{ include "lvb.fullname" . }}-signaling:{{ .Values.signaling.port }}/health
+      echo ""
+      echo "Testing mediasoup health..."
+      curl -sf http://{{ include "lvb.fullname" . }}-mediasoup:{{ .Values.mediasoup.port }}/health
+      echo ""
+      echo "Testing mediasoup metrics..."
+      curl -sf http://{{ include "lvb.fullname" . }}-mediasoup:{{ .Values.mediasoup.port }}/metrics | head -5
+      echo ""
+      echo "Testing mediasoup workers..."
+      curl -sf http://{{ include "lvb.fullname" . }}-mediasoup:{{ .Values.mediasoup.port }}/api/workers
+      echo ""
+      echo "All connectivity tests passed!"
+  restartPolicy: Never

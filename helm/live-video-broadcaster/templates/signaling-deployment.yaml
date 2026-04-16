@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lvb.fullname" . }}-signaling
+  labels:
+    app: signaling
+    {{- include "lvb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.signaling.replicaCount }}
+  selector:
+    matchLabels:
+      app: signaling
+  template:
+    metadata:
+      labels:
+        app: signaling
+    spec:
+      containers:
+      - name: signaling
+        image: "{{ .Values.signaling.image.repository }}:{{ .Values.signaling.image.tag }}"
+        imagePullPolicy: {{ .Values.signaling.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.signaling.port }}
+          protocol: TCP
+          name: http
+        env:
+        - name: PORT
+          value: {{ .Values.signaling.port | quote }}
+        - name: NODE_ENV
+          value: {{ .Values.global.environment }}
+        - name: LOG_LEVEL
+          value: {{ .Values.signaling.logLevel }}
+        - name: MEDIASOUP_URL
+          value: "http://{{ include "lvb.fullname" . }}-mediasoup:{{ .Values.mediasoup.port }}"
+        - name: TURN_EXTERNAL_HOST
+          value: "localhost"
+        {{- if .Values.coturn.enabled }}
+        - name: COTURN_URLS
+          value: "stun:{{ include "lvb.fullname" . }}-coturn:{{ .Values.coturn.ports.listening }},turn:{{ include "lvb.fullname" . }}-coturn:{{ .Values.coturn.ports.listening }}"
+        - name: COTURN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "lvb.fullname" . }}-coturn
+              key: username
+        - name: COTURN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "lvb.fullname" . }}-coturn
+              key: password
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.signaling.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.signaling.resources | nindent 10 }}
