@@ -171,7 +171,7 @@ function ContributorsCard({ participants, meta }: { participants: Participant[];
 
   // Add document creator if not already in the list
   if (meta.createdBy && !seen.has(meta.createdBy)) {
-    contributors.push({ name: meta.createdBy, color: '#6b7280', isOnline: false });
+    contributors.push({ name: meta.createdByName || meta.createdBy, color: '#6b7280', isOnline: false });
   }
 
   return (

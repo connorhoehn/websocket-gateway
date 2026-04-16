@@ -130,9 +130,14 @@ class AuthMiddleware {
             }
 
             // Extract user context from claims
+            const givenName = verified.given_name || verified['custom:given_name'] || '';
+            const familyName = verified.family_name || verified['custom:family_name'] || '';
+            const displayName = [givenName, familyName].filter(Boolean).join(' ') || verified.email || null;
+
             const userContext = {
                 userId: verified.sub,
                 email: verified.email || null,
+                displayName,
                 channels: verified.channels || [],
                 isAdmin: verified.isAdmin || false
             };

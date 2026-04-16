@@ -265,9 +265,12 @@ class CRDTService {
                     return;
                 }
                 case 'createDocument': {
+                    const clientData = this.messageRouter.getClientData(clientId);
+                    const userContext = clientData?.userContext || {};
                     const doc = await this.metadataService.handleCreateDocument({
                         meta: data.meta,
-                        createdBy: clientId,
+                        createdBy: userContext.userId || clientId,
+                        createdByName: userContext.displayName || userContext.email || null,
                     });
                     // Broadcast to all clients so document lists update
                     this.messageRouter.broadcastToAll({ type: 'crdt', action: 'documentCreated', document: doc });
@@ -291,6 +294,44 @@ class CRDTService {
                 case 'updateDocumentMeta': {
                     const updated = await this.metadataService.handleUpdateDocumentMeta(data.documentId, data.meta);
                     this.messageRouter.broadcastToAll({ type: 'crdt', action: 'documentMetaUpdated', documentId: data.documentId, meta: updated });
+                    return;
+                }
+
+                // Section deduplication
+                case 'deduplicateSections': {
+                    const channel = `doc:${data.documentId}`;
+                    const state = this.channelStates.get(channel);
+                    if (!state || !state.ydoc) {
+                        this.sendToClient(clientId, { type: 'crdt', action: 'error', error: 'Document not loaded' });
+                        return;
+                    }
+                    const ySections = state.ydoc.getArray('sections');
+                    const seen = new Set();
+                    const toRemove = [];
+                    // Collect indices of duplicate sections (by title, keep first)
+                    for (let i = 0; i < ySections.length; i++) {
+                        const section = ySections.get(i);
+                        const title = section instanceof Y.Map ? section.get('title') : null;
+                        if (!title) continue;
+                        if (seen.has(title)) {
+                            toRemove.push(i);
+                        } else {
+                            seen.add(title);
+                        }
+                    }
+                    // Remove from end to start to preserve indices
+                    state.ydoc.transact(() => {
+                        for (let i = toRemove.length - 1; i >= 0; i--) {
+                            ySections.delete(toRemove[i], 1);
+                        }
+                    });
+                    this.logger.info(`Deduplicated ${toRemove.length} sections from ${data.documentId}`);
+                    this.sendToClient(clientId, {
+                        type: 'crdt',
+                        action: 'deduplicateResult',
+                        documentId: data.documentId,
+                        removed: toRemove.length
+                    });
                     return;
                 }
 

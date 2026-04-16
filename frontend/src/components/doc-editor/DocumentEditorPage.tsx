@@ -177,6 +177,7 @@ export default function DocumentEditorPage({
   const {
     meta,
     sections,
+    synced,
     updateMeta,
     addSection,
     updateSection,
@@ -329,11 +330,10 @@ export default function DocumentEditorPage({
       const states = provider.awareness.getStates();
       states.forEach((state: Record<string, unknown>, cid: number) => {
         if (cid !== provider!.awareness.clientID) {
-          console.log('[follow] Remote awareness state:', cid, JSON.stringify(state));
+          // Remote awareness state logged for debugging — disabled in production
         }
       });
     }
-    console.log('[follow] Looking for user:', followingUserId, 'found:', followed?.displayName, 'section:', followed?.currentSectionId);
     if (!followed || !followed.currentSectionId) {
       // Fallback: if no section is set, scroll to the first section
       if (followed && sections.length > 0) {
@@ -408,7 +408,6 @@ export default function DocumentEditorPage({
       const firstId = sections[0].id;
       setFocusedSectionId(firstId);
       awareness.updateSection(firstId);
-      console.log('[auto-focus] Set initial section:', firstId);
     }, 500);
     return () => clearTimeout(timer);
   }, [sections, focusedSectionId, awareness]);
@@ -559,23 +558,38 @@ export default function DocumentEditorPage({
   }, [showHistory]);
 
   // ------ Auto-populate from template when new document is empty ----------
-  const templateAppliedRef = useRef(false);
+  // Guard: wait for Y.js sync, then check the Y.js meta flag (not React state)
+  // to prevent duplicate application on HMR/remount. The flag persists with the doc.
   useEffect(() => {
-    if (templateAppliedRef.current || !documentType || sections.length > 0) return;
+    if (!synced || !documentType || !ydoc) return;
+
+    // Check Y.js directly — React state may lag behind
+    const yMeta = ydoc.getMap('meta');
+    if (yMeta.get('templateApplied')) return;
+
+    const ySections = ydoc.getArray('sections');
+    if (ySections.length > 0) return;
+
     const tmpl = DOCUMENT_TEMPLATES.find(t => t.type === documentType);
     if (!tmpl) return;
-    templateAppliedRef.current = true;
+
+    // Apply template in a single transaction
+    ydoc.transact(() => {
+      yMeta.set('templateApplied', true);
+    });
+
     updateMeta({
       id: documentId, title: meta?.title || tmpl.name,
       sourceType: documentType === 'meeting' ? 'meeting' : 'notes',
-      sourceId: '', createdBy: userId, createdAt: new Date().toISOString(),
+      sourceId: '', createdBy: userId, createdByName: displayName,
+      createdAt: new Date().toISOString(),
       aiModel: '', status: 'draft',
     });
     for (const s of tmpl.defaultSections) {
       addSection({ id: crypto.randomUUID(), type: s.type, title: s.title, collapsed: false, items: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentType, sections.length]);
+  }, [synced, documentType, ydoc]);
 
   // ------ Mode switching -------------------------------------------------
 

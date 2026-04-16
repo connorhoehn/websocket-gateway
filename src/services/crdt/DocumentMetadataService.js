@@ -81,7 +81,7 @@ class DocumentMetadataService {
      * @param {string} params.createdBy       - userId of creator
      * @returns {Promise<object>}             - the created document
      */
-    async handleCreateDocument({ meta, createdBy }) {
+    async handleCreateDocument({ meta, createdBy, createdByName }) {
         const documentId = crypto.randomUUID();
         const now = new Date().toISOString();
         const docType = (meta && meta.type) || 'custom';
@@ -92,6 +92,7 @@ class DocumentMetadataService {
             type: docType,
             status: 'draft',
             createdBy: createdBy || 'unknown',
+            createdByName: createdByName || null,
             createdAt: now,
             updatedAt: now,
             icon: (meta && meta.icon) || TYPE_ICONS[docType] || TYPE_ICONS.custom,
@@ -234,7 +235,7 @@ class DocumentMetadataService {
         if (!existing) return null;
 
         // Merge only allowed fields
-        const allowedFields = ['title', 'status', 'description', 'icon', 'type', 'activeCallSessionId'];
+        const allowedFields = ['title', 'status', 'description', 'icon', 'type', 'activeCallSessionId', 'createdByName'];
         for (const field of allowedFields) {
             if (meta[field] !== undefined) {
                 existing[field] = meta[field];

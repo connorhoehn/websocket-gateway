@@ -8,6 +8,7 @@ export interface DocumentMeta {
   sourceType: 'transcript' | 'meeting' | 'notes' | 'custom';
   sourceId: string;
   createdBy: string;
+  createdByName?: string;   // human-readable name of document creator
   createdAt: string;
   aiModel: string;
   status: 'draft' | 'review' | 'final';

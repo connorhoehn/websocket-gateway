@@ -81,6 +81,7 @@ export const PanelHeader: React.FC<PanelHeaderProps> = ({
       <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
         {actions}
         <button
+          type="button"
           onClick={onClose}
           style={{
             width: 22,
@@ -166,9 +167,11 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'default',
   size = 'md',
   style,
+  type = 'button',
   ...rest
 }) => (
   <button
+    type={type}
     style={{
       borderRadius: borderRadius.sm,
       cursor: 'pointer',
@@ -197,9 +200,11 @@ export const IconButton: React.FC<IconButtonProps> = ({
   activeColor = 'rgba(255,255,255,0.1)',
   size = 36,
   style,
+  type = 'button',
   ...rest
 }) => (
   <button
+    type={type}
     style={{
       width: size,
       height: size,

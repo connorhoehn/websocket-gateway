@@ -578,9 +578,11 @@ export function AppLayout({
           </div>
 
           {/* Route content — rendered by React Router */}
-          <Suspense fallback={<div>Loading...</div>}>
-            <Outlet />
-          </Suspense>
+          <ErrorBoundary name="RouteContent">
+            <Suspense fallback={<div>Loading...</div>}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
 
           {/* Docked-video document — stays mounted across navigation to preserve IVS connection */}
           {dockedVideoDocId && (

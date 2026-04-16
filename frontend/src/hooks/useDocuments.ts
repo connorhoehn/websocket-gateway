@@ -96,7 +96,6 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
     const unregister = onMessage((msg: GatewayMessage) => {
       // Handle push-based documents:presence (broadcast from server on sub/unsub/disconnect)
       if (msg.type === 'documents:presence') {
-        console.log('[useDocuments] Received push presence:', msg);
         receivedPushRef.current = true;
         const docs = msg.documents as Array<{ documentId: string; users: DocumentPresenceUser[] }> | undefined;
         if (docs) {
@@ -108,7 +107,6 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
               : entry.documentId;
             presenceMap[docId] = entry.users;
           }
-          console.log('[useDocuments] Presence map after strip:', presenceMap);
           setPresence(presenceMap);
         }
         return;
@@ -155,7 +153,6 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
       // Legacy poll-based response (kept for backwards compatibility)
       if (msg.action === 'documentPresence') {
         const incoming = msg.presence as Record<string, DocumentPresenceUser[]> | undefined;
-        console.log('[useDocuments] Received poll presence:', incoming);
         if (incoming) {
           // Strip "doc:" prefix from keys to match document IDs
           const stripped: Record<string, DocumentPresenceUser[]> = {};
@@ -173,14 +170,12 @@ export function useDocuments(options: UseDocumentsOptions): UseDocumentsReturn {
 
   // ---- Fetch on connect ----------------------------------------------------
   useEffect(() => {
-    console.log('[useDocuments] connectionState changed:', connectionState);
     if (connectionState !== 'connected') return;
 
     receivedPushRef.current = false;
 
     // Request document list on connect (slight delay to ensure WS is fully ready)
     const fetchTimer = setTimeout(() => {
-      console.log('[useDocuments] Sending listDocuments + getDocumentPresence');
       sendMessageRef.current({ service: 'crdt', action: 'listDocuments' });
       sendMessageRef.current({ service: 'crdt', action: 'getDocumentPresence' });
     }, 100);

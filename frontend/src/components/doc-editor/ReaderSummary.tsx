@@ -159,7 +159,7 @@ export function HeaderBanner({
         </span>
       </div>
       <div style={{ fontSize: 12, color: '#64748b' }}>
-        {meta.createdBy && <>Created by {meta.createdBy}</>}
+        {meta.createdBy && <>Created by {meta.createdByName || meta.createdBy}</>}
         {meta.createdAt && <> &middot; {formatDate(meta.createdAt)}</>}
         {participantCount > 0 && (
           <> &middot; {participantCount} participant{participantCount !== 1 ? 's' : ''}</>
