@@ -19,6 +19,7 @@ import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
 import { useVideoSessions } from '../../hooks/useVideoSessions';
 import { useDocumentActions } from './useDocumentActions';
+import { useSidebarPanels } from './useSidebarPanels';
 import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
@@ -102,11 +103,18 @@ export default function DocumentEditorPage({
   onUndockVideo,
 }: DocumentEditorPageProps) {
   const [mode, setMode] = useState<ViewMode>(getInitialMode);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showMyItems, setShowMyItems] = useState(false);
-  const [showWorkflows, setShowWorkflows] = useState(false);
+  const {
+    showHistory,
+    showMyItems,
+    showWorkflows,
+    showVideoHistory,
+    toggleHistory: panelToggleHistory,
+    toggleMyItems: panelToggleMyItems,
+    toggleWorkflows: panelToggleWorkflows,
+    toggleVideoHistory: panelToggleVideoHistory,
+    closePanel,
+  } = useSidebarPanels();
   const [showVideoCall, setShowVideoCall] = useState(isVideoDocked ?? false);
-  const [showVideoHistory, setShowVideoHistory] = useState(false);
 
   // Track window width for responsive TOC/video hiding
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1400);
@@ -492,39 +500,21 @@ export default function DocumentEditorPage({
     }, 150);
   }, []);
 
-  const handleToggleMyItems = useCallback(() => {
-    setShowMyItems(v => !v);
-    setShowHistory(false);
-    setShowWorkflows(false);
-  }, []);
+  const handleToggleMyItems = panelToggleMyItems;
+  const handleToggleHistory = panelToggleHistory;
+  const handleToggleVideoHistory = panelToggleVideoHistory;
 
-  const handleToggleHistory = useCallback(() => {
-    setShowHistory(v => !v);
-    setShowMyItems(false);
-    setShowWorkflows(false);
-  }, []);
-
+  // Workflows panel intentionally also closes an open video call — legacy
+  // interaction preserved because workflows UI is large and crowds the video.
   const handleToggleWorkflows = useCallback(() => {
-    setShowWorkflows(v => !v);
-    setShowHistory(false);
-    setShowMyItems(false);
+    panelToggleWorkflows();
     setShowVideoCall(false);
-  }, []);
+  }, [panelToggleWorkflows]);
 
   const handleToggleVideoCall = useCallback(() => {
     setShowVideoCall(v => !v);
-    setShowHistory(false);
-    setShowMyItems(false);
-    setShowWorkflows(false);
-    setShowVideoHistory(false);
-  }, []);
-
-  const handleToggleVideoHistory = useCallback(() => {
-    setShowVideoHistory(v => !v);
-    setShowHistory(false);
-    setShowMyItems(false);
-    setShowWorkflows(false);
-  }, []);
+    closePanel();
+  }, [closePanel]);
 
   // Cmd+M / Ctrl+M to toggle My Items panel
   useEffect(() => {
@@ -942,7 +932,7 @@ export default function DocumentEditorPage({
           onFetch={versionHistory.fetchVersions}
           onPreview={versionHistory.previewVersion}
           onClearPreview={versionHistory.clearPreview}
-          onClose={() => setShowHistory(false)}
+          onClose={closePanel}
           onSaveVersion={versionHistory.saveVersion}
           onCompare={versionHistory.compareVersion}
           onClearCompare={versionHistory.clearCompare}
@@ -958,7 +948,7 @@ export default function DocumentEditorPage({
         <MyMentionsPanel
           items={myItems}
           onNavigateToSection={handleNavigateToSection}
-          onClose={() => setShowMyItems(false)}
+          onClose={closePanel}
         />
       )}
 
@@ -971,7 +961,7 @@ export default function DocumentEditorPage({
           sendMessage={ws.sendMessage}
           onMessage={onMessage}
           connectionState={ws.connectionState}
-          onClose={() => setShowWorkflows(false)}
+          onClose={closePanel}
         />
       )}
 
@@ -981,7 +971,7 @@ export default function DocumentEditorPage({
           sessions={videoSessions.sessions}
           loading={videoSessions.loading}
           onFetch={videoSessions.fetchSessions}
-          onClose={() => setShowVideoHistory(false)}
+          onClose={closePanel}
         />
       )}
 

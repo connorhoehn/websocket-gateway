@@ -5,7 +5,7 @@
  */
 
 const { PutItemCommand, QueryCommand } = require('@aws-sdk/client-dynamodb');
-const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { enforceChannelPermission } = require('./authz-interceptor');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { LRUCache } = require('lru-cache');
 const {
@@ -110,22 +110,11 @@ class ChatService {
         }
 
         try {
-            // Check channel authorization
-            const clientData = this.messageRouter.getClientData(clientId);
-            if (!clientData || !clientData.userContext) {
-                this.sendError(clientId, 'User context not found');
+            // Check channel authorization via shared interceptor
+            if (!enforceChannelPermission(this, clientId, channel)) {
                 return;
             }
 
-            try {
-                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
-            } catch (error) {
-                if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message, error.code);
-                    return;
-                }
-                throw error;
-            }
             if (this.isDistributed) {
                 // Subscribe to channel through message router (handles node distribution)
                 await this.messageRouter.subscribeToChannel(clientId, channel);

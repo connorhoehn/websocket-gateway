@@ -15,7 +15,7 @@
  * idle eviction, awareness coalescing) lives in ./crdt/*.
  */
 
-const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { enforceChannelPermission } = require('./authz-interceptor');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { EventBridgeClient } = require('@aws-sdk/client-eventbridge');
@@ -373,20 +373,9 @@ class CRDTService {
         }
 
         try {
-            // Auth check
-            const clientData = this.messageRouter.getClientData(clientId);
-            if (!clientData || !clientData.userContext) {
-                this.sendError(clientId, 'User context not found');
+            // Auth check via shared interceptor
+            if (!enforceChannelPermission(this, clientId, channel)) {
                 return;
-            }
-            try {
-                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
-            } catch (error) {
-                if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message, error.code);
-                    return;
-                }
-                throw error;
             }
 
             await this.messageRouter.subscribeToChannel(clientId, channel);
@@ -540,19 +529,9 @@ class CRDTService {
         }
 
         try {
-            const clientData = this.messageRouter.getClientData(clientId);
-            if (!clientData || !clientData.userContext) {
-                this.sendError(clientId, 'User context not found');
+            // Auth check via shared interceptor
+            if (!enforceChannelPermission(this, clientId, channel)) {
                 return;
-            }
-            try {
-                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
-            } catch (error) {
-                if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message, error.code);
-                    return;
-                }
-                throw error;
             }
 
             const snapshot = await this.snapshotManager.retrieveLatestSnapshot(channel);

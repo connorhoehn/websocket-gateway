@@ -4,7 +4,7 @@
  * Supports both local and distributed modes based on configuration
  */
 
-const { checkChannelPermission, AuthzError } = require('../middleware/authz-middleware');
+const { enforceChannelPermission } = require('./authz-interceptor');
 const { ErrorCodes, createErrorResponse } = require('../utils/error-codes');
 const {
     MAX_METADATA_KEYS,
@@ -188,21 +188,9 @@ class PresenceService {
         }
 
         try {
-            // Check channel authorization
-            const clientData = this.messageRouter.getClientData(clientId);
-            if (!clientData || !clientData.userContext) {
-                this.sendError(clientId, 'User context not found');
+            // Check channel authorization via shared interceptor
+            if (!enforceChannelPermission(this, clientId, channel)) {
                 return;
-            }
-
-            try {
-                checkChannelPermission(clientData.userContext, channel, this.logger, this.metricsCollector);
-            } catch (error) {
-                if (error instanceof AuthzError) {
-                    this.sendError(clientId, error.message, error.code);
-                    return;
-                }
-                throw error;
             }
 
             if (this.isDistributed) {

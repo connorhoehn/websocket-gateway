@@ -2,9 +2,8 @@ import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { createTaskDefinition } from './task-definition';
 import { createFargateService } from './fargate-service';
-import { createDashboard } from './dashboard';
 import { createAlarmTopic } from './sns';
-import { createAlarms } from './alarms';
+import { WebSocketGatewayObservability } from './observability-construct';
 import { RedisService } from './redis-service';
 import { SharedInfraStack } from './shared-infra-stack';
 
@@ -49,19 +48,17 @@ export class WebsocketGatewayStack extends Stack {
     // Allow ECS tasks to reach Redis
     redis.allowFrom(fargateResources.securityGroup);
 
-    // Create CloudWatch Dashboard
-    createDashboard(this, {
-      ecsService: fargateResources.service,
-      ecsCluster: cluster,
-      alb: fargateResources.alb,
-    });
-
     // Create SNS topic for alarms
     const alarmEmail = process.env.ALARM_EMAIL;
     const alarmTopic = createAlarmTopic(this, alarmEmail);
 
-    // Create CloudWatch alarms
-    createAlarms(this, fargateResources.service, alarmTopic);
+    // Create CloudWatch dashboard + alarms via the observability construct.
+    new WebSocketGatewayObservability(this, 'Observability', {
+      service: fargateResources.service,
+      cluster,
+      alb: fargateResources.alb,
+      snsTopic: alarmTopic,
+    });
 
     // ---- Outputs ----
     new CfnOutput(this, 'WebSocketURL', {
