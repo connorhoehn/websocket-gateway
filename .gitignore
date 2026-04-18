@@ -30,6 +30,10 @@ k8s/helm/websocket-gateway/values-local.yaml
 # Playwright MCP session artifacts (snapshots, console logs)
 .playwright-mcp/
 
+# Playwright test output
+test-results/
+playwright-report/
+
 # IDE and editors
 .vscode/
 .idea/

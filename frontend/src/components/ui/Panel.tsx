@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { colors, spacing, fontSize, borderRadius } from '../../styles/tokens';
 
 /* ------------------------------------------------------------------ */
@@ -19,7 +20,12 @@ export const Panel: React.FC<PanelProps> = ({
   style,
 }) => {
   const bg = variant === 'dark' ? '#111827' : colors.surface;
-  return (
+  // Render into document.body so the panel escapes any ancestor stacking
+  // context (AppLayout's main content area creates one via `zIndex: 1`,
+  // which would otherwise trap Panel's z-index below the sticky header).
+  // See frontend/e2e/sidebar-panels.spec.ts for the regression.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -27,7 +33,7 @@ export const Panel: React.FC<PanelProps> = ({
         top: 0,
         height: '100%',
         width,
-        zIndex: 40,
+        zIndex: 60,
         display: 'flex',
         flexDirection: 'column',
         background: bg,
@@ -36,7 +42,8 @@ export const Panel: React.FC<PanelProps> = ({
       }}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 };
 
