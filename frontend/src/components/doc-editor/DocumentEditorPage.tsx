@@ -644,31 +644,65 @@ export default function DocumentEditorPage({
 
   const isEmpty = sections.length === 0 && !demoLoaded;
 
-  // Portal: docked video to sidebar container — rendered at top level so it
-  // persists regardless of editor mode, empty state, or ydoc readiness.
-  const dockedVideoPortal = showVideoCall && isVideoDocked ? (() => {
-    const container = document.getElementById('sidebar-video-slot');
-    if (!container) return null;
-    return createPortal(
-      <VideoCallPanel
-        documentId={documentId}
-        userId={userId}
-        idToken={idToken}
-        meta={meta}
-        updateMeta={updateMeta}
-        sendMessage={ws.sendMessage}
-        onClose={() => { setShowVideoCall(false); onUndockVideo?.(); }}
-        isDocked
-        onUndock={() => { onUndockVideo?.(); }}
-        onCallEnd={() => { setShowVideoCall(false); onUndockVideo?.(); }}
-      />,
-      container,
-    );
-  })() : null;
+  // Single-mount VideoCallPanel. The portal container is a STABLE div (never
+  // changes identity) — we move *that* div into either #inline-video-slot or
+  // #sidebar-video-slot via appendChild. React's portal reconciliation treats
+  // container change as unmount+remount, which tears down the IVS stage; by
+  // keeping the container identical and only relocating it in the DOM, the
+  // VideoCallPanel mount — and its IVS session — persists across docking.
+  const [videoHost] = useState<HTMLDivElement | null>(() => {
+    if (typeof document === 'undefined') return null;
+    const el = document.createElement('div');
+    el.style.width = '100%';
+    return el;
+  });
+
+  useEffect(() => {
+    if (!videoHost) return;
+    if (!showVideoCall) {
+      videoHost.parentNode?.removeChild(videoHost);
+      return;
+    }
+    const targetId = isVideoDocked ? 'sidebar-video-slot' : 'inline-video-slot';
+    const attach = () => {
+      const target = document.getElementById(targetId);
+      if (target && target !== videoHost.parentNode) {
+        target.appendChild(videoHost);
+        return true;
+      }
+      return target === videoHost.parentNode;
+    };
+    if (attach()) return;
+    const interval = setInterval(() => { if (attach()) clearInterval(interval); }, 50);
+    const timeout = setTimeout(() => clearInterval(interval), 2000);
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [videoHost, showVideoCall, isVideoDocked, mode]);
+
+  useEffect(() => () => {
+    // Cleanup on unmount: detach the host from whichever slot owns it.
+    videoHost?.parentNode?.removeChild(videoHost);
+  }, [videoHost]);
+
+  const videoPortal = showVideoCall && videoHost ? createPortal(
+    <VideoCallPanel
+      documentId={documentId}
+      userId={userId}
+      idToken={idToken}
+      meta={meta}
+      updateMeta={updateMeta}
+      sendMessage={ws.sendMessage}
+      isDocked={isVideoDocked}
+      onClose={() => { setShowVideoCall(false); if (isVideoDocked) onUndockVideo?.(); }}
+      onDockToSidebar={!isVideoDocked ? (() => { onDockVideo?.(); }) : undefined}
+      onUndock={isVideoDocked ? (() => { onUndockVideo?.(); }) : undefined}
+      onCallEnd={() => { setShowVideoCall(false); onUndockVideo?.(); }}
+    />,
+    videoHost,
+  ) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {dockedVideoPortal}
+      {videoPortal}
       <DocumentHeader
         meta={headerMeta}
         mode={mode}
@@ -753,21 +787,12 @@ export default function DocumentEditorPage({
         {!isEmpty && mode === 'editor' && ydoc && (
           <div ref={sectionListRef} style={{ display: 'flex', gap: '1rem', position: 'relative', minWidth: 0 }}>
 
-            {/* Left: video sidebar — spacer div reserves width in flex, inner content goes fixed on scroll */}
+            {/* Left: video sidebar — spacer reserves layout width; the actual
+                VideoCallPanel is portaled into #inline-video-slot. Single mount
+                means IVS stays connected when user docks to global sidebar. */}
             {showVideoCall && !isVideoDocked && showInlineVideo && (
               <div ref={videoSpacerRef} style={{ width: 240, flexShrink: 0 }}>
-                <div style={sidebarFixed ? { position: 'fixed', top: FIXED_TOP, left: videoLeft, width: 240, zIndex: 30 } : {}}>
-                  <VideoCallPanel
-                    documentId={documentId}
-                    userId={userId}
-                    idToken={idToken}
-                    meta={meta}
-                    updateMeta={updateMeta}
-                    sendMessage={ws.sendMessage}
-                    onClose={() => setShowVideoCall(false)}
-                    onDockToSidebar={() => { onDockVideo?.(); }}
-                  />
-                </div>
+                <div id="inline-video-slot" style={sidebarFixed ? { position: 'fixed', top: FIXED_TOP, left: videoLeft, width: 240, zIndex: 30 } : {}} />
               </div>
             )}
             {/* (docked video portal is rendered outside this conditional — see below) */}

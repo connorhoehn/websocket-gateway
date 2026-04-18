@@ -138,6 +138,7 @@ local_resource(
         $CT --table-name user-activity --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "user-activity exists"
         $CT --table-name crdt-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "crdt-documents exists"
         $CT --table-name chat-messages --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=messageId,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=messageId,KeyType=RANGE 2>/dev/null || echo "chat-messages exists"
+        $CT --table-name document-video-sessions --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sessionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sessionId,KeyType=RANGE 2>/dev/null || echo "document-video-sessions exists"
 
         aws dynamodb create-table --table-name section-items \
             --attribute-definitions AttributeName=sectionKey,AttributeType=S AttributeName=itemId,AttributeType=S AttributeName=assignee,AttributeType=S AttributeName=status,AttributeType=S AttributeName=documentId,AttributeType=S \

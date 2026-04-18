@@ -11,7 +11,7 @@ export class SocialStack extends Stack {
       tableName: 'social-profiles',
       partitionKey: { name: 'userId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Follow relationships between users
@@ -20,7 +20,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'followerId', type: AttributeType.STRING },
       sortKey: { name: 'followeeId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Groups (communities / channels)
@@ -28,7 +28,7 @@ export class SocialStack extends Stack {
       tableName: 'social-groups',
       partitionKey: { name: 'groupId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Group membership
@@ -37,7 +37,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'groupId', type: AttributeType.STRING },
       sortKey: { name: 'userId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Rooms (real-time chat rooms mapped to WebSocket channels)
@@ -45,7 +45,7 @@ export class SocialStack extends Stack {
       tableName: 'social-rooms',
       partitionKey: { name: 'roomId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Room membership
@@ -54,7 +54,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'roomId', type: AttributeType.STRING },
       sortKey: { name: 'userId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Posts within rooms
@@ -63,7 +63,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'roomId', type: AttributeType.STRING },
       sortKey: { name: 'postId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Comments on posts
@@ -72,7 +72,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'postId', type: AttributeType.STRING },
       sortKey: { name: 'commentId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // Likes / reactions on posts or comments
@@ -81,7 +81,7 @@ export class SocialStack extends Stack {
       partitionKey: { name: 'targetId', type: AttributeType.STRING },
       sortKey: { name: 'userId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // CfnOutputs for all table names

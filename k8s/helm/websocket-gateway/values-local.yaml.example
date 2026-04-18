@@ -1,0 +1,27 @@
+# Local development overrides for Colima + Tilt.
+# Copy this file to values-local.yaml and fill in the VNL values.
+# The real file is gitignored because it contains a Cognito service-user password.
+#
+# To create the VNL service user in your VNL Cognito pool:
+#   cd ~/Sandbox/videonowandlater
+#   ./scripts/create-user.sh <username> <password>
+# Then mirror those into VNL_SERVICE_USERNAME / VNL_SERVICE_PASSWORD below.
+# VNL_API_URL + VNL_COGNITO_USER_POOL_CLIENT_ID come from
+# `aws cloudformation describe-stacks --stack-name VNL-Api VNL-Auth`.
+
+gateway:
+  image:
+    pullPolicy: Never  # Use locally-built images
+  env:
+    SKIP_AUTH: "true"
+    LOG_LEVEL: debug
+    METRICS_ENABLED: "false"  # don't spam CloudWatch from local dev
+
+socialApi:
+  image:
+    pullPolicy: Never
+  env:
+    VNL_API_URL: "https://<api-id>.execute-api.us-east-1.amazonaws.com/prod"
+    VNL_COGNITO_USER_POOL_CLIENT_ID: "<vnl-cognito-app-client-id>"
+    VNL_SERVICE_USERNAME: "<service-user>"
+    VNL_SERVICE_PASSWORD: "<service-user-password>"

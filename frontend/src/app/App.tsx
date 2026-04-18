@@ -1,6 +1,7 @@
 // frontend/src/app/App.tsx
 import { useRef, useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router';
+import { Routes, Route, Navigate, useParams, useNavigate, useOutletContext } from 'react-router';
+import type { DockVideoContext } from '../components/AppLayout';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePresence } from '../hooks/usePresence';
@@ -462,6 +463,7 @@ function DocumentEditorRoute(props: {
 }) {
   const { documentId } = useParams<{ documentId: string }>();
   const navigate = useNavigate();
+  const { dockedVideoDocId, setDockedVideoDocId } = useOutletContext<DockVideoContext>();
 
   if (!documentId) return <Navigate to="/documents" replace />;
 
@@ -476,6 +478,9 @@ function DocumentEditorRoute(props: {
         activityPublish={props.activityPublish}
         activityEvents={props.activityEvents}
         onBack={() => navigate('/documents')}
+        isVideoDocked={dockedVideoDocId === documentId}
+        onDockVideo={() => setDockedVideoDocId(documentId)}
+        onUndockVideo={() => setDockedVideoDocId(null)}
       />
     </div>
   );

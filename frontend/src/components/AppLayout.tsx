@@ -28,6 +28,13 @@ import { ErrorBoundary } from './ErrorBoundary';
 // Lazy-loaded: only DocumentEditorPage needed for docked video persistence
 const DocumentEditorPage = lazy(() => import('./doc-editor/DocumentEditorPage'));
 
+// Outlet context — lets routed pages read/mutate the docked-video state without
+// prop drilling through React Router.
+export interface DockVideoContext {
+  dockedVideoDocId: string | null;
+  setDockedVideoDocId: (id: string | null) => void;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -580,19 +587,17 @@ export function AppLayout({
           {/* Route content — rendered by React Router */}
           <ErrorBoundary name="RouteContent">
             <Suspense fallback={<div>Loading...</div>}>
-              <Outlet />
+              <Outlet context={{ dockedVideoDocId, setDockedVideoDocId } satisfies DockVideoContext} />
             </Suspense>
           </ErrorBoundary>
 
-          {/* Docked-video document — stays mounted across navigation to preserve IVS connection */}
-          {dockedVideoDocId && (
+          {/* Docked-video document — stays mounted across navigation to preserve IVS connection.
+              Only rendered when user is NOT on the docked doc's route; otherwise the primary
+              Outlet owns that doc's mount (avoids double-mount / conflicting portals). */}
+          {dockedVideoDocId && location.pathname !== `/documents/${dockedVideoDocId}` && (
             <ErrorBoundary name="DockedVideoEditor">
               <Suspense fallback={<div>Loading...</div>}>
-              <div style={{
-                flex: location.pathname === `/documents/${dockedVideoDocId}` ? 1 : 0,
-                minHeight: 0,
-                display: location.pathname === `/documents/${dockedVideoDocId}` ? 'block' : 'none',
-              }}>
+              <div style={{ display: 'none' }}>
                 <DocumentEditorPage
                   documentId={dockedVideoDocId}
                   ws={ws}

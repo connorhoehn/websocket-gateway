@@ -3,7 +3,7 @@ import { Construct } from 'constructs';
 
 export function createVpc(scope: Construct): Vpc {
   const vpc = new Vpc(scope, 'GatewayVpc', {
-    maxAzs: 2,
+    maxAzs: 1,
     natGateways: 0,
     subnetConfiguration: [
       {
@@ -59,11 +59,8 @@ export function createVpc(scope: Construct): Vpc {
     securityGroups: [endpointSg],
   });
 
-  vpc.addInterfaceEndpoint('SecretsManagerEndpoint', {
-    service: InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-    subnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
-    securityGroups: [endpointSg],
-  });
+  // SecretsManagerEndpoint removed — no app code reads from Secrets Manager
+  // (verified via grep for SecretsManager/getSecretValue/fromSecretArn).
 
   return vpc;
 }

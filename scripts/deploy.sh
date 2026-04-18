@@ -7,6 +7,14 @@ REPO="websocket-gateway"
 ECR_URI="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/${REPO}"
 TAG="${IMAGE_TAG:-latest}"
 
+echo "==> Preflight: synthesizing all CDK stacks..."
+# Catches broken stacks (e.g., new stack added but deploy script unaware) before
+# we spend time on docker build+push. Uses a placeholder IMAGE_URI since synth
+# doesn't need the real tag — we just want all stacks to render.
+IMAGE_URI="${ECR_URI}:${TAG}" \
+ACM_CERTIFICATE_ARN="${ACM_CERTIFICATE_ARN:-arn:aws:acm:us-east-1:264161986065:certificate/4e841ee9-ac51-4738-8149-8da219ccc66f}" \
+  npx cdk synth --all --quiet > /dev/null
+
 echo "==> Authenticating with ECR..."
 aws ecr get-login-password --region "$REGION" | \
   docker login --username AWS --password-stdin "${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
@@ -25,7 +33,7 @@ docker push "${ECR_URI}:${TAG}"
 echo "==> Deploying CDK stack..."
 IMAGE_URI="${ECR_URI}:${TAG}" \
 ACM_CERTIFICATE_ARN="${ACM_CERTIFICATE_ARN:-arn:aws:acm:us-east-1:264161986065:certificate/4e841ee9-ac51-4738-8149-8da219ccc66f}" \
-  npx cdk deploy --require-approval never
+  npx cdk deploy --all --require-approval never
 
 echo ""
 echo "==> Deploy complete!"

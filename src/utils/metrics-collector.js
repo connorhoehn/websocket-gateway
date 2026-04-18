@@ -277,15 +277,20 @@ class MetricsCollector {
                 });
             }
 
-            // Send metrics to CloudWatch (batched)
-            const command = new PutMetricDataCommand({
-                Namespace: this.namespace,
-                MetricData: metricData
-            });
+            // Send metrics to CloudWatch (batched), unless disabled via env var
+            const METRICS_ENABLED = process.env.METRICS_ENABLED !== 'false';
+            if (METRICS_ENABLED) {
+                const command = new PutMetricDataCommand({
+                    Namespace: this.namespace,
+                    MetricData: metricData
+                });
 
-            await this.cloudWatchClient.send(command);
+                await this.cloudWatchClient.send(command);
 
-            this.logger.debug('Metrics sent to CloudWatch', JSON.stringify(summary));
+                this.logger.debug('Metrics sent to CloudWatch', JSON.stringify(summary));
+            } else {
+                this.logger.debug('CloudWatch emission disabled (METRICS_ENABLED=false)', JSON.stringify(summary));
+            }
 
             // Reset per-interval counters after successful flush
             this.messageCount = 0;

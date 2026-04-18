@@ -23,6 +23,13 @@ cdk.out/
 .aws/
 credentials
 
+# Local Helm values — may contain VNL creds / personal dev config.
+# Commit the .example template instead.
+k8s/helm/websocket-gateway/values-local.yaml
+
+# Playwright MCP session artifacts (snapshots, console logs)
+.playwright-mcp/
+
 # IDE and editors
 .vscode/
 .idea/
