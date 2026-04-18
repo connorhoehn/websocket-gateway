@@ -3,6 +3,11 @@ import { requireAuth } from '../middleware/auth';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { docClient } from '../lib/aws-clients';
 import {
+  asyncHandler,
+  ValidationError,
+  NotFoundError,
+} from '../middleware/error-handler';
+import {
   documentCommentRepo,
   sectionReviewRepo,
   sectionItemRepo,
@@ -299,50 +304,43 @@ function parseMarkdownSections(content: string): ParsedSection[] {
 documentImportExportRouter.get(
   '/export',
   requireAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { documentId } = req.params;
-      const format = (req.query['format'] as string) ?? 'json';
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { documentId } = req.params;
+    const format = (req.query['format'] as string) ?? 'json';
 
-      if (format !== 'json' && format !== 'md') {
-        res.status(400).json({ error: 'format must be "json" or "md"' });
-        return;
-      }
-
-      // Fetch document metadata
-      const meta = await getDocumentMeta(documentId);
-      if (!meta) {
-        res.status(404).json({ error: 'Document not found' });
-        return;
-      }
-
-      // Fetch all related data in parallel
-      const [sections, commentsResult, reviews, items, workflows] = await Promise.all([
-        documentSectionRepo.getSectionsForDocument(documentId),
-        documentCommentRepo.getCommentsForDocument(documentId),
-        sectionReviewRepo.getReviewsForDocument(documentId),
-        sectionItemRepo.getItemsForDocument(documentId),
-        approvalWorkflowRepo.getWorkflowsForDocument(documentId),
-      ]);
-
-      const comments = commentsResult.items;
-
-      if (format === 'json') {
-        res.status(200).json(buildJsonExport(meta, sections, comments, reviews, items, workflows));
-      } else {
-        const md = buildMarkdownExport(meta, sections, comments, reviews, items);
-        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${meta.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.md"`,
-        );
-        res.status(200).send(md);
-      }
-    } catch (err) {
-      console.error('[import-export] GET /export error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+    if (format !== 'json' && format !== 'md') {
+      throw new ValidationError('format must be "json" or "md"');
     }
-  },
+
+    // Fetch document metadata
+    const meta = await getDocumentMeta(documentId);
+    if (!meta) {
+      throw new NotFoundError('Document not found');
+    }
+
+    // Fetch all related data in parallel
+    const [sections, commentsResult, reviews, items, workflows] = await Promise.all([
+      documentSectionRepo.getSectionsForDocument(documentId),
+      documentCommentRepo.getCommentsForDocument(documentId),
+      sectionReviewRepo.getReviewsForDocument(documentId),
+      sectionItemRepo.getItemsForDocument(documentId),
+      approvalWorkflowRepo.getWorkflowsForDocument(documentId),
+    ]);
+
+    const comments = commentsResult.items;
+
+    if (format === 'json') {
+      res.status(200).json(buildJsonExport(meta, sections, comments, reviews, items, workflows));
+    } else {
+      const md = buildMarkdownExport(meta, sections, comments, reviews, items);
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${meta.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.md"`,
+      );
+      res.status(200).send(md);
+    }
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -352,31 +350,27 @@ documentImportExportRouter.get(
 documentImportExportRouter.post(
   '/import',
   requireAuth,
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { documentId } = req.params;
-      const { format, content } = req.body as { format?: string; content?: string };
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const { documentId } = req.params;
+    const { format, content } = req.body as { format?: string; content?: string };
 
-      if (!format || (format !== 'markdown' && format !== 'json')) {
-        res.status(400).json({ error: 'format must be "markdown" or "json"' });
-        return;
-      }
-      if (!content || typeof content !== 'string' || !content.trim()) {
-        res.status(400).json({ error: 'content is required' });
-        return;
-      }
+    if (!format || (format !== 'markdown' && format !== 'json')) {
+      throw new ValidationError('format must be "markdown" or "json"');
+    }
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      throw new ValidationError('content is required');
+    }
 
-      // Verify document exists
-      const meta = await getDocumentMeta(documentId);
-      if (!meta) {
-        res.status(404).json({ error: 'Document not found' });
-        return;
-      }
+    // Verify document exists
+    const meta = await getDocumentMeta(documentId);
+    if (!meta) {
+      throw new NotFoundError('Document not found');
+    }
 
-      let sectionsCreated = 0;
-      let itemsCreated = 0;
+    let sectionsCreated = 0;
+    let itemsCreated = 0;
 
-      if (format === 'markdown') {
+    if (format === 'markdown') {
         const parsed = parseMarkdownSections(content);
 
         // Determine starting sortOrder from existing sections
@@ -412,8 +406,7 @@ documentImportExportRouter.post(
         try {
           data = JSON.parse(content);
         } catch {
-          res.status(400).json({ error: 'Invalid JSON content' });
-          return;
+          throw new ValidationError('Invalid JSON content');
         }
 
         const doc = data['document'] as Record<string, unknown> | undefined;
@@ -453,9 +446,5 @@ documentImportExportRouter.post(
       }
 
       res.status(201).json({ documentId, sectionsCreated, itemsCreated });
-    } catch (err) {
-      console.error('[import-export] POST /import error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  },
+  }),
 );

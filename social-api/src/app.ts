@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth } from './middleware/auth';
 import { requestLogger } from './middleware/request-logger';
+import { errorHandler } from './middleware/error-handler';
 import healthRouter from './routes/health';
 import apiRouter from './routes/index';
 
@@ -27,6 +28,9 @@ export function createApp(): express.Application {
 
   // API routes (profiles, groups, rooms, etc.) mounted here in later phases
   app.use('/api', apiRouter);
+
+  // Central error middleware — MUST be last
+  app.use(errorHandler);
 
   return app;
 }

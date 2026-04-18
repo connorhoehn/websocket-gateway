@@ -14,11 +14,17 @@ import { requireAuth, optionalAuth } from '../middleware/auth';
 import { getVnlAuthToken, VNL_API_URL } from '../lib/vnl-auth';
 import { videoSessionRepo } from '../repositories';
 import { VideoSessionRecord } from '../repositories/VideoSessionRepository';
+import {
+  asyncHandler,
+  AppError,
+  ValidationError,
+  NotFoundError,
+} from '../middleware/error-handler';
 
 export const videoSessionsRouter = Router();
 
 // POST /api/video/sessions — create a HANGOUT session on VNL
-videoSessionsRouter.post('/sessions', requireAuth, async (req: Request, res: Response): Promise<void> => {
+videoSessionsRouter.post('/sessions', requireAuth, asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const vnlToken = await getVnlAuthToken();
 
@@ -34,8 +40,7 @@ videoSessionsRouter.post('/sessions', requireAuth, async (req: Request, res: Res
     if (!vnlRes.ok) {
       const errorBody = await vnlRes.text().catch(() => 'Unknown error');
       console.error('[videoSessions] VNL create session failed:', vnlRes.status, errorBody);
-      res.status(vnlRes.status).json({ error: `VNL API error: ${vnlRes.status}` });
-      return;
+      throw new AppError(vnlRes.status, `VNL API error: ${vnlRes.status}`);
     }
 
     const data = await vnlRes.json() as Record<string, unknown>;
@@ -71,13 +76,14 @@ videoSessionsRouter.post('/sessions', requireAuth, async (req: Request, res: Res
 
     res.status(201).json(data);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error('[videoSessions] POST /sessions error:', err);
-    res.status(500).json({ error: 'Failed to create video session' });
+    throw new AppError(500, 'Failed to create video session');
   }
-});
+}));
 
 // POST /api/video/sessions/:sessionId/join — get IVS stage token
-videoSessionsRouter.post('/sessions/:sessionId/join', requireAuth, async (req: Request, res: Response): Promise<void> => {
+videoSessionsRouter.post('/sessions/:sessionId/join', requireAuth, asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const { sessionId } = req.params;
     const vnlToken = await getVnlAuthToken();
@@ -93,8 +99,7 @@ videoSessionsRouter.post('/sessions/:sessionId/join', requireAuth, async (req: R
     if (!vnlRes.ok) {
       const errorBody = await vnlRes.text().catch(() => 'Unknown error');
       console.error('[videoSessions] VNL join failed:', vnlRes.status, errorBody);
-      res.status(vnlRes.status).json({ error: `VNL API error: ${vnlRes.status}` });
-      return;
+      throw new AppError(vnlRes.status, `VNL API error: ${vnlRes.status}`);
     }
 
     const data = await vnlRes.json() as Record<string, unknown>;
@@ -118,14 +123,15 @@ videoSessionsRouter.post('/sessions/:sessionId/join', requireAuth, async (req: R
 
     res.status(200).json(data);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error('[videoSessions] POST /sessions/:id/join error:', err);
-    res.status(500).json({ error: 'Failed to join video session' });
+    throw new AppError(500, 'Failed to join video session');
   }
-});
+}));
 
 // POST /api/video/sessions/:sessionId/end — end a video session
 // Uses optionalAuth so sendBeacon (no auth header) works on tab close
-videoSessionsRouter.post('/sessions/:sessionId/end', optionalAuth, async (req: Request, res: Response): Promise<void> => {
+videoSessionsRouter.post('/sessions/:sessionId/end', optionalAuth, asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const { sessionId } = req.params;
     const vnlToken = await getVnlAuthToken();
@@ -141,8 +147,7 @@ videoSessionsRouter.post('/sessions/:sessionId/end', optionalAuth, async (req: R
     if (!vnlRes.ok) {
       const errorBody = await vnlRes.text().catch(() => 'Unknown error');
       console.error('[videoSessions] VNL end failed:', vnlRes.status, errorBody);
-      res.status(vnlRes.status).json({ error: `VNL API error: ${vnlRes.status}` });
-      return;
+      throw new AppError(vnlRes.status, `VNL API error: ${vnlRes.status}`);
     }
 
     const data = await vnlRes.json() as Record<string, unknown>;
@@ -161,44 +166,45 @@ videoSessionsRouter.post('/sessions/:sessionId/end', optionalAuth, async (req: R
 
     res.status(200).json(data);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error('[videoSessions] POST /sessions/:id/end error:', err);
-    res.status(500).json({ error: 'Failed to end video session' });
+    throw new AppError(500, 'Failed to end video session');
   }
-});
+}));
 
 // GET /api/video/sessions/document/:documentId — list all sessions for a document
-videoSessionsRouter.get('/sessions/document/:documentId', requireAuth, async (req: Request, res: Response): Promise<void> => {
+videoSessionsRouter.get('/sessions/document/:documentId', requireAuth, asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const { documentId } = req.params;
     const sessions = await videoSessionRepo.getSessionsByDocument(documentId);
     res.status(200).json({ sessions });
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error('[videoSessions] GET /sessions/document/:documentId error:', err);
-    res.status(500).json({ error: 'Failed to fetch video sessions' });
+    throw new AppError(500, 'Failed to fetch video sessions');
   }
-});
+}));
 
 // GET /api/video/sessions/:sessionId — get a single session record
 // Requires documentId as query param since it's the partition key
-videoSessionsRouter.get('/sessions/:sessionId', requireAuth, async (req: Request, res: Response): Promise<void> => {
+videoSessionsRouter.get('/sessions/:sessionId', requireAuth, asyncHandler(async (req: Request, res: Response): Promise<void> => {
   try {
     const { sessionId } = req.params;
     const documentId = req.query.documentId as string;
 
     if (!documentId) {
-      res.status(400).json({ error: 'documentId query parameter is required' });
-      return;
+      throw new ValidationError('documentId query parameter is required');
     }
 
     const session = await videoSessionRepo.getSession(documentId, sessionId);
     if (!session) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
+      throw new NotFoundError('Session not found');
     }
 
     res.status(200).json(session);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     console.error('[videoSessions] GET /sessions/:sessionId error:', err);
-    res.status(500).json({ error: 'Failed to fetch video session' });
+    throw new AppError(500, 'Failed to fetch video session');
   }
-});
+}));

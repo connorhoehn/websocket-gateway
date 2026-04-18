@@ -1,28 +1,32 @@
 import { QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
+import {
+  asyncHandler,
+  ValidationError,
+  AppError,
+} from '../middleware/error-handler';
 
 const TABLE = 'user-activity';
 
 export const activityRouter = Router();
 
 // GET /api/activity — paginated activity log for authenticated user (ALOG-02)
-activityRouter.get('/', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.sub;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const lastKey = req.query.lastKey as string | undefined;
+activityRouter.get('/', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user!.sub;
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  const lastKey = req.query.lastKey as string | undefined;
 
-    let exclusiveStartKey: Record<string, unknown> | undefined;
-    if (lastKey) {
-      try {
-        exclusiveStartKey = JSON.parse(Buffer.from(lastKey, 'base64').toString('utf-8'));
-      } catch {
-        res.status(400).json({ error: 'Invalid lastKey' });
-        return;
-      }
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  if (lastKey) {
+    try {
+      exclusiveStartKey = JSON.parse(Buffer.from(lastKey, 'base64').toString('utf-8'));
+    } catch {
+      throw new ValidationError('Invalid lastKey');
     }
+  }
 
+  try {
     const result = await docClient.send(new QueryCommand({
       TableName: TABLE,
       KeyConditionExpression: 'userId = :uid',
@@ -44,7 +48,9 @@ activityRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 
     res.json({ items, nextKey });
   } catch (err) {
+    // Preserve the original domain-specific 500 message by wrapping in AppError.
+    // The central error middleware will log + render `{ error: 'Failed to load activity log' }`.
     console.error('[activity] Failed to query activity log:', err);
-    res.status(500).json({ error: 'Failed to load activity log' });
+    throw new AppError(500, 'Failed to load activity log');
   }
-});
+}));
