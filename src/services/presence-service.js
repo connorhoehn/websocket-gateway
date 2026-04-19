@@ -70,6 +70,7 @@ class PresenceService {
         this.cleanupInterval = setInterval(() => {
             this.cleanupStaleClients();
         }, this.CLEANUP_INTERVAL);
+        if (this.cleanupInterval.unref) this.cleanupInterval.unref();
     }
 
     async handleAction(clientId, action, data) {
@@ -337,6 +338,7 @@ class PresenceService {
         this.presenceHeartbeatInterval = setInterval(() => {
             this.cleanupStalePresence();
         }, this.heartbeatInterval);
+        if (this.presenceHeartbeatInterval.unref) this.presenceHeartbeatInterval.unref();
 
         this.logger.debug('Presence heartbeat started');
     }

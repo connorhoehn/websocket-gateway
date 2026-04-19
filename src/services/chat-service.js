@@ -68,6 +68,7 @@ class ChatService {
                 }
             }
         }, CHAT_CACHE_CLEANUP_INTERVAL_MS);
+        if (this._cleanupInterval.unref) this._cleanupInterval.unref();
     }
 
     async handleAction(clientId, action, data) {

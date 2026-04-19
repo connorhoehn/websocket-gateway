@@ -133,6 +133,10 @@ class NodeManager {
                 this.logger.error('Heartbeat failed:', error);
             }
         }, HEARTBEAT_INTERVAL_MS);
+        // Don't keep the event loop alive just for heartbeats — the WS server
+        // socket handles that in prod; tests can exit cleanly if they forget
+        // to call shutdown().
+        if (this.heartbeatInterval.unref) this.heartbeatInterval.unref();
     }
 
     async updateHeartbeat() {

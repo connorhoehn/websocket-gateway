@@ -117,6 +117,7 @@ class CRDTService {
         this.periodicSnapshotTimer = setInterval(() => {
             this._writePeriodicSnapshots();
         }, config.SNAPSHOT_INTERVAL_MS);
+        if (this.periodicSnapshotTimer.unref) this.periodicSnapshotTimer.unref();
         this.logger.info(`Periodic snapshots every ${config.SNAPSHOT_INTERVAL_MS / 1000}s`);
 
         // ---------------------------------------------------------------

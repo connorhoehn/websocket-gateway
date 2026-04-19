@@ -443,6 +443,7 @@ class CursorService {
         this.cleanupTimer = setInterval(() => {
             this.cleanupStaleData();
         }, this.cleanupInterval);
+        if (this.cleanupTimer.unref) this.cleanupTimer.unref();
     }
 
     cleanupStaleData() {

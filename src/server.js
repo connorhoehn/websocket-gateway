@@ -150,6 +150,7 @@ class DistributedWebSocketServer {
             this.metricsCollector.flush();
             this.logger.info('Metrics emitted to CloudWatch', this.metricsCollector.getMetricsSummary());
         }, METRICS_FLUSH_INTERVAL_MS);
+        if (this.metricsInterval.unref) this.metricsInterval.unref();
 
         // Add cleanup handler to node manager
         this.nodeManager.addShutdownHandler(() => this.cleanup());
