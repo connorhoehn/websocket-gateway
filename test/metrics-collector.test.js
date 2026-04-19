@@ -163,7 +163,7 @@ describe('MetricsCollector', () => {
             // Should log error
             expect(mockLogger.error).toHaveBeenCalledWith(
                 expect.stringContaining('Failed to send metrics'),
-                expect.any(String)
+                expect.any(Object)
             );
         });
 
