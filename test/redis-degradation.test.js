@@ -81,6 +81,17 @@ class MockNodeManager {
     async getClientNode(clientId) {
         return this.clients.has(clientId) ? this.nodeId : null;
     }
+
+    // Mirror of NodeManager.getClientsForChannel. In prod this is an O(1)
+    // lookup on a reverse index; the mock derives it from the per-client
+    // channel sets since its data model is keyed by client.
+    getClientsForChannel(channel) {
+        const result = new Set();
+        for (const [clientId, client] of this.clients) {
+            if (client.channels.has(channel)) result.add(clientId);
+        }
+        return result;
+    }
 }
 
 // Mock Logger
