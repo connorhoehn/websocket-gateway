@@ -1,5 +1,5 @@
 // frontend/src/app/App.tsx
-import { useRef, useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useRef, useState, useCallback, useEffect, lazy } from 'react';
 import { Routes, Route, Navigate, useParams, useNavigate, useOutletContext } from 'react-router';
 import type { DockVideoContext } from '../components/AppLayout';
 import { useAuth } from '../hooks/useAuth';
