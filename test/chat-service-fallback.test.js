@@ -173,7 +173,7 @@ describe('ChatService Redis Fallback', () => {
             chatService.addToChannelHistory('general', messageData);
 
             // Check that message is in local history
-            const history = chatService.getChannelHistory('general');
+            const history = await chatService.getChannelHistory('general');
             expect(history.length).toBe(1);
             expect(history[0].message).toBe('Test message');
         });
@@ -220,7 +220,7 @@ describe('ChatService Redis Fallback', () => {
             }
 
             // All should be in history
-            const history = chatService.getChannelHistory('general');
+            const history = await chatService.getChannelHistory('general');
             expect(history.length).toBe(3);
         });
     });

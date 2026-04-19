@@ -17,8 +17,8 @@ describe('Logger', () => {
         logger = new Logger('TestLogger');
     });
 
-    afterAll(() => {
-        // Restore console methods after all tests
+    afterEach(() => {
+        // Restore between tests so call history resets
         consoleLogSpy.mockRestore();
         consoleErrorSpy.mockRestore();
         consoleWarnSpy.mockRestore();
@@ -136,7 +136,11 @@ describe('Logger', () => {
             debugLogger.error('Error message');
 
             // Restore
-            process.env.LOG_LEVEL = oldLevel;
+            if (oldLevel === undefined) {
+                delete process.env.LOG_LEVEL;
+            } else {
+                process.env.LOG_LEVEL = oldLevel;
+            }
 
             // All should parse successfully
             expect(() => JSON.parse(consoleLogSpy.mock.calls[0][0])).not.toThrow();
@@ -234,7 +238,11 @@ describe('Logger', () => {
             warnLogger.warn('Should log');
 
             // Restore
-            process.env.LOG_LEVEL = oldLevel;
+            if (oldLevel === undefined) {
+                delete process.env.LOG_LEVEL;
+            } else {
+                process.env.LOG_LEVEL = oldLevel;
+            }
 
             expect(consoleLogSpy).not.toHaveBeenCalled();
             expect(consoleWarnSpy).toHaveBeenCalled();

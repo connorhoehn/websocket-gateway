@@ -61,7 +61,7 @@ class ChatService {
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
 
         // Periodic cleanup for empty channel caches
-        setInterval(() => {
+        this._cleanupInterval = setInterval(() => {
             for (const [channelId, cache] of this.channelCaches.entries()) {
                 if (cache.size === 0) {
                     this.channelCaches.delete(channelId);
@@ -454,6 +454,12 @@ class ChatService {
 
     // Service lifecycle methods
     async shutdown() {
+        // Stop periodic cleanup timer
+        if (this._cleanupInterval) {
+            clearInterval(this._cleanupInterval);
+            this._cleanupInterval = null;
+        }
+
         // Clear all data
         this.clientChannels.clear();
         this.channelCaches.clear();

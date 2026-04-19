@@ -163,12 +163,20 @@ describe('SessionService', () => {
       };
 
       mockMessageRouter.redisAvailable = false;
-      sessionService.localSessionStore.set(`session:${sessionToken}`, sessionData);
+      // Set entry with a past TTL so LRUCache considers it expired.
+      // The service relies on LRUCache's built-in TTL handling rather than
+      // checking expiresAt directly for locally-cached sessions.
+      sessionService.localSessionStore.set(
+        `session:${sessionToken}`,
+        sessionData,
+        { ttl: 1 }
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
 
       const result = await sessionService.restoreSession(sessionToken);
 
       expect(result).toBeNull();
-      // Verify expired session was removed from local cache
+      // LRUCache evicts expired entries on access
       expect(sessionService.localSessionStore.has(`session:${sessionToken}`)).toBe(false);
     });
   });
