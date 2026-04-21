@@ -77,16 +77,21 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
           borderRadius: 8,
           maxWidth: 560,
           width: '90vw',
+          maxHeight: '90vh',
           boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
-          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Title */}
-        <h2 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700, color: '#1e293b' }}>
+        {/* Header */}
+        <h2 style={{ margin: 0, padding: '24px 24px 16px', fontSize: 18, fontWeight: 700, color: '#1e293b', flexShrink: 0 }}>
           Create New Document
         </h2>
 
+        {/* Scrollable body */}
+        <div style={{ flex: '1 1 auto', overflowY: 'auto', padding: '0 24px', minHeight: 0 }}>
         {/* Type selector grid */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
@@ -181,7 +186,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
         </div>
 
         {/* Description textarea */}
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
             Description <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span>
           </label>
@@ -207,9 +212,10 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
             onBlur={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; }}
           />
         </div>
+        </div>
 
-        {/* Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        {/* Sticky footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: '#ffffff', flexShrink: 0 }}>
           <button
             onClick={onClose}
             style={{

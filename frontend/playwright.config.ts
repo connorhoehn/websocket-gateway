@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
 //
 // Scoped to `e2e/**/*.spec.ts` so it does not pick up vitest tests in
 // `src/**/*.test.ts` (vitest owns those). The dev server is expected to be
-// running on http://localhost:5173 (or 5174 if 5173 is occupied) — start it
+// running on http://localhost:5174 (or PLAYWRIGHT_BASE_URL) — start it
 // manually with `npm run dev` in a separate terminal, or rely on the
 // webServer block below.
 
@@ -18,7 +18,7 @@ export default defineConfig({
   retries: 0,
   reporter: 'line',
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5174',
     headless: true,
     // We intentionally ignore HTTPS errors and do NOT wait for idle network —
     // the app fires WS + social-api requests at a non-running backend and

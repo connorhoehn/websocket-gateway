@@ -79,7 +79,7 @@ local_resource(
     serve_cmd='cd frontend && npm run dev',
     deps=['frontend/src', 'frontend/index.html'],
     labels=['app'],
-    links=['http://localhost:5173'],
+    links=['http://localhost:5174'],
     auto_init=True,
 )
 

@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test';
 //   time. Opening a new panel automatically closes any sibling.
 //
 // Environment assumptions:
-//   - Vite dev server running on http://localhost:5173 (or PLAYWRIGHT_BASE_URL)
+//   - Vite dev server running on http://localhost:5174 (or PLAYWRIGHT_BASE_URL)
 //   - VITE_DEV_BYPASS_AUTH=true in frontend/.env (skips Cognito)
 //   - NO backend — ws://localhost:8080 + http://localhost:3001 WILL fail.
 //     Those failures are tolerated; we only exercise local React/Y.js state.

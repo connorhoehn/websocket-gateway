@@ -27,7 +27,7 @@ tilt up
 Open the Tilt dashboard at http://localhost:10350
 
 ### 4. Access the app
-- **Frontend**: http://localhost:5173 (Vite dev server with HMR)
+- **Frontend**: http://localhost:5174 (Vite dev server with HMR)
 - **Gateway**: ws://localhost:8080 (WebSocket)
 - **Gateway Health**: http://localhost:8080/health
 - **Redis**: localhost:6379
@@ -94,7 +94,7 @@ aws dynamodb list-tables --endpoint-url http://localhost:8000 --region us-east-1
 
 ```
 Tilt Dashboard (:10350)
-├── frontend-dev (local Vite :5173)
+├── frontend-dev (local Vite :5174)
 ├── wsg-gateway (K8s pod :8080)
 ├── wsg-redis (K8s pod :6379)
 ├── wsg-dynamodb (K8s pod :8000)
