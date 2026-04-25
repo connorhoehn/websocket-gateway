@@ -58,6 +58,8 @@ export function validatePipeline(def: PipelineDefinition): ValidationResult {
   warnings.push(...lintDuplicateNodeName(def));
   warnings.push(...lintLowTemperatureNonDeterministicPrompt(def));
   warnings.push(...lintScheduledDraft(def));
+  warnings.push(...lintUnreachableAfterConditionFalse(def));
+  warnings.push(...lintForkWithoutMatchingJoin(def));
 
   return {
     errors,
@@ -632,4 +634,154 @@ function lintScheduledDraft(def: PipelineDefinition): ValidationIssue[] {
         "Scheduled trigger on a draft pipeline — schedules won't fire until published.",
     },
   ];
+}
+
+/**
+ * Fires once per Condition whose `false` handle has no outgoing edge BUT whose
+ * `true` handle does. The asymmetry is the signal: the author wired one branch
+ * and forgot the other, so any node that should have lived on the false path
+ * is unreachable at runtime. When BOTH handles are unwired we leave it to
+ * `UNUSED_CONDITION_BRANCH` (the dual fires are noise). Severity: warning.
+ */
+function lintUnreachableAfterConditionFalse(def: PipelineDefinition): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const handlesBySource = new Map<string, Set<string>>();
+  for (const edge of def.edges) {
+    const set = handlesBySource.get(edge.source) ?? new Set<string>();
+    set.add(edge.sourceHandle);
+    handlesBySource.set(edge.source, set);
+  }
+  for (const node of def.nodes) {
+    if (node.type !== 'condition') continue;
+    const used = handlesBySource.get(node.id) ?? new Set<string>();
+    const hasTrue = used.has('true');
+    const hasFalse = used.has('false');
+    if (hasTrue && !hasFalse) {
+      issues.push({
+        code: 'UNREACHABLE_AFTER_CONDITION_FALSE',
+        severity: 'warning',
+        message: `Condition '${nodeLabel(node)}' has no edge from its 'false' handle — any node intended for the false branch is unreachable.`,
+        nodeId: node.id,
+        field: 'false',
+      });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Fires when a Fork's parallel branches never converge in a Join, OR when a
+ * Join can't be traced back to a single common Fork ancestor. The check is
+ * intentionally local — for each Fork we forward-traverse from every branch
+ * handle and require that every branch reach the SAME Join node. For each
+ * Join we backward-traverse from every input handle and require a common
+ * Fork ancestor. Cycles in the graph (already an error elsewhere) are
+ * guarded against with a visited-set bound.
+ *
+ * Punted edge cases:
+ *   - Nested Fork/Join pairs: a branch that re-forks before joining is
+ *     accepted as long as the OUTER branches still all eventually converge
+ *     on the outer Join. We pick the FIRST Join reached on each branch
+ *     (BFS), which is the natural "innermost matching" definition; if the
+ *     author intentionally wires asymmetric nested structures the lint may
+ *     produce a false positive — acceptable for a warning.
+ *   - Conditions inside a fork branch are walked through transparently
+ *     (both `true` and `false` are treated as forward edges), since either
+ *     side could carry the run to the Join at runtime.
+ */
+function lintForkWithoutMatchingJoin(def: PipelineDefinition): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  const successors = new Map<string, { target: string; sourceHandle: string }[]>();
+  const predecessors = new Map<string, string[]>();
+  for (const node of def.nodes) {
+    successors.set(node.id, []);
+    predecessors.set(node.id, []);
+  }
+  for (const edge of def.edges) {
+    successors.get(edge.source)?.push({ target: edge.target, sourceHandle: edge.sourceHandle });
+    predecessors.get(edge.target)?.push(edge.source);
+  }
+
+  const nodeById = new Map<string, PipelineNode>();
+  for (const node of def.nodes) nodeById.set(node.id, node);
+
+  /** BFS forward from `start`; returns the id of the first Join encountered, or null. */
+  function firstJoinForward(start: string): string | null {
+    const visited = new Set<string>([start]);
+    const queue: string[] = [start];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentNode = nodeById.get(current);
+      if (currentNode && currentNode.type === 'join' && current !== start) return current;
+      for (const { target } of successors.get(current) ?? []) {
+        if (visited.has(target)) continue;
+        visited.add(target);
+        queue.push(target);
+      }
+    }
+    return null;
+  }
+
+  /** BFS backward from `start`; returns the id of the first Fork encountered, or null. */
+  function firstForkBackward(start: string): string | null {
+    const visited = new Set<string>([start]);
+    const queue: string[] = [start];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentNode = nodeById.get(current);
+      if (currentNode && currentNode.type === 'fork' && current !== start) return current;
+      for (const upstream of predecessors.get(current) ?? []) {
+        if (visited.has(upstream)) continue;
+        visited.add(upstream);
+        queue.push(upstream);
+      }
+    }
+    return null;
+  }
+
+  // -- Fork side: every wired branch must reach the same Join -----------
+  for (const node of def.nodes) {
+    if (node.data.type !== 'fork') continue;
+    const out = successors.get(node.id) ?? [];
+    if (out.length === 0) continue; // unwired entirely — UNUSED_FORK_BRANCH covers it
+    const reachedJoins = new Set<string | null>();
+    for (const { target } of out) {
+      reachedJoins.add(firstJoinForward(target));
+    }
+    // If any branch reaches no Join at all, or branches reach different Joins, warn.
+    const hasNullReach = reachedJoins.has(null);
+    const distinctJoins = [...reachedJoins].filter(j => j !== null);
+    if (hasNullReach || distinctJoins.length !== 1) {
+      issues.push({
+        code: 'FORK_WITHOUT_MATCHING_JOIN',
+        severity: 'warning',
+        message: `Fork '${nodeLabel(node)}' branches do not converge in a single Join — parallel branches may diverge or terminate without merging.`,
+        nodeId: node.id,
+      });
+    }
+  }
+
+  // -- Join side: every Join must trace back to a common Fork ancestor ---
+  for (const node of def.nodes) {
+    if (node.data.type !== 'join') continue;
+    const ins = predecessors.get(node.id) ?? [];
+    if (ins.length === 0) continue; // covered by JOIN_INSUFFICIENT_INPUTS
+    const reachedForks = new Set<string | null>();
+    for (const upstream of ins) {
+      reachedForks.add(firstForkBackward(upstream));
+    }
+    const hasNullReach = reachedForks.has(null);
+    const distinctForks = [...reachedForks].filter(f => f !== null);
+    if (hasNullReach || distinctForks.length !== 1) {
+      issues.push({
+        code: 'FORK_WITHOUT_MATCHING_JOIN',
+        severity: 'warning',
+        message: `Join '${nodeLabel(node)}' has no matching upstream Fork — its incoming branches don't share a common Fork ancestor.`,
+        nodeId: node.id,
+      });
+    }
+  }
+
+  return issues;
 }

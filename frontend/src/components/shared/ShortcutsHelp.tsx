@@ -73,9 +73,13 @@ const SECTIONS: Section[] = [
     title: 'Replay view',
     rows: [
       { keys: 'Space',            action: 'Play / pause' },
-      { keys: '← / →',            action: 'Seek to previous / next event' },
-      { keys: 'Shift + ← / →',    action: 'Seek by 5 events' },
-      { keys: '0',                action: 'Restart from beginning' },
+      { keys: 'j  /  ←',          action: 'Back 1 event' },
+      { keys: 'k  /  →',          action: 'Forward 1 event' },
+      { keys: 'Shift + J / ←',    action: 'Back 10 events' },
+      { keys: 'Shift + K / →',    action: 'Forward 10 events' },
+      { keys: 'Home',             action: 'Seek to start' },
+      { keys: 'End',              action: 'Seek to end' },
+      { keys: '0 – 9',            action: 'Seek to 0% / 10% / … / 90%' },
     ],
   },
   {

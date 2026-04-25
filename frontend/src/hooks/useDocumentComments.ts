@@ -59,7 +59,7 @@ function buildCommentTree(flat: CommentData[]): CommentThread[] {
 /** Normalize API comment (which uses `commentId`) to frontend CommentData (which uses `id`). */
 function normalizeComment(raw: Record<string, unknown>): CommentData & { sectionId?: string } {
   return {
-    ...(raw as CommentData & { sectionId?: string }),
+    ...(raw as unknown as CommentData & { sectionId?: string }),
     id: (raw.id as string) ?? (raw.commentId as string) ?? '',
   };
 }
@@ -89,7 +89,7 @@ function groupBySectionAndBuildTrees(
 export function useDocumentComments(
   options: UseDocumentCommentsOptions,
 ): UseDocumentCommentsReturn {
-  const { documentId, idToken, sendMessage, onMessage, connectionState } = options;
+  const { documentId, idToken, sendMessage, onMessage } = options;
 
   // ---- State ---------------------------------------------------------------
   // Store flat comments internally; derive trees via useMemo
@@ -103,12 +103,10 @@ export function useDocumentComments(
   const documentIdRef = useRef(documentId);
   useEffect(() => { documentIdRef.current = documentId; }, [documentId]);
 
-  const authHeaders = useMemo(() => {
-    if (!idToken) return {};
-    return {
-      Authorization: `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    };
+  const authHeaders = useMemo((): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = `Bearer ${idToken}`;
+    return headers;
   }, [idToken]);
 
   // ---- Fetch initial comments on mount / documentId change -----------------
@@ -124,7 +122,7 @@ export function useDocumentComments(
         return res.json() as Promise<{ comments: CommentData[] }>;
       })
       .then((data) => {
-        setFlatComments((data.comments ?? []).map((c: Record<string, unknown>) => normalizeComment(c)));
+        setFlatComments((data.comments ?? []).map((c) => normalizeComment(c as unknown as Record<string, unknown>)));
       })
       .catch((err: Error) => {
         console.warn('[useDocumentComments] fetch error:', err.message);
@@ -236,7 +234,7 @@ export function useDocumentComments(
 
   // ---- resolveThread --------------------------------------------------------
   const resolveThread = useCallback(
-    async (sectionId: string, commentId: string): Promise<void> => {
+    async (_sectionId: string, commentId: string): Promise<void> => {
       if (!idToken) return;
 
       const res = await fetch(
@@ -272,7 +270,7 @@ export function useDocumentComments(
 
   // ---- unresolveThread ------------------------------------------------------
   const unresolveThread = useCallback(
-    async (sectionId: string, commentId: string): Promise<void> => {
+    async (_sectionId: string, commentId: string): Promise<void> => {
       if (!idToken) return;
 
       const res = await fetch(

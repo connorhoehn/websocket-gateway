@@ -96,7 +96,6 @@ export default function DocumentEditorPage({
   color = '#3b82f6',
   onMessage,
   activityPublish,
-  activityEvents,
   onBack,
   isVideoDocked,
   onDockVideo,
@@ -129,7 +128,7 @@ export default function DocumentEditorPage({
   const videoSpacerRef = useRef<HTMLDivElement>(null);
   const tocSpacerRef = useRef<HTMLDivElement>(null);
   const [videoLeft, setVideoLeft] = useState(0);
-  const [tocLeft, setTocLeft] = useState(0);
+  const [, setTocLeft] = useState(0);
   // Remember the initial top offset of the spacer divs (measured once on first scroll)
   const spacerInitialTopRef = useRef<number | null>(null);
   // Fixed top = AppLayout header (53px) + sticky doc header (~93px)
@@ -337,7 +336,7 @@ export default function DocumentEditorPage({
     // Debug: log the raw awareness states to see what the remote user has
     if (provider?.awareness) {
       const states = provider.awareness.getStates();
-      states.forEach((state: Record<string, unknown>, cid: number) => {
+      states.forEach((_state: Record<string, unknown>, cid: number) => {
         if (cid !== provider!.awareness.clientID) {
           // Remote awareness state logged for debugging — disabled in production
         }

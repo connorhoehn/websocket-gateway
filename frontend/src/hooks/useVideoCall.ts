@@ -80,11 +80,11 @@ export function useVideoCall(options: UseVideoCallOptions): UseVideoCallReturn {
   const idTokenRef = useRef(idToken);
   useEffect(() => { idTokenRef.current = idToken; }, [idToken]);
 
-  const getAuthHeaders = useCallback(() => {
+  const getAuthHeaders = useCallback((): Record<string, string> => {
     const token = idTokenRef.current;
-    return token
-      ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      : { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
   }, []);
 
   const joinSession = useCallback(async (sid: string) => {

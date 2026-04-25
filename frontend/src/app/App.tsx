@@ -23,7 +23,7 @@ import { useDocuments } from '../hooks/useDocuments';
 import { useRooms } from '../hooks/useRooms';
 import type { RoomItem } from '../hooks/useRooms';
 import type { LogEntry } from '../components/EventLog';
-import type { GatewayMessage, GatewayError } from '../types/gateway';
+import type { ConnectionState, GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
 
 // Register custom (user-defined) field types from localStorage into the renderer registry.
@@ -31,6 +31,27 @@ import type { UseAuthReturn } from '../hooks/useAuth';
 import '../renderers';
 import { registerCustomFieldTypes } from '../hooks/useCustomFieldTypes';
 registerCustomFieldTypes();
+
+// Dev-only: expose a pipeline demo data seeder on `window.__pipelineDemo` so
+// developers can populate sample pipelines + run history from the browser
+// console without leaving the app. Stripped from production builds via the
+// `import.meta.env.DEV` gate (Vite sets this to `false` for `npm run build`).
+if (import.meta.env.DEV) {
+  void import('../components/pipelines/persistence/seedDemoData').then((mod) => {
+    type DemoApi = {
+      seed: typeof mod.seedDemoData;
+      clear: typeof mod.clearDemoData;
+    };
+    (window as unknown as { __pipelineDemo?: DemoApi }).__pipelineDemo = {
+      seed: mod.seedDemoData,
+      clear: mod.clearDemoData,
+    };
+    // eslint-disable-next-line no-console
+    console.info(
+      '[pipelineDemo] window.__pipelineDemo.seed() / .clear() available',
+    );
+  });
+}
 
 // Lazy-loaded views
 const PanelsView = lazy(() => import('../components/PanelsView'));
@@ -43,6 +64,7 @@ const FieldTypesPage = lazy(() => import('../components/field-types/FieldTypesPa
 const PipelinesPage = lazy(() => import('../components/pipelines/PipelinesPage'));
 const PipelineEditorPage = lazy(() => import('../components/pipelines/PipelineEditorPage'));
 const PipelineRunReplayPage = lazy(() => import('../components/pipelines/PipelineRunReplayPage'));
+const PipelineRunComparePage = lazy(() => import('../components/pipelines/PipelineRunComparePage'));
 const PipelineRunsPage = lazy(() => import('../components/pipelines/PipelineRunsPage'));
 const PipelineStatsPage = lazy(() => import('../components/pipelines/PipelineStatsPage'));
 const PendingApprovalsPage = lazy(() => import('../components/pipelines/PendingApprovalsPage'));
@@ -428,6 +450,15 @@ function GatewayDemo({
                   <PipelineStatsPage />
                 </ErrorBoundary>
               } />
+              {/*
+                Static `compare` segment must come BEFORE the dynamic `:runId`
+                so it isn't shadowed by the catch-all run replay route.
+              */}
+              <Route path="/pipelines/:pipelineId/runs/compare/:runIdA/:runIdB" element={
+                <ErrorBoundary name="PipelineRunCompare">
+                  <PipelineRunComparePage />
+                </ErrorBoundary>
+              } />
               <Route path="/pipelines/:pipelineId/runs/:runId" element={
                 <ErrorBoundary name="PipelineReplay">
                   <PipelineRunReplayPage />
@@ -504,7 +535,7 @@ function SocialRoute(props: {
 function DocumentListRoute(props: {
   sendMessage: (msg: Record<string, unknown>) => void;
   onMessage: (handler: (msg: GatewayMessage) => void) => () => void;
-  connectionState: string;
+  connectionState: ConnectionState;
 }) {
   const navigate = useNavigate();
   const { documents, presence: docPresence, createDocument, deleteDocument } = useDocuments({

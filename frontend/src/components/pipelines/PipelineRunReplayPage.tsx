@@ -33,6 +33,7 @@ import PipelineCanvas from './canvas/PipelineCanvas';
 import ConfigPanel from './canvas/ConfigPanel';
 import { loadPipeline, duplicatePipeline } from './persistence/pipelineStorage';
 import { useReplayDriver } from './replay/useReplayDriver';
+import { useReplayKeyboard } from './replay/useReplayKeyboard';
 import Scrubber from './replay/Scrubber';
 import { useRunCost } from './cost/useRunCost';
 import { formatUsd } from './cost/llmPricing';
@@ -259,6 +260,11 @@ function ReplayFrame({ pipelineId, runId }: ReplayFrameProps) {
   // to a true WAL replay from distributed-core's EventBus, keeping the same
   // scrubber UI.
   const replay = useReplayDriver(run ?? null);
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────
+  // The driver is a no-op when `run` is missing (totalEvents === 0), so the
+  // hook safely short-circuits in the fallback view.
+  useReplayKeyboard(replay, run !== undefined);
 
   // ── Cost estimate ────────────────────────────────────────────────────
   const runCost = useRunCost(run ?? null);

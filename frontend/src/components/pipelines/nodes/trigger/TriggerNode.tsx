@@ -8,6 +8,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { TriggerNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 // Some runs tag data with an ephemeral `_state` — use it if present.
 // The `& Record<string, unknown>` intersection satisfies @xyflow/react's
@@ -37,8 +38,16 @@ function bodyFor(data: TriggerData): string {
 }
 
 export default function TriggerNode(props: NodeProps<TriggerFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 — when this node is in `failed`, wire the BaseNode retry pill to
+  // PipelineRunsContext.retryFromStep. The pill itself only renders inside
+  // BaseNode when both conditions hold (state === 'failed' && onRetry).
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
+
+  const ariaLabel = `Trigger node, ${subtitleFor(data)}, state: ${state}`;
 
   return (
     <BaseNode
@@ -47,6 +56,8 @@ export default function TriggerNode(props: NodeProps<TriggerFlowNode>) {
       state={state}
       body={<span style={{ fontStyle: 'italic' }}>{bodyFor(data)}</span>}
       selected={selected}
+      onRetry={onRetry}
+      ariaLabel={ariaLabel}
     >
       <Handle
         type="source"

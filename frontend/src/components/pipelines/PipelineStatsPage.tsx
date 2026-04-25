@@ -15,9 +15,16 @@ import type { CSSProperties } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router';
 import { loadPipeline } from './persistence/pipelineStorage';
 import { listRuns } from './persistence/runHistory';
-import { aggregateCost } from './cost/llmPricing';
+import {
+  aggregateCost,
+  costByNode,
+  dailyCostTrend,
+  formatUsd,
+  type CostBreakdown,
+  type NodeCostRow,
+} from './cost/llmPricing';
 import EmptyState from '../shared/EmptyState';
-import { LineChart, type LineSeries } from '../shared/Chart';
+import { BarChart, LineChart, type LineSeries } from '../shared/Chart';
 import { colors } from '../../constants/styles';
 import type { PipelineDefinition, PipelineRun, StepExecution } from '../../types/pipeline';
 
@@ -85,6 +92,24 @@ function formatMoney(v: number): string {
   if (v < 0.01) return `$${v.toFixed(4)}`;
   if (v < 1) return `$${v.toFixed(3)}`;
   return `$${v.toFixed(2)}`;
+}
+
+/**
+ * Tooltip / axis helper that delegates to {@link formatUsd} so the entire page
+ * shares one USD formatting rule. Synthesizes a minimal {@link CostBreakdown}
+ * from a raw amount.
+ */
+function formatUsdAmount(v: number): string {
+  const cb: CostBreakdown = {
+    inputTokens: 0,
+    outputTokens: 0,
+    inputCostUsd: 0,
+    outputCostUsd: 0,
+    totalCostUsd: v,
+    model: 'aggregate',
+    modelFound: true,
+  };
+  return formatUsd(cb);
 }
 
 function shortRunId(id: string): string {
@@ -349,6 +374,27 @@ export default function PipelineStatsPage() {
   const models = useMemo(() => buildModelMap(def), [def]);
   const stats = useMemo(() => aggregate(visibleRuns, models), [visibleRuns, models]);
 
+  // Per-node cost: scoped to the visible window so it tracks the range selector.
+  const nodeCostRows = useMemo<NodeCostRow[]>(
+    () => costByNode(visibleRuns, def).filter((r) => r.totalCostUsd > 0 || r.stepCount > 0),
+    [visibleRuns, def],
+  );
+
+  // 30-day spend trend: always uses the full persisted history (not gated on
+  // the range selector) so the trend is meaningful even when "Last 10" is
+  // active.
+  const trendPoints = useMemo(() => dailyCostTrend(runs, def, 30), [runs, def]);
+  const trendSeries: LineSeries[] = useMemo(
+    () => [
+      {
+        label: 'Daily spend',
+        data: trendPoints.map((p) => ({ x: p.ts, y: p.totalCostUsd })),
+        color: colors.primary,
+      },
+    ],
+    [trendPoints],
+  );
+
   if (!pipelineId) return <Navigate to="/pipelines" replace />;
   if (!def) {
     return (
@@ -467,6 +513,57 @@ export default function PipelineStatsPage() {
               <div style={cardLabelStyle}>Total cost</div>
               <div style={cardValueStyle}>{formatMoney(stats.totalCost)}</div>
               <div style={cardSubStyle}>{formatMoney(stats.costPerRun)} avg per run</div>
+            </div>
+          </div>
+
+          {/* ─ Cost charts row ───────────────────────────────────────────── */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+              gap: 12,
+            }}
+            data-testid="stats-cost-row"
+          >
+            <div style={chartCardStyle} data-testid="stats-cost-by-node">
+              <div style={chartTitleStyle}>Cost by node</div>
+              {nodeCostRows.length === 0 ? (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: colors.textTertiary,
+                    padding: '8px 0',
+                  }}
+                >
+                  No per-node cost data in this range.
+                </div>
+              ) : (
+                <BarChart
+                  data={nodeCostRows.map((r) => ({
+                    label: r.label,
+                    cost: Number(r.totalCostUsd.toFixed(6)),
+                  }))}
+                  xKey="label"
+                  yKey="cost"
+                  height={200}
+                  color={colors.primary}
+                />
+              )}
+            </div>
+
+            <div style={chartCardStyle} data-testid="stats-cost-trend-30d">
+              <div style={chartTitleStyle}>30-day spend trend</div>
+              <LineChart
+                series={trendSeries}
+                height={200}
+                xFormat={(v) =>
+                  new Date(Number(v)).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                  })
+                }
+                yFormat={(v) => formatUsdAmount(v)}
+              />
             </div>
           </div>
 

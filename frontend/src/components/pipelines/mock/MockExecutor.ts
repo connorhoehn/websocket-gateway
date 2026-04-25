@@ -154,6 +154,18 @@ export class MockExecutor {
       return this.pipelineRun;
     }
 
+    // §17.6 — manual retry. The caller can pass `_resumeFromStep: <nodeId>`
+    // in the triggerPayload; when set we (a) skip every upstream node from
+    // trigger to the resume node, (b) emit `pipeline.run.resumeFromStep` so
+    // observability surfaces the retry, and (c) seed traversal at the
+    // resume node only. The marker is stripped from the persisted run's
+    // `context` so it doesn't leak into downstream step inputs.
+    const resumeRaw = this.triggerPayload._resumeFromStep;
+    const resumeNodeId =
+      typeof resumeRaw === 'string' && this.nodesById.has(resumeRaw)
+        ? resumeRaw
+        : null;
+
     this.emit('pipeline.run.started', {
       runId: this.runId,
       pipelineId: this.definition.id,
@@ -162,17 +174,33 @@ export class MockExecutor {
     });
 
     // Seed context with the trigger payload and the step-keyed output slot
-    // mandated by §17.8.
-    this.pipelineRun.context = {
+    // mandated by §17.8. Strip `_resumeFromStep` so the persisted run's
+    // context never carries the internal marker.
+    const seededContext: Record<string, unknown> = {
       ...this.triggerPayload,
       steps: {},
     };
+    delete seededContext._resumeFromStep;
+    this.pipelineRun.context = seededContext;
 
     const runComplete = new Promise<PipelineRun>((resolve) => {
       this.runPromiseResolve = resolve;
     });
 
-    this.executeFromNode(trigger.id, this.pipelineRun.context)
+    // When resuming, emit upstream skips + the resumeFromStep marker BEFORE
+    // any step.started fires — observability (and the contract test) relies
+    // on this ordering.
+    if (resumeNodeId) {
+      this.emitResumeSkips(trigger.id, resumeNodeId);
+      this.emit('pipeline.run.resumeFromStep', {
+        runId: this.runId,
+        fromNodeId: resumeNodeId,
+        at: nowISO(),
+      });
+    }
+
+    const startNodeId = resumeNodeId ?? trigger.id;
+    this.executeFromNode(startNodeId, this.pipelineRun.context)
       .then(() => {
         if (this.cancelled || this.pipelineRun.status !== 'running') return;
         const at = nowISO();
@@ -395,6 +423,56 @@ export class MockExecutor {
     if (nextEdges.length === 0) return;
 
     await Promise.all(nextEdges.map((e) => this.routeInto(e, context)));
+  }
+
+  /**
+   * §17.6 manual-retry helper. Walks forward from `triggerNodeId` via outgoing
+   * edges and emits `pipeline.step.skipped` (`reason: 'resumed_forward'`) for
+   * every node visited along the way EXCEPT the resume node itself. Visited
+   * nodes are also recorded as `skipped` in `pipelineRun.steps` so the run's
+   * persisted shape matches the events it emits. Expansion stops at the resume
+   * node (we don't traverse past it — that's where forward execution will pick
+   * up). The trigger node itself is also skipped: a resumed run never re-runs
+   * the trigger.
+   */
+  private emitResumeSkips(triggerNodeId: string, resumeNodeId: string): void {
+    if (triggerNodeId === resumeNodeId) return;
+    const at = nowISO();
+    const visited = new Set<string>();
+    const queue: string[] = [triggerNodeId];
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      if (visited.has(nodeId)) continue;
+      visited.add(nodeId);
+      if (nodeId === resumeNodeId) continue; // don't skip the resume node itself
+      // Persist the skip on the run so the post-run shape is consistent with
+      // the cancellation path's behavior in `cancel()`.
+      this.pipelineRun.steps[nodeId] = {
+        nodeId,
+        status: 'skipped',
+        startedAt: at,
+        completedAt: at,
+        durationMs: 0,
+      };
+      this.emit('pipeline.step.skipped', {
+        runId: this.runId,
+        stepId: nodeId,
+        reason: 'resumed_forward',
+        at,
+      });
+      // Don't expand past the resume node — its branch is where forward
+      // execution will start, so anything past it is "future work", not skipped.
+      const outgoing = this.outgoingBySource.get(nodeId) ?? [];
+      for (const edge of outgoing) {
+        if (edge.target === resumeNodeId) {
+          // Mark resume node visited so we don't try to skip it later, but
+          // don't enqueue past it.
+          visited.add(resumeNodeId);
+          continue;
+        }
+        if (!visited.has(edge.target)) queue.push(edge.target);
+      }
+    }
   }
 
   /**
@@ -1109,8 +1187,10 @@ export class MockExecutor {
 // ---------------------------------------------------------------------------
 
 class BranchFailure extends Error {
-  constructor(public readonly nodeId: string, message: string) {
+  readonly nodeId: string;
+  constructor(nodeId: string, message: string) {
     super(message);
+    this.nodeId = nodeId;
     this.name = 'BranchFailure';
   }
 }

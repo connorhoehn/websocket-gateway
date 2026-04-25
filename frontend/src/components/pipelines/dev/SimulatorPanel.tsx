@@ -12,7 +12,7 @@
 //
 // See PIPELINES_PLAN.md §14 (WebSocket protocol) for the full frame format.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../../shared/Modal';
 import { useToast } from '../../shared/ToastProvider';
 import { useWebSocketContext } from '../../../contexts/WebSocketContext';
@@ -53,6 +53,8 @@ const EVENT_TYPES = [
   'pipeline.run.resumed',
   'pipeline.run.resumeFromStep',
   'pipeline.run.retry',
+  // External webhook (Phase 4 producer)
+  'pipeline.webhook.triggered',
   // Join bookkeeping
   'pipeline.join.waiting',
   'pipeline.join.fired',
@@ -61,11 +63,82 @@ const EVENT_TYPES = [
 type EventKey = (typeof EVENT_TYPES)[number];
 
 // Compile-time assertion: EVENT_TYPES must cover every key of the event map.
-// If a new key is added to PipelineEventMap without updating the array, this
-// line will fail typechecking.
-type _MissingKeys = Exclude<keyof PipelineEventMap, EventKey>;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _ExhaustiveCheck: _MissingKeys extends never ? true : never = true;
+// If a new key is added to PipelineEventMap without updating the array, the
+// generic default below stops resolving to `never`, the `extends never`
+// constraint fails, and this exported type surfaces the error.
+export type AssertEventTypesExhaustive<
+  T extends never = Exclude<keyof PipelineEventMap, EventKey>,
+> = T;
+
+// ---------------------------------------------------------------------------
+// Recent-fires history
+// ---------------------------------------------------------------------------
+//
+// We persist to sessionStorage (not localStorage) because this is a
+// per-debugging-session tool: a dev typically wants their replay buffer to
+// survive a hot reload, but a fresh tab should start clean. sessionStorage
+// gives us exactly that, matching how SourceDiagnosticBanner persists its
+// dismissal flag.
+
+const HISTORY_STORAGE_KEY = 'pipeline-sim-history';
+const HISTORY_CAP = 20;
+
+export interface SimHistoryEntry {
+  eventType: EventKey;
+  /** Raw payload string (kept verbatim so re-fire restores the exact JSON the dev sent). */
+  payload: string;
+  seq: string;
+  /** Wall-clock ms epoch when the emit was queued. */
+  ts: number;
+}
+
+function readHistory(): SimHistoryEntry[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.sessionStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensive filter: drop entries whose eventType is no longer a valid key
+    // (e.g. PipelineEventMap shrank between sessions). Keeps TS happy and
+    // prevents stale rows from surviving a refactor.
+    const valid = parsed.filter(
+      (e): e is SimHistoryEntry =>
+        e &&
+        typeof e === 'object' &&
+        typeof (e as { eventType?: unknown }).eventType === 'string' &&
+        (EVENT_TYPES as readonly string[]).includes((e as { eventType: string }).eventType) &&
+        typeof (e as { payload?: unknown }).payload === 'string' &&
+        typeof (e as { seq?: unknown }).seq === 'string' &&
+        typeof (e as { ts?: unknown }).ts === 'number',
+    );
+    return valid.slice(0, HISTORY_CAP);
+  } catch {
+    return [];
+  }
+}
+
+function persistHistory(entries: SimHistoryEntry[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // sessionStorage unavailable (private mode, quota): silently ignore.
+  }
+}
+
+function formatRelative(now: number, ts: number): string {
+  const deltaMs = Math.max(0, now - ts);
+  const sec = Math.floor(deltaMs / 1000);
+  if (sec < 5) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
 
 // ---------------------------------------------------------------------------
 // Payload skeletons — pre-filled JSON shown in the textarea when the user
@@ -118,6 +191,8 @@ function skeletonFor(eventType: EventKey): Record<string, unknown> {
       return { runId: 'run-sim-1', fromNodeId: 'step-1', at: isoNow() };
     case 'pipeline.run.retry':
       return { newRunId: 'run-sim-2', previousRunId: 'run-sim-1', at: isoNow() };
+    case 'pipeline.webhook.triggered':
+      return { webhookPath: '/example', body: { hello: 'world' }, headers: { 'x-source': 'curl' }, at: isoNow() };
     case 'pipeline.join.waiting':
       return { runId: 'run-sim-1', stepId: 'join-1', received: 1, required: 2, at: isoNow() };
     case 'pipeline.join.fired':
@@ -158,6 +233,30 @@ function SimulatorPanelInner({ open, onClose }: SimulatorPanelProps) {
   );
   const [seq, setSeq] = useState<string>('0');
   const [pendingCorrelationId, setPendingCorrelationId] = useState<string | null>(null);
+  const [history, setHistory] = useState<SimHistoryEntry[]>(() => readHistory());
+
+  /**
+   * Holds the entry that's been queued (sent over the wire) but not yet
+   * acknowledged. We append to history only after the gateway acks the
+   * frame so a malformed/rejected emit doesn't pollute the replay list.
+   */
+  const pendingEntryRef = useRef<SimHistoryEntry | null>(null);
+
+  // Tick once a minute so the "Xm ago" labels age without us caring about
+  // the absolute time. A single number suffices — the render below derives
+  // every row's relative label from `now` independently.
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!open) return undefined;
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, [open]);
+
+  // Persist any history mutation. Cheap (small array, small string) and runs
+  // synchronously enough that a refresh right after a fire keeps the row.
+  useEffect(() => {
+    persistHistory(history);
+  }, [history]);
 
   // Re-populate the textarea whenever the event type changes.
   const handleEventTypeChange = useCallback((next: EventKey) => {
@@ -172,10 +271,17 @@ function SimulatorPanelInner({ open, onClose }: SimulatorPanelProps) {
       if (msg.correlationId !== pendingCorrelationId) return;
       if (msg.type === 'pipeline:ack' && msg.action === 'sim-emit') {
         toast('Event emitted', { type: 'success', durationMs: 1500 });
+        // Promote the queued entry into history (most-recent first, capped).
+        const entry = pendingEntryRef.current;
+        if (entry) {
+          setHistory((prev) => [entry, ...prev].slice(0, HISTORY_CAP));
+        }
+        pendingEntryRef.current = null;
         setPendingCorrelationId(null);
       } else if (msg.type === 'error' && msg.service === 'pipeline') {
         const errMsg = typeof msg.message === 'string' ? msg.message : 'sim-emit failed';
         toast(`sim-emit: ${errMsg}`, { type: 'error' });
+        pendingEntryRef.current = null;
         setPendingCorrelationId(null);
       }
     });
@@ -202,8 +308,29 @@ function SimulatorPanelInner({ open, onClose }: SimulatorPanelProps) {
       seq: Number.isFinite(parsedSeq) ? parsedSeq : 0,
       correlationId,
     });
+    pendingEntryRef.current = {
+      eventType,
+      payload: payloadText,
+      seq,
+      ts: Date.now(),
+    };
     setPendingCorrelationId(correlationId);
   }, [payloadText, seq, eventType, sendMessage, toast]);
+
+  // Re-fire: hydrate the form from a history row so the dev can inspect or
+  // tweak before re-sending. We deliberately do NOT auto-fire — the brief
+  // calls that out as a guardrail. We also do NOT auto-bump seq (the seq
+  // input is a manual field today, not an auto-incrementing counter), so
+  // re-fire restores the original seq verbatim; bumping is the dev's call.
+  const handleRefire = useCallback((entry: SimHistoryEntry) => {
+    setEventType(entry.eventType);
+    setPayloadText(entry.payload);
+    setSeq(entry.seq);
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+  }, []);
 
   const eventOptions = useMemo(
     () =>
@@ -361,6 +488,121 @@ function SimulatorPanelInner({ open, onClose }: SimulatorPanelProps) {
           fontFamily: 'inherit',
         }}
       />
+
+      {history.length > 0 && (
+        <div data-testid="sim-history" style={{ marginTop: 16 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 6,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#334155',
+              }}
+            >
+              Recent fires ({history.length})
+            </span>
+            <button
+              type="button"
+              data-testid="sim-history-clear"
+              onClick={handleClearHistory}
+              style={{
+                fontSize: 11,
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline',
+                fontFamily: 'inherit',
+              }}
+            >
+              Clear history
+            </button>
+          </div>
+          {/*
+            Inner scroll container so a long history (up to 20 rows) doesn't
+            push the modal taller than the viewport. The Modal shell itself
+            has no overflow handling, so we cap height here.
+          */}
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              maxHeight: 180,
+              overflowY: 'auto',
+              border: '1px solid #e2e8f0',
+              borderRadius: 6,
+              background: '#f8fafc',
+            }}
+          >
+            {history.map((entry, idx) => (
+              <li
+                key={`${entry.ts}-${idx}`}
+                data-testid="sim-history-row"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '6px 8px',
+                  borderBottom:
+                    idx === history.length - 1 ? 'none' : '1px solid #e2e8f0',
+                  fontSize: 12,
+                }}
+              >
+                <span
+                  style={{
+                    color: '#94a3b8',
+                    fontVariantNumeric: 'tabular-nums',
+                    minWidth: 64,
+                  }}
+                >
+                  {formatRelative(now, entry.ts)}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    color: '#0f172a',
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={entry.eventType}
+                >
+                  {entry.eventType}
+                </span>
+                <button
+                  type="button"
+                  data-testid="sim-history-refire"
+                  onClick={() => handleRefire(entry)}
+                  style={{
+                    fontSize: 11,
+                    padding: '3px 8px',
+                    background: '#fff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    color: '#334155',
+                  }}
+                >
+                  ↻ re-fire
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Modal>
   );
 }

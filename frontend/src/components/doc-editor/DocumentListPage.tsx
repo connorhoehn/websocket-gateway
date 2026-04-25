@@ -27,7 +27,7 @@ export interface PresenceInfo {
   userId: string;
   displayName: string;
   color: string;
-  mode: string;
+  mode?: string;
   idle?: boolean;
 }
 
@@ -126,7 +126,7 @@ function PresenceAvatars({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
       {shown.map((u, i) => {
-        const modeInfo = MODE_ICONS[u.mode] ?? MODE_ICONS.editor;
+        const modeInfo = MODE_ICONS[u.mode ?? 'editor'] ?? MODE_ICONS.editor;
         const isIdle = u.idle === true;
         const statusColor = isIdle ? '#f59e0b' : '#10b981';
 

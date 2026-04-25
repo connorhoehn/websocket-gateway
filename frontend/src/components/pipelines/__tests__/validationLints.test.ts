@@ -372,4 +372,105 @@ describe('validatePipeline — advisory lints', () => {
       expect(hits[0].message).toContain('Scheduled trigger');
     });
   });
+
+  describe('UNREACHABLE_AFTER_CONDITION_FALSE', () => {
+    test('no warning when both true and false branches are wired', () => {
+      const t = validTrigger('t1');
+      const c = validCondition('c1');
+      const a1 = validAction('a1');
+      const a2 = validAction('a2');
+      const edges = [
+        makeEdge('e0', 't1', 'c1'),
+        makeEdge('e1', 'c1', 'a1', 'true', 'in'),
+        makeEdge('e2', 'c1', 'a2', 'false', 'in'),
+      ];
+      const result = validatePipeline(makePipeline([t, c, a1, a2], edges));
+      expect(
+        findByCode(result.warnings, 'UNREACHABLE_AFTER_CONDITION_FALSE'),
+      ).toHaveLength(0);
+    });
+
+    test('no warning when both branches are unwired (covered by UNUSED_CONDITION_BRANCH)', () => {
+      const t = validTrigger('t1');
+      const c = validCondition('c1');
+      const edges = [makeEdge('e0', 't1', 'c1')];
+      const result = validatePipeline(makePipeline([t, c], edges));
+      expect(
+        findByCode(result.warnings, 'UNREACHABLE_AFTER_CONDITION_FALSE'),
+      ).toHaveLength(0);
+    });
+
+    test('warns once when only the true branch is wired', () => {
+      const t = validTrigger('t1');
+      const c = validCondition('c1');
+      const a = validAction('a1');
+      const edges = [
+        makeEdge('e0', 't1', 'c1'),
+        makeEdge('e1', 'c1', 'a1', 'true', 'in'),
+      ];
+      const result = validatePipeline(makePipeline([t, c, a], edges));
+      const hits = findByCode(result.warnings, 'UNREACHABLE_AFTER_CONDITION_FALSE');
+      expect(hits).toHaveLength(1);
+      expect(hits[0].nodeId).toBe('c1');
+      expect(hits[0].field).toBe('false');
+      expect(hits[0].severity).toBe('warning');
+      expect(hits[0].message).toContain("'false' handle");
+    });
+  });
+
+  describe('FORK_WITHOUT_MATCHING_JOIN', () => {
+    test('no warning when fork branches converge in a join', () => {
+      const t = validTrigger('t1');
+      const f = validFork('f1', 2);
+      const x1 = validTransform('x1');
+      const x2 = validTransform('x2');
+      const j = validJoin('j1');
+      const edges = [
+        makeEdge('e0', 't1', 'f1'),
+        makeEdge('e1', 'f1', 'x1', 'branch-0', 'in'),
+        makeEdge('e2', 'f1', 'x2', 'branch-1', 'in'),
+        makeEdge('e3', 'x1', 'j1', 'out', 'in-0'),
+        makeEdge('e4', 'x2', 'j1', 'out', 'in-1'),
+      ];
+      const result = validatePipeline(makePipeline([t, f, x1, x2, j], edges));
+      expect(findByCode(result.warnings, 'FORK_WITHOUT_MATCHING_JOIN')).toHaveLength(0);
+    });
+
+    test('warns on a fork whose branches never reach a join', () => {
+      // Fork -> two branches, each terminating in an Action, no Join anywhere.
+      const t = validTrigger('t1');
+      const f = validFork('f1', 2);
+      const a1 = validAction('a1');
+      const a2 = validAction('a2');
+      const edges = [
+        makeEdge('e0', 't1', 'f1'),
+        makeEdge('e1', 'f1', 'a1', 'branch-0', 'in'),
+        makeEdge('e2', 'f1', 'a2', 'branch-1', 'in'),
+      ];
+      const result = validatePipeline(makePipeline([t, f, a1, a2], edges));
+      const hits = findByCode(result.warnings, 'FORK_WITHOUT_MATCHING_JOIN');
+      expect(hits.some(h => h.nodeId === 'f1' && h.severity === 'warning')).toBe(true);
+      expect(hits.find(h => h.nodeId === 'f1')?.message).toContain("Fork");
+    });
+
+    test('warns on a join whose inputs do not share a common fork ancestor', () => {
+      // Two parallel chains from the trigger feed a Join — no Fork upstream.
+      const t = validTrigger('t1');
+      const x1 = validTransform('x1');
+      const x2 = validTransform('x2');
+      const j = validJoin('j1');
+      const edges = [
+        makeEdge('e0', 't1', 'x1'),
+        makeEdge('e1', 't1', 'x2'),
+        makeEdge('e2', 'x1', 'j1', 'out', 'in-0'),
+        makeEdge('e3', 'x2', 'j1', 'out', 'in-1'),
+      ];
+      const result = validatePipeline(makePipeline([t, x1, x2, j], edges));
+      const hits = findByCode(result.warnings, 'FORK_WITHOUT_MATCHING_JOIN');
+      const joinHit = hits.find(h => h.nodeId === 'j1');
+      expect(joinHit).toBeDefined();
+      expect(joinHit?.severity).toBe('warning');
+      expect(joinHit?.message).toContain('Join');
+    });
+  });
 });

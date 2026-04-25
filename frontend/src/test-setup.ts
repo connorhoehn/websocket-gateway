@@ -15,3 +15,16 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+// jsdom doesn't implement ResizeObserver; React Flow uses it to measure the
+// canvas viewport. A no-op stub is enough for unit tests that don't depend on
+// real layout measurements.
+if (typeof globalThis !== 'undefined' && !(globalThis as { ResizeObserver?: unknown }).ResizeObserver) {
+  class ResizeObserverStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).ResizeObserver = ResizeObserverStub;
+}

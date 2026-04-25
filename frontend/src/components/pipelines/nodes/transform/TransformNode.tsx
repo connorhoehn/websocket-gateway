@@ -9,6 +9,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { TransformNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 type TransformData = TransformNodeData & {
   _state?: NodeExecutionState;
@@ -23,8 +24,12 @@ function snippet(expr: string): string {
 }
 
 export default function TransformNode(props: NodeProps<TransformFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 retry-from-here — see TriggerNode for the rationale.
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
 
   const exprStyle: CSSProperties = {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -51,6 +56,7 @@ export default function TransformNode(props: NodeProps<TransformFlowNode>) {
       state={state}
       body={<span style={exprStyle}>{snippet(data.expression)}</span>}
       selected={selected}
+      onRetry={onRetry}
     >
       <Handle type="target" position={Position.Left}  id="in"  style={handleStyle} />
       <Handle type="source" position={Position.Right} id="out" style={handleStyle} />

@@ -42,7 +42,7 @@ function pipelineKey(id: string): string {
 export interface PipelineIndexEntry {
   id: string;
   name: string;
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'archived';
   updatedAt: string;
   icon?: string;
   tags?: string[];
@@ -385,6 +385,23 @@ export function publishPipeline(id: string): PipelineDefinition | null {
   def.publishedSnapshot = JSON.parse(
     JSON.stringify(rest),
   ) as Omit<PipelineDefinition, 'publishedSnapshot'>;
+  savePipeline(def);
+  return def;
+}
+
+/**
+ * Archive a pipeline (soft-hide). If the pipeline is already archived this
+ * acts as an "unarchive" — restoring `'draft'` status. Used by the bulk-action
+ * toolbar on the pipelines list page.
+ *
+ * Distinct from `deletePipeline`: nothing is removed from storage. The caller
+ * is responsible for any UI filtering (e.g. hiding archived rows by default).
+ */
+export function archivePipeline(id: string): PipelineDefinition | null {
+  const def = loadPipeline(id);
+  if (!def) return null;
+  // Toggle: archived → draft (recover); anything else → archived.
+  def.status = def.status === 'archived' ? 'draft' : 'archived';
   savePipeline(def);
   return def;
 }

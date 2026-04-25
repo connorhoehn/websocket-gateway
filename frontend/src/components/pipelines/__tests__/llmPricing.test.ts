@@ -4,9 +4,19 @@ import { describe, test, expect } from 'vitest';
 import {
   MODEL_PRICING,
   aggregateCost,
+  costByNode,
+  dailyCostTrend,
   estimateCost,
   formatUsd,
+  nodeDisplayLabel,
+  stepCostUsd,
 } from '../cost/llmPricing';
+import type {
+  PipelineDefinition,
+  PipelineNode,
+  PipelineRun,
+  StepExecution,
+} from '../../../types/pipeline';
 
 describe('estimateCost', () => {
   test('known model computes expected cost for 1M/500k tokens', () => {
@@ -145,5 +155,275 @@ describe('MODEL_PRICING table', () => {
     expect(MODEL_PRICING['claude-haiku-4-5-20251001']).toBeDefined();
     expect(MODEL_PRICING['anthropic.claude-opus-4-7-v1:0']).toBeDefined();
     expect(MODEL_PRICING['anthropic.claude-sonnet-4-6-v1:0']).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test fixtures for the per-node / 30-day-trend helpers below
+// ---------------------------------------------------------------------------
+
+function llmNode(id: string, model: string, label?: string): PipelineNode {
+  return {
+    id,
+    type: 'llm',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'llm',
+      provider: 'anthropic',
+      model,
+      systemPrompt: '',
+      userPromptTemplate: '',
+      streaming: false,
+      // `label` is read by nodeDisplayLabel even though it's not part of the
+      // canonical LLMNodeData shape — exercises the explicit-label branch.
+      ...(label ? { label } : {}),
+    } as PipelineNode['data'],
+  };
+}
+
+function actionNode(id: string, actionType: string): PipelineNode {
+  return {
+    id,
+    type: 'action',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'action',
+      actionType: actionType as never,
+      config: {},
+    },
+  };
+}
+
+function makeDef(nodes: PipelineNode[]): PipelineDefinition {
+  return {
+    id: 'p1',
+    name: 'P',
+    version: 1,
+    status: 'published',
+    nodes,
+    edges: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdBy: 'u1',
+  };
+}
+
+function llmStep(nodeId: string, tokensIn: number, tokensOut: number): StepExecution {
+  return {
+    nodeId,
+    status: 'completed',
+    durationMs: 100,
+    llm: {
+      prompt: '',
+      response: '',
+      tokensIn,
+      tokensOut,
+    },
+  };
+}
+
+function makeRun(
+  id: string,
+  startedAt: string,
+  steps: StepExecution[],
+): PipelineRun {
+  const stepMap: Record<string, StepExecution> = {};
+  for (const s of steps) stepMap[s.nodeId] = s;
+  return {
+    id,
+    pipelineId: 'p1',
+    pipelineVersion: 1,
+    status: 'completed',
+    triggeredBy: { triggerType: 'manual', payload: {} },
+    ownerNodeId: 'n',
+    startedAt,
+    completedAt: startedAt,
+    durationMs: 100,
+    currentStepIds: [],
+    steps: stepMap,
+    context: {},
+  };
+}
+
+// ---------------------------------------------------------------------------
+// nodeDisplayLabel
+// ---------------------------------------------------------------------------
+
+describe('nodeDisplayLabel', () => {
+  test('explicit label wins over type-specific descriptor', () => {
+    expect(nodeDisplayLabel(llmNode('a', 'claude-sonnet-4-6', 'Summarizer'))).toBe(
+      'Summarizer',
+    );
+  });
+
+  test('llm falls back to model when no label set', () => {
+    expect(nodeDisplayLabel(llmNode('a', 'claude-opus-4-7'))).toBe(
+      'claude-opus-4-7',
+    );
+  });
+
+  test('action node uses actionType', () => {
+    expect(nodeDisplayLabel(actionNode('b', 'post-comment'))).toBe('post-comment');
+  });
+
+  test('whitespace-only label is ignored', () => {
+    expect(nodeDisplayLabel(llmNode('a', 'claude-sonnet-4-6', '   '))).toBe(
+      'claude-sonnet-4-6',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stepCostUsd
+// ---------------------------------------------------------------------------
+
+describe('stepCostUsd', () => {
+  test('returns LLM cost when models map carries the model id', () => {
+    const models = new Map([['n1', 'claude-sonnet-4-6']]);
+    // 1M in @ $3 + 0.5M out @ $15 = $10.50
+    expect(stepCostUsd(llmStep('n1', 1_000_000, 500_000), models)).toBeCloseTo(
+      10.5,
+      6,
+    );
+  });
+
+  test('returns 0 when the model is not registered for the node', () => {
+    const models = new Map<string, string>();
+    expect(stepCostUsd(llmStep('n1', 1_000_000, 500_000), models)).toBe(0);
+  });
+
+  test('non-LLM step contributes 0', () => {
+    const step: StepExecution = { nodeId: 'n1', status: 'completed' };
+    expect(stepCostUsd(step, new Map())).toBe(0);
+  });
+
+  test('forward-compatible costUsd field is summed in', () => {
+    const models = new Map([['n1', 'claude-sonnet-4-6']]);
+    const step = {
+      ...llmStep('n1', 1_000_000, 0),
+      costUsd: 0.25,
+    } as StepExecution;
+    // 1M in @ $3 = $3 + 0.25 = $3.25
+    expect(stepCostUsd(step, models)).toBeCloseTo(3.25, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// costByNode
+// ---------------------------------------------------------------------------
+
+describe('costByNode', () => {
+  test('returns [] when def is null', () => {
+    expect(costByNode([], null)).toEqual([]);
+  });
+
+  test('aggregates per-node costs across multiple runs, sorted desc', () => {
+    const def = makeDef([
+      llmNode('opus', 'claude-opus-4-7', 'Opus drafter'),
+      llmNode('sonnet', 'claude-sonnet-4-6'),
+      actionNode('act', 'post-comment'),
+    ]);
+
+    // Run A: opus 0.2M/0.1M  -> $3 + $7.5 = $10.5
+    //        sonnet 1M/0.5M  -> $3 + $7.5 = $10.5
+    // Run B: opus 0.2M/0.1M  -> $10.5
+    const runs: PipelineRun[] = [
+      makeRun('r1', '2026-04-25T10:00:00.000Z', [
+        llmStep('opus', 200_000, 100_000),
+        llmStep('sonnet', 1_000_000, 500_000),
+      ]),
+      makeRun('r2', '2026-04-25T11:00:00.000Z', [
+        llmStep('opus', 200_000, 100_000),
+      ]),
+    ];
+
+    const rows = costByNode(runs, def);
+    expect(rows).toHaveLength(3);
+
+    // Sorted by cost desc: opus ($21) > sonnet ($10.50) > act ($0).
+    expect(rows[0].nodeId).toBe('opus');
+    expect(rows[0].label).toBe('Opus drafter');
+    expect(rows[0].totalCostUsd).toBeCloseTo(21, 6);
+    expect(rows[0].stepCount).toBe(2);
+
+    expect(rows[1].nodeId).toBe('sonnet');
+    expect(rows[1].totalCostUsd).toBeCloseTo(10.5, 6);
+    expect(rows[1].stepCount).toBe(1);
+
+    expect(rows[2].nodeId).toBe('act');
+    expect(rows[2].totalCostUsd).toBe(0);
+    expect(rows[2].stepCount).toBe(0);
+  });
+
+  test('steps for nodes not in def are silently skipped', () => {
+    const def = makeDef([llmNode('keep', 'claude-sonnet-4-6')]);
+    const run = makeRun('r1', '2026-04-25T10:00:00.000Z', [
+      llmStep('keep', 1_000_000, 500_000), // $10.50
+      llmStep('removed', 500_000, 250_000), // dropped
+    ]);
+
+    const rows = costByNode([run], def);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].nodeId).toBe('keep');
+    expect(rows[0].totalCostUsd).toBeCloseTo(10.5, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dailyCostTrend
+// ---------------------------------------------------------------------------
+
+describe('dailyCostTrend', () => {
+  const NOW = new Date('2026-04-25T12:00:00.000Z');
+
+  test('returns N consecutive day buckets ending at `now`', () => {
+    const def = makeDef([llmNode('a', 'claude-sonnet-4-6')]);
+    const points = dailyCostTrend([], def, 30, NOW);
+    expect(points).toHaveLength(30);
+    expect(points[points.length - 1].date).toBe('2026-04-25');
+    expect(points[0].date).toBe('2026-03-27');
+    // All zero when no runs.
+    expect(points.every((p) => p.totalCostUsd === 0 && p.runCount === 0)).toBe(true);
+  });
+
+  test('buckets runs by their startedAt UTC day', () => {
+    const def = makeDef([llmNode('a', 'claude-sonnet-4-6')]);
+    const runs: PipelineRun[] = [
+      // 2026-04-25: $10.50
+      makeRun('r1', '2026-04-25T01:00:00.000Z', [
+        llmStep('a', 1_000_000, 500_000),
+      ]),
+      // 2026-04-25: another $10.50
+      makeRun('r2', '2026-04-25T23:30:00.000Z', [
+        llmStep('a', 1_000_000, 500_000),
+      ]),
+      // 2026-04-24: $3.00 (1M in only)
+      makeRun('r3', '2026-04-24T08:00:00.000Z', [llmStep('a', 1_000_000, 0)]),
+    ];
+
+    const points = dailyCostTrend(runs, def, 30, NOW);
+    const byDate = Object.fromEntries(points.map((p) => [p.date, p]));
+
+    expect(byDate['2026-04-25'].totalCostUsd).toBeCloseTo(21, 6);
+    expect(byDate['2026-04-25'].runCount).toBe(2);
+    expect(byDate['2026-04-24'].totalCostUsd).toBeCloseTo(3, 6);
+    expect(byDate['2026-04-24'].runCount).toBe(1);
+  });
+
+  test('runs outside the window are dropped', () => {
+    const def = makeDef([llmNode('a', 'claude-sonnet-4-6')]);
+    const runs: PipelineRun[] = [
+      // 60 days before NOW — out of a 30-day window.
+      makeRun('old', '2026-02-20T08:00:00.000Z', [
+        llmStep('a', 1_000_000, 500_000),
+      ]),
+    ];
+    const points = dailyCostTrend(runs, def, 30, NOW);
+    expect(points.reduce((s, p) => s + p.totalCostUsd, 0)).toBe(0);
+  });
+
+  test('returns the requested number of days exactly', () => {
+    expect(dailyCostTrend([], null, 7, NOW)).toHaveLength(7);
+    expect(dailyCostTrend([], null, 1, NOW)).toHaveLength(1);
   });
 });

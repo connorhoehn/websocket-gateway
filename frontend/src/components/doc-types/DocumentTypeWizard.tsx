@@ -15,7 +15,6 @@ import {
   DOCUMENT_TYPE_ICONS,
   makeEmptyField,
 } from '../../types/documentType';
-import type { SectionType } from '../../types/documentType';
 // Trigger side-effect registrations so getFieldTypes() / getFieldType() are populated
 import '../../renderers';
 import { getFieldTypes, getFieldType } from '../../renderers/registry';

@@ -44,24 +44,9 @@ const headerStyle: React.CSSProperties = {
   zIndex: 34,
 };
 
-const leftStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-  flex: 1,
-};
-
 const centerStyle: React.CSSProperties = {
   display: 'flex',
   gap: 4,
-};
-
-const rightStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexWrap: 'wrap',
-  justifyContent: 'flex-end',
 };
 
 const titleInput: React.CSSProperties = {

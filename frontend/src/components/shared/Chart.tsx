@@ -52,7 +52,11 @@ const MULTI_SERIES_PALETTE: string[] = [
   '#8b5cf6',
 ];
 
-const AXIS_TICK_STYLE: CSSProperties = {
+// Recharts >=3 typed `tick` as their own SVG-text prop shape; the runtime
+// still spreads any object onto the rendered <text>, so we widen the literal
+// to escape their narrow `TickProp` generic.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AXIS_TICK_STYLE: any = {
   fontSize: 10,
   fill: colors.textTertiary,
 };
@@ -167,10 +171,11 @@ export function LineChart({
           labelFormatter={(label) =>
             xFormat ? xFormat(label as number | string) : String(label)
           }
-          formatter={(value: number | string) => {
+          formatter={((value: unknown) => {
             const num = typeof value === 'number' ? value : Number(value);
             return yFormat && Number.isFinite(num) ? yFormat(num) : String(value);
-          }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any}
         />
         <Legend
           verticalAlign="top"

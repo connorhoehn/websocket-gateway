@@ -26,6 +26,7 @@ import ForkNode from '../nodes/fork/ForkNode';
 import JoinNode from '../nodes/join/JoinNode';
 import ApprovalNode from '../nodes/approval/ApprovalNode';
 import type { NodeExecutionState } from '../nodes/BaseNode';
+import { renderNodeInFlow } from '../nodes/__tests__/reactFlowTestHarness';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -357,15 +358,15 @@ describe('ForkNode', () => {
   );
 });
 
-// JoinNode uses useNodeConnections() which requires rendering inside an active
-// React Flow canvas (not just ReactFlowProvider). Skipped here — Join behavior
-// is covered by the executor contract + integration tests instead.
-describe.skip('JoinNode', () => {
+// JoinNode uses useNodeConnections() which requires a live React Flow store,
+// so these tests mount the node via the shared reactFlowTestHarness which
+// renders it inside a real <ReactFlow> canvas (with ReactFlowProvider).
+describe('JoinNode', () => {
   test('renders with minimal data (at least 2 input handles) and shows ⑃ icon', () => {
-    const { container, getByText } = renderNode(JoinNode as AnyNodeComponent, {
-      type: 'join',
-      mode: 'all',
-      mergeStrategy: 'deep-merge',
+    const { container, getByText } = renderNodeInFlow({
+      nodeType: 'join',
+      Component: JoinNode as AnyNodeComponent,
+      data: { type: 'join', mode: 'all', mergeStrategy: 'deep-merge' },
     });
     expect(getByText(NODE_ICONS.join)).toBeInTheDocument();
     // With no incoming edges, the node falls back to the minimum (2) input
@@ -375,11 +376,15 @@ describe.skip('JoinNode', () => {
   });
 
   test('n_of_m subtitle shows `n of many`', () => {
-    const { getByText } = renderNode(JoinNode as AnyNodeComponent, {
-      type: 'join',
-      mode: 'n_of_m',
-      n: 3,
-      mergeStrategy: 'array-collect',
+    const { getByText } = renderNodeInFlow({
+      nodeType: 'join',
+      Component: JoinNode as AnyNodeComponent,
+      data: {
+        type: 'join',
+        mode: 'n_of_m',
+        n: 3,
+        mergeStrategy: 'array-collect',
+      },
     });
     expect(getByText(/3 of many/)).toBeInTheDocument();
   });
@@ -387,11 +392,15 @@ describe.skip('JoinNode', () => {
   test.each<NodeExecutionState>(['idle', 'running', 'completed', 'failed'])(
     'applies data-state="%s"',
     (state) => {
-      const { container } = renderNode(JoinNode as AnyNodeComponent, {
-        type: 'join',
-        mode: 'all',
-        mergeStrategy: 'deep-merge',
-        _state: state,
+      const { container } = renderNodeInFlow({
+        nodeType: 'join',
+        Component: JoinNode as AnyNodeComponent,
+        data: {
+          type: 'join',
+          mode: 'all',
+          mergeStrategy: 'deep-merge',
+          _state: state,
+        },
       });
       const card = container.querySelector('[data-state]');
       expect(card?.getAttribute('data-state')).toBe(state);

@@ -10,7 +10,6 @@ import type { GatewayError } from '../types/gateway';
 import type { EphemeralReaction } from '../hooks/useReactions';
 import type { LogEntry } from './EventLog';
 import { useRooms } from '../hooks/useRooms';
-import type { RoomItem } from '../hooks/useRooms';
 import { useWebSocketContext } from '../contexts/WebSocketContext';
 import { useIdentityContext } from '../contexts/IdentityContext';
 import { usePresenceContext } from '../contexts/PresenceContext';
@@ -28,6 +27,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { EventStreamProvider } from './pipelines/context/EventStreamContext';
 import { PipelineRunsProvider } from './pipelines/context/PipelineRunsContext';
 import { useDocumentTriggers } from './pipelines/hooks/useDocumentTriggers';
+import { useWebhookTriggers } from './pipelines/hooks/useWebhookTriggers';
 import { usePendingApprovals } from './pipelines/hooks/usePendingApprovals';
 import { usePipelineActivityRelay } from './pipelines/hooks/usePipelineActivityRelay';
 import { usePipelineSource } from './pipelines/hooks/usePipelineSource';
@@ -183,7 +183,6 @@ export function AppLayout(props: AppLayoutProps) {
 
 function AppLayoutInner({
   currentChannel,
-  onSwitchChannel,
   onDisconnect,
   onReconnect,
   activeReactions,
@@ -192,12 +191,11 @@ function AppLayoutInner({
   lastError,
   activityEvents,
   activityPublish,
-  activityIsLive,
 }: AppLayoutProps) {
   // Pull shared state from contexts
   const { connectionState, sendMessage, onMessage, ws, clientId, sessionToken } = useWebSocketContext();
   const { userId, displayName, userEmail, idToken, onSignOut } = useIdentityContext();
-  const { presenceUsers, currentClientId, setTyping: onTyping } = usePresenceContext();
+  const { presenceUsers, currentClientId } = usePresenceContext();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -211,7 +209,7 @@ function AppLayoutInner({
     location.pathname.startsWith('/document-types') ? 'doc-types' :
     location.pathname.startsWith('/field-types') ? 'field-types' : 'panels';
 
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [activeRoomId] = useState<string | null>(null);
   const [showDevTools, setShowDevTools] = useState(false);
   const [showAppMenu, setShowAppMenu] = useState(false);
   const [showNewDocModal, setShowNewDocModal] = useState(false);
@@ -223,20 +221,9 @@ function AppLayoutInner({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const SIDEBAR_WIDTH = sidebarOpen ? 260 : 0;
 
-  const {
-    rooms,
-    createRoom,
-    createDM,
-    createGroupRoom,
-    loading: roomsLoading,
-  } = useRooms({ idToken: idToken!, onMessage });
+  const { rooms } = useRooms({ idToken: idToken!, onMessage });
 
-  const {
-    documents,
-    presence: docPresence,
-    createDocument,
-    deleteDocument,
-  } = useDocuments({
+  const { documents, createDocument } = useDocuments({
     sendMessage,
     onMessage,
     connectionState,
@@ -255,6 +242,11 @@ function AppLayoutInner({
   // Fires once per new doc.finalize / doc.comment / doc.add_item event
   // against any published pipeline whose triggerBinding matches.
   useDocumentTriggers(activityEvents);
+
+  // Webhook variant — listens for `pipeline.webhook.triggered` events on the
+  // EventStream and fires runs whose triggerBinding matches by webhookPath.
+  // Phase 1: dormant (no producer wired). TODO Phase 4: wire bridge.
+  useWebhookTriggers();
 
   // Phase 4 WebSocket pipeline source. Dormant unless VITE_PIPELINE_SOURCE=
   // 'websocket' — in which case this hook subscribes to 'pipeline:all' on
@@ -278,20 +270,6 @@ function AppLayoutInner({
   // Requires <ObservabilityProvider> (hoisted above AppLayoutInner) and
   // <ToastProvider> (mounted in App.tsx).
   useAlertToasts();
-
-  // Track current social channel subscription so we can unsub on room change
-  const activeSocialChannelRef = useRef<string | null>(null);
-
-  const handleRoomSelect = (room: RoomItem) => {
-    // Unsubscribe from previous social channel
-    if (activeSocialChannelRef.current && activeSocialChannelRef.current !== room.channelId) {
-      sendMessage({ service: 'social', action: 'unsubscribe', channelId: activeSocialChannelRef.current });
-    }
-    activeSocialChannelRef.current = room.channelId;
-    setActiveRoomId(room.roomId);
-    onSwitchChannel(room.channelId);
-    sendMessage({ service: 'social', action: 'subscribe', channelId: room.channelId });
-  };
 
   // Notification state (UXIN-04)
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -706,7 +684,7 @@ function AppLayoutInner({
             onDisconnect={onDisconnect}
             onReconnect={onReconnect}
             presenceUsers={presenceUsers}
-            currentClientId={currentClientId}
+            currentClientId={currentClientId ?? ''}
             currentChannel={currentChannel}
             activityEvents={activityEvents}
             userId={userId}

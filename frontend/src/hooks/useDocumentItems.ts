@@ -58,7 +58,7 @@ export interface UseDocumentItemsReturn {
 export function useDocumentItems(
   options: UseDocumentItemsOptions,
 ): UseDocumentItemsReturn {
-  const { documentId, sectionIds, idToken, sendMessage, onMessage, connectionState } = options;
+  const { documentId, sectionIds, idToken, sendMessage, onMessage } = options;
 
   // ---- State ---------------------------------------------------------------
   const [items, setItems] = useState<Record<string, TaskItem[]>>({});
@@ -71,12 +71,10 @@ export function useDocumentItems(
   const documentIdRef = useRef(documentId);
   useEffect(() => { documentIdRef.current = documentId; }, [documentId]);
 
-  const authHeaders = useMemo(() => {
-    if (!idToken) return {};
-    return {
-      Authorization: `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    };
+  const authHeaders = useMemo((): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = `Bearer ${idToken}`;
+    return headers;
   }, [idToken]);
 
   // Stable serialized sectionIds for dependency tracking

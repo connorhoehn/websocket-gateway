@@ -31,6 +31,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
+import { generateWebhookSecret } from '../lib/webhookSignature';
 
 // In-memory by user; resets on server restart.
 const stubStore = new Map<string, Map<string, unknown>>(); // userId -> pipelineId -> def
@@ -43,6 +44,26 @@ function bucketFor(userId: string): Map<string, unknown> {
   }
   return b;
 }
+
+/**
+ * Phase 1 accessor for cross-module consumers (e.g. the schedule evaluator).
+ * Iterates every pipeline definition across all users — order is not
+ * stable. Phase 4 swap-out: replace this with a `StateStore` query that
+ * scans the `pipeline:*` resource namespace.
+ */
+export const stubPipelineStore = {
+  *allPipelines(): Generator<unknown> {
+    for (const bucket of stubStore.values()) {
+      for (const def of bucket.values()) {
+        yield def;
+      }
+    }
+  },
+  /** Test helper — wipe everything between cases. */
+  __resetForTests(): void {
+    stubStore.clear();
+  },
+};
 
 export const pipelineDefinitionsRouter = Router();
 
@@ -75,11 +96,36 @@ pipelineDefinitionsRouter.put(
   '/:pipelineId',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
-    const def = req.body as { id?: unknown } | undefined;
+    const def = req.body as
+      | {
+          id?: unknown;
+          triggerBinding?: {
+            event?: string;
+            webhookPath?: string;
+            webhookSecret?: string;
+          };
+        }
+      | undefined;
     if (!def || typeof def !== 'object' || def.id !== req.params.pipelineId) {
       res.status(400).json({ error: 'invalid_body' });
       return;
     }
+
+    // Mint a webhook secret server-side the first time a webhook trigger
+    // binding is saved so the secret never has to round-trip through the
+    // browser unprotected. Idempotent — once a secret exists we leave it
+    // alone (rotation is a separate, explicit operation Phase-5 will add).
+    const tb = def.triggerBinding;
+    if (
+      tb &&
+      tb.event === 'webhook' &&
+      typeof tb.webhookPath === 'string' &&
+      tb.webhookPath.length > 0 &&
+      (typeof tb.webhookSecret !== 'string' || tb.webhookSecret.length === 0)
+    ) {
+      tb.webhookSecret = generateWebhookSecret();
+    }
+
     bucketFor(userId).set(req.params.pipelineId, def);
     res.json(def);
   }),

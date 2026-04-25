@@ -534,12 +534,13 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 
 ## 10. Build phases
 
-### Phase 0 — Purge the old workflow system (days, one PR)
+### Phase 0 — Purge the old workflow system (days, one PR) [✅ Done]
 - Delete files enumerated by the deletion-scope agent.
 - Remove workflow nav entries, imports, tests.
 - Verify `npm run build` clean; run app to confirm doc editor still works.
+- **Shipped:** all 6 files in §12.1 deleted (`useWorkflows.ts`, `WorkflowPanel.tsx`, `ApprovalWorkflowRepository.ts`, `approvalWorkflows.ts`, `WorkflowEngine.ts`, the workflow-focused wizard test); `documentType.ts` / `DocumentTypeWizard.tsx` / `useSidebarPanels.ts` / `routes/index.ts` / `repositories/index.ts` / `broadcast.ts` / `document-exporter.ts` / `document-mcp-server.js` / `tool-handler.js` modifications all landed; build clean; tests green.
 
-### Phase 1 — Canvas + mocked execution (weeks 1–8)
+### Phase 1 — Canvas + mocked execution (weeks 1–8) [✅ Done]
 - Install `@xyflow/react`
 - `/pipelines` list, `/pipelines/:id` editor
 - All 8 node types per section 5, with config panels
@@ -548,8 +549,9 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 - `MockExecutor` per section 8
 - Live overlay: node states + LLM streaming + edges animate per section 7
 - **Outcome:** full editor + execution UX, no backend needed. Demos end-to-end.
+- **Shipped:** `frontend/src/components/pipelines/{PipelinesPage,PipelineEditorPage,PipelineRunsPage,PipelineRunReplayPage,PipelineStatsPage,PendingApprovalsPage,TemplatesModal}.tsx`; `canvas/{PipelineCanvas,NodePalette,ConfigPanel,ExecutionLog,QuickInsertPopover}.tsx` + animated `edges/`; all 8 node-type folders under `nodes/` (trigger, llm, transform, condition, action, fork, join, approval) each with `*Node.tsx` + `*Config.tsx` + `types.ts`; `mock/MockExecutor.ts` + `llmFixtures.ts`; `validation/{validatePipeline,handleCompatibility,detectCycles}.ts`; `persistence/{pipelineStorage,pipelineStorageRemote,runHistory}.ts`; `replay/{Scrubber,deriveEvents,useReplayDriver}.ts`; `versions/{VersionDiffModal,diffDefinitions}.ts`; `cost/{llmPricing,useRunCost}.ts`; `templates/`, `export/toMermaid.ts`, `dev/SimulatorPanel.tsx`. Contract test `pipelineExecutor.contract.test.ts` passing.
 
-### Phase 2 — Observability shell (weeks 6–12, overlapping)
+### Phase 2 — Observability shell (weeks 6–12, overlapping) [✅ Done]
 - `/observability` route with subpages per section 3
 - All panels built against a hard-coded `ClusterDashboard` JSON fixture (type from distributed-core)
 - Node grid, health indicators, hotspot table, alerts, regions
@@ -557,8 +559,9 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 - Metric graph component (line charts, stacked areas)
 - Chaos panel UI (buttons are no-ops initially)
 - **Outcome:** observability UX complete before backend exists.
+- **Shipped:** `frontend/src/components/observability/{ObservabilityLayout,DashboardPage,NodesPage,EventsPage,MetricsPage}.tsx`; `components/{KPICard,NodeGrid,NodeGridTile,ActiveRunsTable,AlertsPanel,ChaosPanel,EventTimeline,EventDetailPane,MetricCard,MetricsGraph}.tsx`; `context/ObservabilityContext.tsx`; `fixtures/dashboardFixture.ts`; `hooks/{useDashboard,useMetricsHistory,usePipelineMetrics,useAlertToasts}.ts`. Backend `observabilityRouter` (`/api/observability/dashboard`, `/api/observability/metrics`) returns deterministic-bucketed stub data so dashboards light up without a live cluster.
 
-### Phase 3 — PipelineModule in distributed-core (weeks 10–18)
+### Phase 3 — PipelineModule in distributed-core (weeks 10–18) [🟡 Partial]
 - New module: `distributed-core/src/applications/pipeline/PipelineModule.ts`
 - `PipelineDefinition` and `PipelineRun` as `ResourceRouter`-owned resources
 - `EventBus<PipelineEventMap>` with WAL at `./wal/pipelines.wal`
@@ -567,20 +570,61 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 - Approval step: awaits `resolveApproval` message from gateway
 - Shared contract test (`pipelineExecutor.contract.test.ts`) — must pass against both `MockExecutor` and `PipelineModule`
 - Local test: `createCluster({ size: 3 })`, trigger 10 runs, verify distribution + failover
+- **Status:** owned by the distributed-core sibling-repo session. LLM client implementations have already been split out of the kernel into social-api (`social-api/src/pipeline/{LLMClient,AnthropicLLMClient,BedrockLLMClient,createLLMClient}.ts`) so the kernel stays SDK-free. Awaiting: `exports` map publish from distributed-core, the 5 PipelineModule API additions agreed cross-repo (see §11.5), and `examples/pipelines/bootstrap.ts`.
 
-### Phase 4 — Gateway bridge (weeks 16–22)
+### Phase 4 — Gateway bridge (weeks 16–22) [🔵 Prep done, awaiting Phase 3]
 - Embed `createCluster` in social-api startup (in-memory transport)
 - `pipeline-bridge.ts`: `EventBus.subscribeAll` → gateway WebSocket broadcast on `pipeline:events`
 - REST endpoints: `POST /api/pipelines/:id/runs`, `POST /api/pipelines/:runId/approvals`, `GET /api/observability/dashboard`
 - Frontend: swap `MockExecutor` for real WebSocket stream behind a feature flag
 - **Outcome:** real executions driving the canvas.
+- **Shipped (staged for wire-up):**
+  - `src/pipeline-bridge/pipeline-bridge.js` — accepts both EventEmitter (Phase 1 simulator) and distributed-core `EventBus.subscribeAll` (Phase 4); `BusEvent` → `PipelineWireEvent` mapper; ring-buffer token-rate counter (1s/10s/60s windows).
+  - `src/services/pipeline-service.js` — every WS action implemented (subscribe, unsubscribe, trigger, cancel, resolveApproval, resumeFromStep, getRun, getHistory); pluggable `setPipelineModule()` / `setCancelHandler()` / `setResolveApprovalHandler()` so the kernel can be swapped in without code change.
+  - REST surface: `routes/pipelineDefinitions.ts` (CRUD + publish), `routes/pipelineTriggers.ts` (POST runs, GET run snapshot, GET history, POST approvals), `routes/pipelineMetrics.ts` (`/api/pipelines/metrics` + `/api/observability/dashboard|metrics`). All write endpoints use Redis-backed `middleware/idempotency.ts` (24h TTL, body-hash conflict detection, in-memory fallback for tests).
+  - `social-api/src/pipeline/createLLMClient.ts` — `PIPELINE_LLM_PROVIDER` env-var dispatcher (anthropic / bedrock).
+  - Frontend: `usePipelineSource.ts` + `WebSocketEventAdapter.ts` flip to WS at `VITE_PIPELINE_SOURCE=websocket`; `PipelineService` shim contract documented in `pipelineTriggers.ts`.
 
-### Phase 5 — WAL replay, chaos demos, gateway consolidation (weeks 22+)
+### Phase 5 — WAL replay, chaos demos, gateway consolidation (weeks 22+) [⏸ Deferred]
 - `/pipelines/:id/runs/:runId` wired to checkpoint + WAL replay (millisecond seek)
 - Chaos panel calls `ChaosInjector` — inject latency/partitions/node kill, watch runs reassign
 - Scheduled-trigger node activated (distributed cron)
 - Optional: migrate gateway's Redis pubsub/presence/channels to distributed-core `PubSubManager`/`PresenceManager`/`ChannelManager`
 - Metrics export to Prometheus via `MetricsExporter`
+- **Status:** not started. Frontend Chaos panel exists as UI shell only; replay page reads from in-browser run history (Phase 1 stand-in for WAL).
+
+### 10.6 Phase 4 wire-up checklist
+
+Do-exactly-this sequence agreed with the distributed-core sibling session on 2026-04-25 (see §11.5 "Resolved 2026-04-25" for the WHY behind each step). Execute top-to-bottom; do not reorder.
+
+1. **Pull `distributed-core`** — `git pull` the sibling repo. Required artifacts: the `Cluster.create({...})` facade, `PipelineModule` with the six bridge surfaces locked below, the `exports` map (root + `./applications/pipeline` + `./gateway` + `./routing` subpaths), and `examples/pipelines/cluster-bootstrap.ts` + `trigger-and-watch.ts`.
+2. **Bump `distributed-core` in social-api** — update `social-api/package.json` to the new version (file:/link path), then `npm install` in `social-api/`. social-api stays CJS (`"module": "commonjs"`, no `"type": "module"`); the package's conditional exports (`require → CJS`, `import → ESM`) resolve to CJS automatically. No rename, no `.cjs` shim, no ESM conversion required — we are explicitly the path-(a) consumer.
+3. **Bump Redis client to v5** — in both `/package.json` (gateway root) and `social-api/package.json`, bump `redis@^4.6.x` → `redis@^5` and run `npm install` at each. Distributed-core's `RedisPubSubManager` targets v5. Migration is cheap: we only use basic pub/sub + get/set, no RedisJSON / RedisSearch.
+4. **Read the reference bootstrap** — open `distributed-core/examples/pipelines/cluster-bootstrap.ts` (exported helper that stands up an N-node in-memory cluster with `PipelineModule` registered + `FixtureLLMClient`; documents the 6-field `ApplicationModuleContext` wiring inline) and `distributed-core/examples/pipelines/trigger-and-watch.ts` (runnable ~16s smoke test, exits 0). The second file is the template for our integration smoke test in step 9.
+5. **Port `bootstrap.ts` into social-api** — create `social-api/src/pipeline/bootstrap.ts` modeled on `cluster-bootstrap.ts`. Call `Cluster.create({...})` with this shape:
+   - **Required:** `nodeId`, `topic`, `transport`, `registry`.
+   - **Phase-4 registry value:** `registry: { type: 'memory' }` (single-node bridge, no durability). Phase-5+ flips to `registry: { type: 'wal', walPath: '<social-api-data>/pipeline-runs.wal' }`. We are NOT using a CRDT registry — no multi-master writes on the same run record; `ResourceRouter` mediates ownership.
+   - **Pass from day one:** `metrics` and `logger` (Pino/Winston-shaped). `locks?: { ttlMs?: number }` is optional; leave default unless we hit lock contention.
+   - **Defaulted (do not override in Phase 4):** `placement: LocalPlacement`, `failureDetection: { heartbeatMs: 1000, deadTimeoutMs: 6000, activeProbing: true }`, `autoReclaim: { jitterMs: 500 }` (default-on).
+   - **RebalancePolicy params (when constructed):** mean-relative formula `abs(localLoad - meanLoad) / max(meanLoad, 1)`, threshold `0.2` (20% deviation from cluster mean), asymmetric direction (only rebalance away from hot nodes), P95 over 60s window for dampening. Load fn: `() => activeRuns` (count of locally-owned pipeline runs). Composite load (`runs + tokensPerSec * weight`) is Phase-5+ only.
+   - Resolve `LLMClient` via the existing `social-api/src/pipeline/createLLMClient.ts` factory (already SDK-aware via `PIPELINE_LLM_PROVIDER`). The kernel stays SDK-free.
+   - Export the constructed `PipelineModule` instance into module-scoped state for the bridge wiring in step 6.
+6. **Wire the six PipelineModule bridge surfaces** — at gateway startup, plug the `PipelineModule` instance from step 5 into the existing bridge / service shims. All six surfaces are confirmed shipped on `PipelineModule` (last cross-repo SHA used: `7eae4f2`):
+   - `getRun(runId)` — single-run snapshot.
+   - `getHistory({ pipelineId, limit?, cursor? })` — historical runs.
+   - `listActiveRuns()` — currently-executing runs across this node.
+   - `getMetrics()` — includes `runsAwaitingApproval: number` count.
+   - `getPendingApprovals(): PendingApprovalRow[]` — synchronous, in-memory, per-node. `PendingApprovalRow = { runId, stepId, pipelineId, approvers: ApprovalNodeData['approvers'], message?, requestedAt: ISO 8601 }`. Bridge merges across cluster nodes; no dedup needed (each row appears exactly once).
+   - `pipeline.run.reassigned` event — payload `{ runId, from: string, to: string, at: string }`. `from`/`to` are raw cluster node UUIDs. `to === from` is a Phase-4 placeholder; real reassignment lands in Phase-5.
+
+   Wire in: `setPipelineBridge(...)` in `pipelineTriggers.ts`; `setPipelineModule(...)` / `setResolveApprovalHandler(...)` / `setCancelHandler(...)` on `pipeline-service.js`. Bridge translation between distributed-core's colon-form (`pipeline:run:reassigned`) and our dot-form `PipelineEventMap` types (`pipeline.run.reassigned`) is already handled by `mapBusEventToWireEvent` in `src/pipeline-bridge/pipeline-bridge.js`.
+7. **Set env vars** — on the gateway / social-api side: `PIPELINE_LLM_PROVIDER=anthropic` (or `bedrock`). On the frontend build: `VITE_PIPELINE_SOURCE=websocket`.
+8. **Restart processes** — bring up social-api + websocket-gateway with the new env. The in-memory cluster boots inside the social-api process.
+9. **Smoke test** — flip `VITE_PIPELINE_SOURCE=websocket` and trigger a run via `POST /api/pipelines/:id/runs`. Use `trigger-and-watch.ts` as the template. Confirm:
+   - `BusEvent`s flow through the bridge and hit `pipeline:all` / `pipeline:run:{runId}` channels.
+   - Frontend dedupe key `(runId, stepId, version)` deduplicates correctly. `BusEvent.version` is a per-`EventBus`-instance monotonic counter, restored from max-persisted-version on `start()` once WAL is enabled (Phase-5); `replay(fromVersion, handler)` delivers events with their ORIGINAL version (no re-publishing), so the dedupe key is stable across replay. Phase-5 checkpoint resume gets fresh higher versions — that's intentional, dedupe naturally accepts as new work.
+   - Canvas animates in real time.
+10. **Toggle off the mock** — once stable, the frontend `MockExecutor` becomes dev-only (`SimulatorPanel`); production reads exclusively from the WS adapter.
 
 ---
 
@@ -590,6 +634,32 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 2. **Partition recovery** — inject a network partition. Watch the cluster detect minority partition, pause writes, recover on heal.
 3. **Historical scrub** — open a completed run, drag the scrubber back to step 3, canvas re-animates from that point. Checkpoint + WAL makes it instant.
 4. **Approval + LLM loop** — document-finalize trigger → LLM summary → Approval (human reviews, gets the LLM summary in context) → Action (post comment with approved text).
+
+### 11.5 Cross-repo coordination resolved
+
+State of the websocket-gateway ↔ distributed-core agreement, after the Phase 4 prep pass:
+
+- The other session is shipping the `exports` map plus `examples/pipelines/` to unblock Phase 4 wire-up — once landed, §10.6 step 1 starts.
+- 5 `PipelineModule` API additions agreed cross-repo: `getRun(runId)`, `getHistory(runId, fromVersion)`, `listActiveRuns()`, a `runsAwaitingApproval` field on `getMetrics()`, and a `pipeline.run.reassigned` event (paired with `pipeline.run.orphaned`, see §17.9 ordering invariants).
+- Dot-form event names (`pipeline.run.started`, `pipeline.step.completed`, …) are retained on the wire; deprecation deferred — both repos and the frontend wire-event mapper key off this shape.
+- `PIPELINE_LLM_PROVIDER` env var lives on the websocket-gateway side, consumed by `social-api/src/pipeline/createLLMClient.ts`. The kernel stays SDK-free; provider selection is a host-process concern.
+
+#### Resolved 2026-04-25
+
+Outcomes of the two-consumer (websocket-gateway + live-video-streaming) coordination round with distributed-core. One-line entries; consult §10.6 for the executable checklist, the architecture sections (§1, §2, §4, §5) for upstream context.
+
+- **Six bridge surfaces locked on `PipelineModule`** — `getRun(runId)`, `getHistory({ pipelineId, limit?, cursor? })`, `listActiveRuns()`, `getMetrics()` (now includes `runsAwaitingApproval: number`), `getPendingApprovals(): PendingApprovalRow[]` (shipped at distributed-core SHA `7eae4f2`), and `pipeline.run.reassigned` event. Supersedes the original 5-API list above; `getHistory` signature was clarified to `{ pipelineId, limit?, cursor? }`.
+- **`PendingApprovalRow` shape** — `{ runId, stepId, pipelineId, approvers: ApprovalNodeData['approvers'], message?, requestedAt: ISO 8601 }`. Synchronous, in-memory, per-node; bridge merges across cluster nodes with no dedup (each row appears exactly once).
+- **`pipeline.run.reassigned` payload** — `{ runId, from: string, to: string, at: string }`. `from`/`to` are raw cluster node UUIDs. `to === from` is a Phase-4 placeholder; real reassignment lands in Phase-5.
+- **§5 `Cluster.create({...})` facade shape locked** — required: `nodeId`, `topic`, `transport`, `registry`. Defaulted: `placement: LocalPlacement`, `failureDetection: { heartbeatMs: 1000, deadTimeoutMs: 6000, activeProbing: true }`, `autoReclaim: { jitterMs: 500 }` (default-on). Optional: `metrics?`, `logger?` (Pino/Winston-shaped), `locks?: { ttlMs?: number }`. Phase-4 from our side passes `metrics` + `logger` from day one.
+- **§1 fencing-token / registry trajectory** — Phase-4: `registry: { type: 'memory' }`; Phase-5+: `registry: { type: 'wal', walPath: '<social-api-data>/pipeline-runs.wal' }`. NOT using a CRDT registry — no multi-master writes on the same run record; `ResourceRouter` mediates ownership.
+- **§2 RebalancePolicy** — formula `abs(localLoad - meanLoad) / max(meanLoad, 1)`, threshold `0.2`, asymmetric direction (only rebalance away from hot nodes), P95 over 60s window for dampening. Load fn: `() => activeRuns`. Composite (`runs + tokensPerSec * weight`) deferred to Phase-5+.
+- **§4 Redis backplane bump** — Phase-4 wire-up PR will bump `redis@^4.6.x` → `redis@^5` in both `/package.json` and `social-api/package.json` (distributed-core's `RedisPubSubManager` target). Cheap migration: only basic pub/sub + get/set in use.
+- **Imports / exports map** — distributed-core ships conditional exports per subpath (`require → CJS`, `import → ESM`). social-api is CJS (no `"type": "module"`) → resolves to CJS automatically. We are the path-(a) consumer; no rename, no `.cjs` shim, no ESM conversion.
+- **Module subpaths exposed by distributed-core** — `.` (root: `EventBus`, `ResourceRouter`, `FixtureLLMClient`, `LLMClient` type), `./applications/pipeline` (`PipelineModule`, `PipelineExecutor`, types), `./gateway` (pubsub, presence, channel, queue, `MessageRouter`), `./routing` (`ResourceRouter`, `ForwardingRouter`, placement). Most consumers should import from root; subpaths exist for narrow imports only.
+- **Reference artifacts in distributed-core** — `examples/pipelines/cluster-bootstrap.ts` (exported helper standing up an N-node in-memory cluster with `PipelineModule` + `FixtureLLMClient`; documents the 6-field `ApplicationModuleContext` wiring inline) and `examples/pipelines/trigger-and-watch.ts` (runnable ~16s smoke test, exits 0; template for our integration smoke test). Read both before writing `social-api/src/pipeline/bootstrap.ts`.
+- **WAL replay / dedupe stability** — `BusEvent.version` is a per-`EventBus`-instance monotonic counter, restored from max-persisted-version on `start()` with WAL. `replay(fromVersion, handler)` delivers events with their ORIGINAL version (no re-publishing). Frontend dedupe key `(runId, stepId, version)` is correct and stable across replay. Phase-5 checkpoint resume gets fresh higher versions — intentional, dedupe naturally accepts as new work.
+- **Event-name canonicalization** — distributed-core `EventBus` emits colon-form (`pipeline:run:reassigned`); our `PipelineEventMap` types use dot-form (`pipeline.run.reassigned`). Bridge translation in `src/pipeline-bridge/pipeline-bridge.js` via existing `mapBusEventToWireEvent` handles the canonicalization. No protocol change required.
 
 ---
 
@@ -1084,6 +1154,14 @@ These are generated/maintained by hand and must be kept in sync with
 `frontend/src/types/pipeline.ts` per `TYPES_SYNC.md`. A CI check (see
 `scripts/check-types-sync.mjs`) catches drift between the type file and
 the schema.
+
+## 17.11 Operational instrumentation
+
+These exist so Phase 4 wiring is observable from the operator's seat without needing to attach a debugger.
+
+- **`/api/pipelines/health`** — health endpoint that surfaces bridge state, last-seen BusEvent timestamp, and PipelineModule liveness. *(Planned alongside §10.6 step 5; will join `routes/pipelineMetrics.ts` so the static `/health` segment registers before the `:pipelineId` mount.)*
+- **Bridge token-rate counter** — `PipelineBridge.getTokenRate()` returns `{ perSec1s, perSec10s, perSec60s, windowSize }` from a 5000-entry ring buffer (~2 minutes of headroom at 40 tok/s). Exposed today via the bridge instance; will be lifted into `/api/pipelines/health` when that endpoint lands.
+- **Frontend `SourceDiagnosticBanner`** — *(planned, not yet built)*: appears when `VITE_PIPELINE_SOURCE=websocket` is set but no events have arrived in N seconds, so an operator can immediately tell whether the WS path or the kernel is silent. Wires off the existing `EventStreamContext` source flag + last-event-at timestamp.
 
 ---
 
@@ -2068,9 +2146,11 @@ Approvals appear in four places, consistent affordance:
 
 Approving an item emits `pipeline.approval.recorded`; the badge count decrements; the pipeline run continues. Approvers can see but not interact with approvals not assigned to them (grayed pill with tooltip `Not assigned to you`).
 
-### 18.21 Summary — UI is planned
+### 18.21 Summary — UI is planned [✅ shipped against the spec]
 
 The surface is specified end-to-end: three routes for pipelines, four for observability, eight node types, their config panels, canvas interactions, motion, keyboard map, state inventory, accessibility, responsive behavior, design system, component inventory, microcopy, and approval UX. §19 reconciles this with existing patterns in the app.
+
+**Status update:** the UI surface above is built. Pipelines routes (`/pipelines`, `/pipelines/:id`, `/pipelines/:id/runs/:runId`, `/pipelines?filter=pending-approvals`, plus a runs-list and stats page) and all four observability routes (`/observability/{dashboard,nodes,events,metrics}`) ship. All eight node types have node + config components. Frontend test suite: **719 passed / 7 skipped (54 files).** What remains is wiring real BusEvents through the bridge — the UX is ready to receive them.
 
 ---
 

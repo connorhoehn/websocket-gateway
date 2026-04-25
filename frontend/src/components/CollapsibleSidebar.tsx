@@ -23,7 +23,7 @@ type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'd
 export interface PipelineSidebarEntry {
   id: string;
   name: string;
-  status: 'draft' | 'published';
+  status: 'draft' | 'published' | 'archived';
   updatedAt: string;
   icon?: string;
 }

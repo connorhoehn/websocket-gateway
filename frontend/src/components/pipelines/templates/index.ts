@@ -751,6 +751,489 @@ function buildPrStyleReview(createdBy: string): PipelineDefinition {
 }
 
 // ---------------------------------------------------------------------------
+// 10. Incident response — webhook → classify → condition → page+approval | ticket
+// ---------------------------------------------------------------------------
+
+function buildIncidentResponse(createdBy: string): PipelineDefinition {
+  const now = new Date().toISOString();
+
+  const triggerId = crypto.randomUUID();
+  const classifyId = crypto.randomUUID();
+  const conditionId = crypto.randomUUID();
+  const pageOnCallId = crypto.randomUUID();
+  const postMortemApprovalId = crypto.randomUUID();
+  const fileTicketId = crypto.randomUUID();
+
+  const triggerData: TriggerNodeData = {
+    type: 'trigger',
+    triggerType: 'webhook',
+    webhookPath: '/pipelines/webhooks/incident',
+  };
+
+  const classify: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are an incident triage assistant. Read the alert payload (PagerDuty/Opsgenie shape) and respond with strict JSON {"severity": "critical"|"high"|"medium"|"low", "summary": string}. No prose.',
+    userPromptTemplate: '{{context.payload}}',
+    temperature: 0,
+    maxTokens: 256,
+    streaming: false,
+  };
+
+  const condition: ConditionNodeData = {
+    type: 'condition',
+    expression: `context.steps.${classifyId}.output.severity === 'critical'`,
+    label: 'Critical?',
+  };
+
+  const pageOnCall: ActionNodeData = {
+    type: 'action',
+    actionType: 'notify',
+    config: {
+      channel: 'on-call',
+      message: `CRITICAL incident: {{context.steps.${classifyId}.output.summary}}`,
+    },
+    idempotent: false,
+    onError: 'fail-run',
+  };
+
+  const postMortemApproval: ApprovalNodeData = {
+    type: 'approval',
+    approvers: [{ type: 'role', value: 'incident-commander' }],
+    requiredCount: 1,
+    timeoutMs: 24 * 60 * 60 * 1000,
+    timeoutAction: 'escalate',
+    message:
+      'Critical incident paged. Please acknowledge and assign a post-mortem owner.',
+  };
+
+  const fileTicket: ActionNodeData = {
+    type: 'action',
+    actionType: 'webhook',
+    config: {
+      url: 'https://tickets.example.com/api/incidents',
+      method: 'POST',
+      body: {
+        severity: `{{context.steps.${classifyId}.output.severity}}`,
+        summary: `{{context.steps.${classifyId}.output.summary}}`,
+      },
+    },
+    idempotent: true,
+    onError: 'route-error',
+  };
+
+  const nodes: PipelineNode[] = [
+    { id: triggerId,             type: 'trigger',   position: { x: col(0), y: row(0)              }, data: triggerData },
+    { id: classifyId,            type: 'llm',       position: { x: col(1), y: row(0)              }, data: classify },
+    { id: conditionId,           type: 'condition', position: { x: col(2), y: row(0)              }, data: condition },
+    { id: pageOnCallId,          type: 'action',    position: { x: col(3), y: row(0) - ROW_H / 2 }, data: pageOnCall },
+    { id: postMortemApprovalId,  type: 'approval',  position: { x: col(4), y: row(0) - ROW_H / 2 }, data: postMortemApproval },
+    { id: fileTicketId,          type: 'action',    position: { x: col(3), y: row(0) + ROW_H / 2 }, data: fileTicket },
+  ];
+
+  const edges: PipelineEdge[] = [
+    edge(triggerId, 'out', classifyId),
+    edge(classifyId, 'out', conditionId),
+    edge(conditionId, 'true', pageOnCallId),
+    edge(pageOnCallId, 'out', postMortemApprovalId),
+    edge(conditionId, 'false', fileTicketId),
+  ];
+
+  return {
+    id: crypto.randomUUID(),
+    name: 'Incident Response',
+    description:
+      'Webhook from PagerDuty/Opsgenie triages severity; critical alerts page on-call and request a post-mortem owner, others file a ticket.',
+    icon: '🚨',
+    version: 1,
+    status: 'published',
+    publishedVersion: 1,
+    triggerBinding: { event: 'webhook', webhookPath: '/pipelines/webhooks/incident' },
+    nodes,
+    edges,
+    createdAt: now,
+    updatedAt: now,
+    createdBy,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 11. Code review — webhook (PR) → summarize → fork(3) → join → synthesize → comment
+// ---------------------------------------------------------------------------
+
+function buildCodeReview(createdBy: string): PipelineDefinition {
+  const now = new Date().toISOString();
+
+  const triggerId = crypto.randomUUID();
+  const summarizeId = crypto.randomUUID();
+  const forkId = crypto.randomUUID();
+  const securityId = crypto.randomUUID();
+  const styleId = crypto.randomUUID();
+  const coverageId = crypto.randomUUID();
+  const joinId = crypto.randomUUID();
+  const synthesizeId = crypto.randomUUID();
+  const postCommentId = crypto.randomUUID();
+
+  const triggerData: TriggerNodeData = {
+    type: 'trigger',
+    triggerType: 'webhook',
+    webhookPath: '/pipelines/webhooks/github-pr',
+  };
+
+  const summarize: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a senior code reviewer. Read the GitHub pull-request payload and produce a brief, structured summary of the diff (files touched, scope, intent). No prose preface.',
+    userPromptTemplate: '{{context.payload.pull_request}}',
+    temperature: 0.2,
+    maxTokens: 768,
+    streaming: false,
+  };
+
+  const forkData: ForkNodeData = {
+    type: 'fork',
+    branchCount: 3,
+    branchLabels: ['security', 'style', 'tests'],
+  };
+
+  const security: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a security auditor. Review this diff for vulnerabilities (injection, secrets, authz, unsafe deserialization, SSRF). Output JSON {"findings": [{"severity": "high"|"med"|"low", "file": string, "issue": string}]}.',
+    userPromptTemplate: `{{context.payload.pull_request.diff}}\n\nSummary: {{context.steps.${summarizeId}.response}}`,
+    temperature: 0.1,
+    maxTokens: 1024,
+    streaming: false,
+  };
+
+  const style: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a code-style reviewer. Flag naming, structure, readability, and idiom issues. Output JSON {"findings": [{"file": string, "line": number?, "issue": string}]}.',
+    userPromptTemplate: `{{context.payload.pull_request.diff}}\n\nSummary: {{context.steps.${summarizeId}.response}}`,
+    temperature: 0.2,
+    maxTokens: 1024,
+    streaming: false,
+  };
+
+  const coverage: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a test-coverage reviewer. Identify untested branches, missing edge-case tests, and risky changes lacking tests. Output JSON {"gaps": [{"file": string, "concern": string}]}.',
+    userPromptTemplate: `{{context.payload.pull_request.diff}}\n\nSummary: {{context.steps.${summarizeId}.response}}`,
+    temperature: 0.1,
+    maxTokens: 1024,
+    streaming: false,
+  };
+
+  const joinData: JoinNodeData = {
+    type: 'join',
+    mode: 'all',
+    mergeStrategy: 'array-collect',
+  };
+
+  const synthesize: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a lead reviewer. Combine the security, style, and test-coverage findings into a single PR comment in markdown with sections, prioritized actions, and a final approve/request-changes recommendation.',
+    userPromptTemplate:
+      `Security: {{context.steps.${securityId}.response}}\n\nStyle: {{context.steps.${styleId}.response}}\n\nCoverage: {{context.steps.${coverageId}.response}}`,
+    temperature: 0.3,
+    maxTokens: 1536,
+    streaming: true,
+  };
+
+  const postComment: ActionNodeData = {
+    type: 'action',
+    actionType: 'webhook',
+    config: {
+      url: '{{context.payload.pull_request.comments_url}}',
+      method: 'POST',
+      body: { body: `{{context.steps.${synthesizeId}.response}}` },
+    },
+    idempotent: false,
+    onError: 'route-error',
+  };
+
+  const nodes: PipelineNode[] = [
+    { id: triggerId,     type: 'trigger',  position: { x: col(0), y: row(0)              }, data: triggerData },
+    { id: summarizeId,   type: 'llm',      position: { x: col(1), y: row(0)              }, data: summarize },
+    { id: forkId,        type: 'fork',     position: { x: col(2), y: row(0)              }, data: forkData },
+    { id: securityId,    type: 'llm',      position: { x: col(3), y: row(0) - ROW_H      }, data: security },
+    { id: styleId,       type: 'llm',      position: { x: col(3), y: row(0)              }, data: style },
+    { id: coverageId,    type: 'llm',      position: { x: col(3), y: row(0) + ROW_H      }, data: coverage },
+    { id: joinId,        type: 'join',     position: { x: col(4), y: row(0)              }, data: joinData },
+    { id: synthesizeId,  type: 'llm',      position: { x: col(5), y: row(0)              }, data: synthesize },
+    { id: postCommentId, type: 'action',   position: { x: col(6), y: row(0)              }, data: postComment },
+  ];
+
+  const edges: PipelineEdge[] = [
+    edge(triggerId, 'out', summarizeId),
+    edge(summarizeId, 'out', forkId),
+    edge(forkId, 'branch-0', securityId),
+    edge(forkId, 'branch-1', styleId),
+    edge(forkId, 'branch-2', coverageId),
+    edge(securityId, 'out', joinId, 'in-0'),
+    edge(styleId,    'out', joinId, 'in-1'),
+    edge(coverageId, 'out', joinId, 'in-2'),
+    edge(joinId, 'out', synthesizeId),
+    edge(synthesizeId, 'out', postCommentId),
+  ];
+
+  return {
+    id: crypto.randomUUID(),
+    name: 'Code Review',
+    description:
+      'GitHub PR webhook fans out security, style, and test-coverage reviews in parallel, then synthesizes one PR comment.',
+    icon: '🔍',
+    version: 1,
+    status: 'published',
+    publishedVersion: 1,
+    triggerBinding: { event: 'webhook', webhookPath: '/pipelines/webhooks/github-pr' },
+    nodes,
+    edges,
+    createdAt: now,
+    updatedAt: now,
+    createdBy,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 12. Content moderation (publish gate) — submit → classify → condition →
+//     publish | mod-review approval
+// ---------------------------------------------------------------------------
+
+function buildContentModerationPublishGate(createdBy: string): PipelineDefinition {
+  const now = new Date().toISOString();
+
+  const triggerId = crypto.randomUUID();
+  const classifyId = crypto.randomUUID();
+  const cleanConditionId = crypto.randomUUID();
+  const publishId = crypto.randomUUID();
+  const modReviewId = crypto.randomUUID();
+
+  const triggerData: TriggerNodeData = {
+    type: 'trigger',
+    triggerType: 'document.submit',
+  };
+
+  const classify: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'Classify this newly created document for safety. Output strict JSON {"category": "clean"|"pii"|"policy_violation", "reason": string}. No prose.',
+    userPromptTemplate: '{{context.documentBody}}',
+    temperature: 0,
+    maxTokens: 192,
+    streaming: false,
+  };
+
+  const cleanCondition: ConditionNodeData = {
+    type: 'condition',
+    expression: `context.steps.${classifyId}.output.category === 'clean'`,
+    label: 'Clean?',
+  };
+
+  const publish: ActionNodeData = {
+    type: 'action',
+    actionType: 'update-document',
+    config: { field: 'status', value: 'published' },
+    idempotent: true,
+    onError: 'fail-run',
+  };
+
+  const modReview: ApprovalNodeData = {
+    type: 'approval',
+    approvers: [{ type: 'role', value: 'moderator' }],
+    requiredCount: 1,
+    timeoutMs: 12 * 60 * 60 * 1000,
+    timeoutAction: 'reject',
+    message: `Document flagged as {{context.steps.${classifyId}.output.category}} — please review before publishing.`,
+  };
+
+  const nodes: PipelineNode[] = [
+    { id: triggerId,         type: 'trigger',   position: { x: col(0), y: row(0)              }, data: triggerData },
+    { id: classifyId,        type: 'llm',       position: { x: col(1), y: row(0)              }, data: classify },
+    { id: cleanConditionId,  type: 'condition', position: { x: col(2), y: row(0)              }, data: cleanCondition },
+    { id: publishId,         type: 'action',    position: { x: col(3), y: row(0) - ROW_H / 2 }, data: publish },
+    { id: modReviewId,       type: 'approval',  position: { x: col(3), y: row(0) + ROW_H / 2 }, data: modReview },
+  ];
+
+  const edges: PipelineEdge[] = [
+    edge(triggerId, 'out', classifyId),
+    edge(classifyId, 'out', cleanConditionId),
+    edge(cleanConditionId, 'true', publishId),
+    edge(cleanConditionId, 'false', modReviewId),
+  ];
+
+  return {
+    id: crypto.randomUUID(),
+    name: 'Content Moderation (Publish Gate)',
+    description:
+      'On document creation, classify safety (PII / policy / clean); auto-publish clean docs, route flagged ones to moderator approval.',
+    icon: '🛡️',
+    version: 1,
+    status: 'published',
+    publishedVersion: 1,
+    triggerBinding: { event: 'document.submit' },
+    nodes,
+    edges,
+    createdAt: now,
+    updatedAt: now,
+    createdBy,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 13. Customer support triage — webhook → classify → transform → condition →
+//     escalate | draft → approval → send
+// ---------------------------------------------------------------------------
+
+function buildSupportTriage(createdBy: string): PipelineDefinition {
+  const now = new Date().toISOString();
+
+  const triggerId = crypto.randomUUID();
+  const classifyId = crypto.randomUUID();
+  const normalizeId = crypto.randomUUID();
+  const urgencyConditionId = crypto.randomUUID();
+  const escalateId = crypto.randomUUID();
+  const draftId = crypto.randomUUID();
+  const approvalId = crypto.randomUUID();
+  const sendId = crypto.randomUUID();
+
+  const triggerData: TriggerNodeData = {
+    type: 'trigger',
+    triggerType: 'webhook',
+    webhookPath: '/pipelines/webhooks/helpdesk',
+  };
+
+  const classify: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'Read this helpdesk ticket. Extract intent and urgency. Output strict JSON {"intent": string, "urgency": "high"|"medium"|"low", "tags": string[]}. No prose.',
+    userPromptTemplate: '{{context.payload.ticket}}',
+    temperature: 0.1,
+    maxTokens: 256,
+    streaming: false,
+  };
+
+  const normalize: TransformNodeData = {
+    type: 'transform',
+    transformType: 'jsonpath',
+    expression: `$.steps.${classifyId}.output`,
+    outputKey: 'triage',
+  };
+
+  const urgencyCondition: ConditionNodeData = {
+    type: 'condition',
+    expression: `context.triage.urgency === 'high'`,
+    label: 'High urgency?',
+  };
+
+  const escalate: ActionNodeData = {
+    type: 'action',
+    actionType: 'notify',
+    config: {
+      channel: 'support-escalations',
+      message:
+        `High-urgency ticket: {{context.triage.intent}} (tags: {{context.triage.tags}})`,
+    },
+    idempotent: false,
+    onError: 'fail-run',
+  };
+
+  const draft: LLMNodeData = {
+    type: 'llm',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    systemPrompt:
+      'You are a customer-support agent. Draft a friendly, concise reply addressing the ticket intent. Sign off as "The Support Team". Plain text, no markdown.',
+    userPromptTemplate:
+      `Ticket: {{context.payload.ticket}}\n\nIntent: {{context.triage.intent}}\nTags: {{context.triage.tags}}`,
+    temperature: 0.4,
+    maxTokens: 768,
+    streaming: true,
+  };
+
+  const approval: ApprovalNodeData = {
+    type: 'approval',
+    approvers: [{ type: 'role', value: 'support-agent' }],
+    requiredCount: 1,
+    timeoutMs: 4 * 60 * 60 * 1000,
+    timeoutAction: 'reject',
+    message: `Please review this drafted reply before it is sent to the customer.`,
+  };
+
+  const send: ActionNodeData = {
+    type: 'action',
+    actionType: 'webhook',
+    config: {
+      url: 'https://helpdesk.example.com/api/replies',
+      method: 'POST',
+      body: {
+        ticketId: '{{context.payload.ticket.id}}',
+        body: `{{context.steps.${draftId}.response}}`,
+      },
+    },
+    idempotent: true,
+    onError: 'route-error',
+  };
+
+  const nodes: PipelineNode[] = [
+    { id: triggerId,            type: 'trigger',   position: { x: col(0), y: row(0)              }, data: triggerData },
+    { id: classifyId,           type: 'llm',       position: { x: col(1), y: row(0)              }, data: classify },
+    { id: normalizeId,          type: 'transform', position: { x: col(2), y: row(0)              }, data: normalize },
+    { id: urgencyConditionId,   type: 'condition', position: { x: col(3), y: row(0)              }, data: urgencyCondition },
+    { id: escalateId,           type: 'action',    position: { x: col(4), y: row(0) - ROW_H / 2 }, data: escalate },
+    { id: draftId,              type: 'llm',       position: { x: col(4), y: row(0) + ROW_H / 2 }, data: draft },
+    { id: approvalId,           type: 'approval',  position: { x: col(5), y: row(0) + ROW_H / 2 }, data: approval },
+    { id: sendId,               type: 'action',    position: { x: col(6), y: row(0) + ROW_H / 2 }, data: send },
+  ];
+
+  const edges: PipelineEdge[] = [
+    edge(triggerId, 'out', classifyId),
+    edge(classifyId, 'out', normalizeId),
+    edge(normalizeId, 'out', urgencyConditionId),
+    edge(urgencyConditionId, 'true', escalateId),
+    edge(urgencyConditionId, 'false', draftId),
+    edge(draftId, 'out', approvalId),
+    edge(approvalId, 'approved', sendId),
+  ];
+
+  return {
+    id: crypto.randomUUID(),
+    name: 'Customer Support Triage',
+    description:
+      'Helpdesk webhook classifies intent and urgency; high-urgency tickets escalate, others get an agent-reviewed draft reply auto-sent on approval.',
+    icon: '🎧',
+    version: 1,
+    status: 'published',
+    publishedVersion: 1,
+    triggerBinding: { event: 'webhook', webhookPath: '/pipelines/webhooks/helpdesk' },
+    nodes,
+    edges,
+    createdAt: now,
+    updatedAt: now,
+    createdBy,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
@@ -826,5 +1309,41 @@ export const pipelineTemplates: PipelineTemplate[] = [
     icon: '🔍',
     tags: ['fork', 'llm', 'approval', 'review', 'join'],
     build: buildPrStyleReview,
+  },
+  {
+    id: 'incident-response',
+    name: 'Incident Response',
+    description:
+      'Webhook from PagerDuty/Opsgenie triages severity; critical alerts page on-call and request a post-mortem owner, others file a ticket.',
+    icon: '🚨',
+    tags: ['webhook', 'incident', 'ops', 'condition', 'approval'],
+    build: buildIncidentResponse,
+  },
+  {
+    id: 'code-review',
+    name: 'Code Review',
+    description:
+      'GitHub PR webhook fans out security, style, and test-coverage reviews in parallel, then synthesizes one PR comment.',
+    icon: '🔍',
+    tags: ['webhook', 'fork', 'llm', 'review', 'github', 'join'],
+    build: buildCodeReview,
+  },
+  {
+    id: 'content-moderation-publish-gate',
+    name: 'Content Moderation (Publish Gate)',
+    description:
+      'On document creation, classify safety (PII / policy / clean); auto-publish clean docs, route flagged ones to moderator approval.',
+    icon: '🛡️',
+    tags: ['moderation', 'llm', 'condition', 'approval', 'submit'],
+    build: buildContentModerationPublishGate,
+  },
+  {
+    id: 'support-triage',
+    name: 'Customer Support Triage',
+    description:
+      'Helpdesk webhook classifies intent and urgency; high-urgency tickets escalate, others get an agent-reviewed draft reply auto-sent on approval.',
+    icon: '🎧',
+    tags: ['webhook', 'support', 'llm', 'condition', 'approval', 'transform'],
+    build: buildSupportTriage,
   },
 ];

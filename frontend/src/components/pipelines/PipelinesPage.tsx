@@ -10,14 +10,24 @@
 // Multi-select / bulk actions:
 //   The `[Select]` toggle in the header enables selection mode. In that mode,
 //   each card shows a checkbox top-right; clicking the card toggles selection
-//   instead of opening the editor. When at least one card is selected a sticky
-//   bulk-action bar appears below the filter row with: Clear, Export all,
-//   Add tag, Remove tag, Delete. Keyboard: Escape clears selection, Cmd/Ctrl+A
-//   selects all currently-filtered cards, Delete/Backspace opens the bulk
-//   delete confirm.
+//   instead of opening the editor. The filter bar grows a "select-all-visible"
+//   master checkbox with indeterminate state. Shift-clicking a per-row
+//   checkbox extends the selection range from the last click.
+//
+//   When at least one card is selected a sticky bulk-action bar appears below
+//   the filter row with: Clear, Export selected as JSON (single combined
+//   file, mirroring the runs-page UX), Publish selected, Archive selected
+//   (toggle), Add tag, Remove tag, Delete. Keyboard: Escape clears selection,
+//   Cmd/Ctrl+A selects all currently-filtered cards, Delete/Backspace opens
+//   the bulk delete confirm.
+//
+// URL-bound state (mirrors `<PipelineRunsPage/>`):
+//   ?status=draft,published,archived   multi-select status chips
+//                                       empty/missing = draft + published
+//                                       (archived hidden by default)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import {
   listPipelines,
   loadPipeline,
@@ -26,6 +36,8 @@ import {
   deletePipeline,
   duplicatePipeline,
   exportPipelineJSON,
+  publishPipeline,
+  archivePipeline,
   savePipeline,
   type PipelineIndexEntry,
 } from './persistence/pipelineStorage';
@@ -55,9 +67,40 @@ import {
 // Types / filters
 // ---------------------------------------------------------------------------
 
-type StatusFilter = 'all' | 'draft' | 'published';
+export type StatusKey = 'draft' | 'published' | 'archived';
+export const STATUS_KEYS: readonly StatusKey[] = ['draft', 'published', 'archived'] as const;
+
+const STATUS_LABEL: Record<StatusKey, string> = {
+  draft: 'Draft',
+  published: 'Published',
+  archived: 'Archived',
+};
+
+// When the URL has no `status` param at all, default the filter to hide
+// archived pipelines (so the list isn't cluttered after an archive). The user
+// can still see them by toggling the Archived chip.
+const DEFAULT_STATUS_KEYS: readonly StatusKey[] = ['draft', 'published'] as const;
+
 type TriggerFilter = 'all' | 'manual' | 'document' | 'schedule' | 'webhook';
 type SortKey = 'updated' | 'name' | 'created';
+
+/**
+ * Parse the `?status=` param into a Set. Unknown values are dropped silently.
+ * Empty or missing param → `null`, signaling the caller should fall back to
+ * `DEFAULT_STATUS_KEYS`.
+ */
+export function parseStatusParam(raw: string | null): Set<StatusKey> | null {
+  if (raw == null) return null;
+  if (raw.trim() === '') return new Set<StatusKey>();
+  const allowed = new Set<string>(STATUS_KEYS);
+  const out = new Set<StatusKey>(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => allowed.has(s)) as StatusKey[],
+  );
+  return out;
+}
 
 interface PipelineRow extends PipelineIndexEntry {
   version: number;
@@ -149,7 +192,12 @@ interface PipelineCardProps {
   selectionMode: boolean;
   selected: boolean;
   anySelected: boolean;
-  onToggleSelect: () => void;
+  /**
+   * Toggle selection for this card. The boolean argument is true when the
+   * triggering event held Shift — used by the page to extend the selection
+   * range from the most recently clicked checkbox.
+   */
+  onToggleSelect: (shiftKey: boolean) => void;
 }
 
 function PipelineCard({
@@ -170,13 +218,17 @@ function PipelineCard({
   }, [menuOpen]);
 
   const isPublished = row.status === 'published';
+  const isArchived = row.status === 'archived';
   const hasPublishedVersion = typeof row.publishedVersion === 'number';
   const trigger = triggerSummary(row.triggerBinding);
 
   // Row 2: status chip with a variant that reflects draft-with-published state.
   let statusLabel: string;
-  let statusVariant: 'success' | 'neutral' | 'warning';
-  if (isPublished) {
+  let statusVariant: 'success' | 'neutral' | 'warning' | 'danger';
+  if (isArchived) {
+    statusLabel = `Archived · v${row.version}`;
+    statusVariant = 'danger';
+  } else if (isPublished) {
     statusLabel = `Published · v${row.version}`;
     statusVariant = 'success';
   } else if (hasPublishedVersion) {
@@ -198,9 +250,9 @@ function PipelineCard({
   // card is already selected (so the user can easily expand their selection).
   const checkboxVisible = selectionMode || selected || hovered || anySelected;
 
-  const handleCardClick = () => {
+  const handleCardClick = (e: React.MouseEvent) => {
     if (selectionMode) {
-      onToggleSelect();
+      onToggleSelect(e.shiftKey);
     } else {
       onOpen();
     }
@@ -249,8 +301,24 @@ function PipelineCard({
             type="checkbox"
             data-testid={`pipeline-select-${row.id}`}
             checked={selected}
-            onChange={onToggleSelect}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              // onClick is the only synthetic event guaranteed to surface the
+              // native shiftKey flag in jsdom (`fireEvent.click` doesn't fire
+              // mousedown). Do the toggle here instead of relying on onChange.
+              e.stopPropagation();
+              onToggleSelect(e.shiftKey);
+            }}
+            onKeyDown={(e) => {
+              // Shift+Space → keyboard equivalent of shift-click.
+              if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                onToggleSelect(e.shiftKey);
+              }
+            }}
+            // Controlled-input warning suppressor: React requires onChange on
+            // checked inputs. We do the work in onClick (so we can read
+            // shiftKey), so onChange is intentionally a no-op.
+            onChange={() => { /* handled in onClick */ }}
             style={{ cursor: 'pointer', width: 16, height: 16, accentColor: colors.primary }}
           />
         </label>
@@ -441,9 +509,13 @@ interface BulkActionBarProps {
   count: number;
   onClear: () => void;
   onExport: () => void;
+  onExportAsJSON: () => void;
+  onPublish: () => void;
+  onArchive: () => void;
   onAddTag: () => void;
   onRemoveTag: () => void;
   onDelete: () => void;
+  onDeleteWithConfirm: () => void;
   addTagOpen: boolean;
   removeTagOpen: boolean;
   onSubmitAddTag: (tag: string) => void;
@@ -454,7 +526,8 @@ interface BulkActionBarProps {
 }
 
 function BulkActionBar({
-  count, onClear, onExport, onAddTag, onRemoveTag, onDelete,
+  count, onClear, onExport, onExportAsJSON, onPublish, onArchive,
+  onAddTag, onRemoveTag, onDelete, onDeleteWithConfirm,
   addTagOpen, removeTagOpen, onSubmitAddTag, onSubmitRemoveTag,
   onCloseAddTag, onCloseRemoveTag, unionTags,
 }: BulkActionBarProps) {
@@ -533,8 +606,24 @@ function BulkActionBar({
       <button data-testid="bulk-clear" style={pillBtnStyle} onClick={onClear}>
         Clear
       </button>
+      <button data-testid="bulk-publish" style={pillBtnStyle} onClick={onPublish}>
+        Publish selected
+      </button>
+      <button data-testid="bulk-archive" style={pillBtnStyle} onClick={onArchive}>
+        Archive selected
+      </button>
+      <button data-testid="bulk-export-json" style={pillBtnStyle} onClick={onExportAsJSON}>
+        Export selected as JSON
+      </button>
       <button data-testid="bulk-export" style={pillBtnStyle} onClick={onExport}>
         Export all
+      </button>
+      <button
+        data-testid="bulk-delete-confirm-prompt"
+        style={pillBtnStyle}
+        onClick={onDeleteWithConfirm}
+      >
+        Delete selected
       </button>
 
       {/* Add tag button + popover */}
@@ -662,12 +751,51 @@ export default function PipelinesPage() {
   const { userId } = useIdentityContext();
   const { toast } = useToast();
   const { triggerRun, isTriggering } = useTriggerRun();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [rows, setRows] = useState<PipelineRow[]>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('updated');
+
+  // Status filter is URL-bound (multi-select) for shareable links + back-button
+  // restore. Missing param → DEFAULT_STATUS_KEYS (drafts + published, no
+  // archived). Empty string → empty Set, which by convention means "all" so
+  // links built by the toolbar's clear-all action don't trip the default.
+  const statusFilterParsed = useMemo(
+    () => parseStatusParam(searchParams.get('status')),
+    [searchParams],
+  );
+  const statusFilter: Set<StatusKey> = useMemo(() => {
+    if (statusFilterParsed == null) return new Set<StatusKey>(DEFAULT_STATUS_KEYS);
+    return statusFilterParsed;
+  }, [statusFilterParsed]);
+  // Was the URL explicit (vs. default)? Tracks the difference so the user can
+  // reach "show every status including archived" by clicking the Archived chip.
+  const statusExplicit = statusFilterParsed != null;
+
+  const updateStatusParam = (next: Set<StatusKey>) => {
+    const params = new URLSearchParams(searchParams);
+    // Build the canonical csv (sorted to keep URLs deterministic).
+    if (next.size === 0) {
+      // Empty Set → encode as empty string so the URL is explicit (and
+      // semantically distinct from the missing-param default).
+      params.set('status', '');
+    } else {
+      const csv = STATUS_KEYS.filter(k => next.has(k)).join(',');
+      params.set('status', csv);
+    }
+    setSearchParams(params, { replace: true });
+  };
+
+  const toggleStatusKey = (k: StatusKey) => {
+    const base: Set<StatusKey> = statusExplicit
+      ? new Set(statusFilter)
+      : new Set(DEFAULT_STATUS_KEYS);
+    if (base.has(k)) base.delete(k);
+    else base.add(k);
+    updateStatusParam(base);
+  };
 
   const [newModalOpen, setNewModalOpen] = useState(false);
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
@@ -690,6 +818,10 @@ export default function PipelinesPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [addTagOpen, setAddTagOpen] = useState(false);
   const [removeTagOpen, setRemoveTagOpen] = useState(false);
+  // Most recently clicked row index (in the visible/filtered list). Used to
+  // anchor the shift-click range select.
+  const lastClickedIdxRef = useRef<number | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   // Load / refresh from storage.
   const refresh = useCallback(() => {
@@ -716,7 +848,12 @@ export default function PipelinesPage() {
         const tagHit = r.tags.some(t => t.toLowerCase().includes(q));
         if (!nameHit && !tagHit) return false;
       }
-      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      // Empty Set with `statusExplicit=true` means "match all" (the user has
+      // expressed intent to see everything). The default (no URL param) uses
+      // DEFAULT_STATUS_KEYS, which excludes 'archived'.
+      if (!(statusExplicit && statusFilter.size === 0)) {
+        if (!statusFilter.has(r.status as StatusKey)) return false;
+      }
       if (triggerFilter !== 'all' && triggerCategory(r.triggerBinding) !== triggerFilter) return false;
       return true;
     });
@@ -730,7 +867,7 @@ export default function PipelinesPage() {
       sorted.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
     return sorted;
-  }, [rows, search, statusFilter, triggerFilter, sortKey]);
+  }, [rows, search, statusFilter, statusExplicit, triggerFilter, sortKey]);
 
   // Union of tags across the selected rows (for the "Remove tag…" popover).
   const selectedUnionTags = useMemo(() => {
@@ -762,11 +899,32 @@ export default function PipelinesPage() {
     }
   };
 
-  const handleToggleSelect = (id: string) => {
+  const handleToggleSelect = (id: string, shiftKey = false) => {
+    const visible = visibleRows;
+    const idx = visible.findIndex(r => r.id === id);
+    // Snapshot the anchor BEFORE we update the ref below — the setSelected
+    // updater runs during commit, by which time `lastClickedIdxRef.current`
+    // would already hold the new idx and the range collapses to a single row.
+    const anchorIdx = lastClickedIdxRef.current;
+    if (idx !== -1) lastClickedIdxRef.current = idx;
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const turnOn = !next.has(id);
+      // Shift-click range: extend from anchorIdx → idx.
+      if (shiftKey && anchorIdx != null && idx !== -1) {
+        const lo = Math.min(anchorIdx, idx);
+        const hi = Math.max(anchorIdx, idx);
+        for (let i = lo; i <= hi; i++) {
+          const r = visible[i];
+          if (!r) continue;
+          if (turnOn) next.add(r.id);
+          else next.delete(r.id);
+        }
+      } else if (turnOn) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
       return next;
     });
   };
@@ -774,6 +932,35 @@ export default function PipelinesPage() {
   const handleSelectAllFiltered = useCallback(() => {
     setSelected(new Set(filteredIds));
   }, [filteredIds]);
+
+  // Header "select-all-visible" checkbox — toggles all visible rows. If every
+  // visible row is already selected, this acts as "deselect all visible".
+  const allVisibleSelected =
+    visibleRows.length > 0 && visibleRows.every(r => selected.has(r.id));
+  const someVisibleSelected =
+    !allVisibleSelected && visibleRows.some(r => selected.has(r.id));
+
+  const handleHeaderToggleAll = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const r of visibleRows) next.delete(r.id);
+      } else {
+        for (const r of visibleRows) next.add(r.id);
+      }
+      return next;
+    });
+    // Selecting via header re-arms `selectionMode` so the checkboxes stay
+    // visible on every card.
+    if (!selectionMode) setSelectionMode(true);
+  };
+
+  // Wire indeterminate visual state on the master checkbox.
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected;
+    }
+  }, [someVisibleSelected]);
 
   const handleCreate = (name: string, icon: string) => {
     const def = createPipeline({ name, createdBy: userId, icon });
@@ -906,6 +1093,102 @@ export default function PipelinesPage() {
     toast(`Deleted ${ids.length} pipeline${ids.length === 1 ? '' : 's'}`, { type: 'success' });
   };
 
+  // ─── New bulk actions: publish / archive / export-as-JSON / delete-confirm ─
+  //
+  // These mirror the runs-page bulk-action toolbar UX. publish/archive are
+  // optimistic (no confirm prompt — easy to undo). delete uses window.confirm
+  // since it's destructive. exportAsJSON downloads a single combined file
+  // (distinct from the per-pipeline staggered Export-all path above).
+
+  const handleBulkPublish = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    let publishedCount = 0;
+    let skippedCount = 0;
+    for (const id of ids) {
+      const def = loadPipeline(id);
+      if (!def) continue;
+      // Skip already-published pipelines (idempotent).
+      if (def.status === 'published') {
+        skippedCount += 1;
+        continue;
+      }
+      const res = publishPipeline(id);
+      if (res) publishedCount += 1;
+    }
+    refresh();
+    if (skippedCount > 0) {
+      toast(
+        `Published ${publishedCount}; skipped ${skippedCount} already published`,
+        { type: 'success' },
+      );
+    } else {
+      toast(
+        `Published ${publishedCount} pipeline${publishedCount === 1 ? '' : 's'}`,
+        { type: 'success' },
+      );
+    }
+  };
+
+  const handleBulkArchive = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    let archivedCount = 0;
+    let unarchivedCount = 0;
+    for (const id of ids) {
+      const def = loadPipeline(id);
+      if (!def) continue;
+      const wasArchived = def.status === 'archived';
+      const res = archivePipeline(id);
+      if (!res) continue;
+      if (wasArchived) unarchivedCount += 1;
+      else archivedCount += 1;
+    }
+    refresh();
+    const parts: string[] = [];
+    if (archivedCount > 0) parts.push(`Archived ${archivedCount}`);
+    if (unarchivedCount > 0) parts.push(`Unarchived ${unarchivedCount}`);
+    toast(parts.join(' · ') || 'No pipelines changed', { type: 'success' });
+  };
+
+  const handleBulkExportAsJSON = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const defs: PipelineDefinition[] = [];
+    for (const id of ids) {
+      const def = loadPipeline(id);
+      if (def) defs.push(def);
+    }
+    if (defs.length === 0) {
+      toast('Export failed', { type: 'error' });
+      return;
+    }
+    // ISO timestamp with `:` and `.` swapped for filename safety on Windows
+    // (mirrors the runs-page export filename scheme).
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadJSON(`pipelines-${ts}.json`, JSON.stringify(defs, null, 2));
+    toast(
+      `Exported ${defs.length} pipeline${defs.length === 1 ? '' : 's'}`,
+      { type: 'success' },
+    );
+  };
+
+  const handleBulkDeleteWithConfirm = () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const ok = window.confirm(
+      `Delete ${ids.length} pipeline${ids.length === 1 ? '' : 's'}? This cannot be undone.`,
+    );
+    if (!ok) return;
+    for (const id of ids) deletePipeline(id);
+    clearSelection();
+    refresh();
+    toast(
+      `Deleted ${ids.length} pipeline${ids.length === 1 ? '' : 's'}`,
+      { type: 'success' },
+    );
+  };
+
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────
   //
   // Escape         → clear selection + exit selection mode (if no popovers/modals open)
@@ -1033,6 +1316,22 @@ export default function PipelinesPage() {
             background: colors.surface,
           }}
         >
+          {/* Header "select-all-visible" checkbox with indeterminate state. */}
+          <label
+            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+            title="Select all visible pipelines"
+          >
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              data-testid="pipeline-select-all"
+              aria-label="Select all visible pipelines"
+              checked={allVisibleSelected}
+              onChange={handleHeaderToggleAll}
+              style={{ width: 14, height: 14, accentColor: colors.primary }}
+            />
+            <span style={{ fontSize: 11, color: colors.textTertiary }}>All</span>
+          </label>
           <input
             data-testid="pipeline-search"
             type="search"
@@ -1041,19 +1340,53 @@ export default function PipelinesPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{ ...fieldStyle, flex: '0 1 260px', minWidth: 180 }}
           />
-          <label style={{ fontSize: 12, color: colors.textSecondary, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Status filter chips — multi-select, URL-bound (?status=…). */}
+          <span
+            id="pipelines-status-label"
+            style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 500 }}
+          >
             Status:
-            <select
-              data-testid="status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              style={{ ...fieldStyle, padding: '4px 8px', flex: 'initial' }}
-            >
-              <option value="all">All</option>
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
-            </select>
-          </label>
+          </span>
+          <div
+            role="group"
+            aria-labelledby="pipelines-status-label"
+            style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+          >
+            {STATUS_KEYS.map((s) => {
+              const active = statusExplicit
+                ? statusFilter.has(s)
+                : (DEFAULT_STATUS_KEYS as readonly StatusKey[]).includes(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={active}
+                  data-testid={`status-chip-${s}`}
+                  onClick={() => toggleStatusKey(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleStatusKey(s);
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: `1px solid ${active ? colors.primary : colors.border}`,
+                    background: active ? colors.primary : colors.surface,
+                    color: active ? '#fff' : colors.textSecondary,
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {STATUS_LABEL[s]}
+                </button>
+              );
+            })}
+          </div>
           <label style={{ fontSize: 12, color: colors.textSecondary, display: 'flex', alignItems: 'center', gap: 6 }}>
             Trigger:
             <select
@@ -1091,9 +1424,13 @@ export default function PipelinesPage() {
           count={selected.size}
           onClear={clearSelection}
           onExport={handleBulkExport}
+          onExportAsJSON={handleBulkExportAsJSON}
+          onPublish={handleBulkPublish}
+          onArchive={handleBulkArchive}
           onAddTag={() => { setAddTagOpen(v => !v); setRemoveTagOpen(false); }}
           onRemoveTag={() => { setRemoveTagOpen(v => !v); setAddTagOpen(false); }}
           onDelete={() => setBulkDeleteOpen(true)}
+          onDeleteWithConfirm={handleBulkDeleteWithConfirm}
           addTagOpen={addTagOpen}
           removeTagOpen={removeTagOpen}
           onSubmitAddTag={handleBulkAddTagSubmit}
@@ -1179,7 +1516,7 @@ export default function PipelinesPage() {
                 selectionMode={selectionMode}
                 selected={selected.has(row.id)}
                 anySelected={anySelected}
-                onToggleSelect={() => handleToggleSelect(row.id)}
+                onToggleSelect={(shift) => handleToggleSelect(row.id, shift)}
               />
             ))}
           </div>

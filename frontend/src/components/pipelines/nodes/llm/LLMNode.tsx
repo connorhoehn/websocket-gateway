@@ -10,7 +10,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { LLMNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
-import { usePrefersReducedMotion } from '../../../../hooks/usePrefersReducedMotion';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 interface LLMResponseInfo {
   response: string;
@@ -91,8 +91,12 @@ function ResponseFooter({ info }: { info: LLMResponseInfo }) {
 }
 
 export default function LLMNode(props: NodeProps<LLMFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 retry-from-here — see TriggerNode for the rationale.
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
 
   const body = (
     <span style={{ fontStyle: 'italic' }}>
@@ -112,6 +116,15 @@ export default function LLMNode(props: NodeProps<LLMFlowNode>) {
     background: colors.state.failed, width: 10, height: 10, top: '60%',
   };
 
+  // Build a descriptive aria-label for screen readers — type + model + a
+  // truncated peek at the system prompt. Keep ~120 chars max so AT users
+  // aren't slowed down by repeated long announcements.
+  const sys = (data.systemPrompt ?? '').replace(/\s+/g, ' ').trim();
+  const sysPreview = sys.length === 0
+    ? 'no system prompt'
+    : `system prompt: ${sys.length > 60 ? `${sys.slice(0, 60)}…` : sys}`;
+  const ariaLabel = `LLM node, ${data.model || data.provider}, ${sysPreview}, state: ${state}`;
+
   return (
     <BaseNode
       icon="🧠"
@@ -120,6 +133,8 @@ export default function LLMNode(props: NodeProps<LLMFlowNode>) {
       body={body}
       footer={footer}
       selected={selected}
+      onRetry={onRetry}
+      ariaLabel={ariaLabel}
     >
       <Handle type="target" position={Position.Left}  id="in"    style={targetHandleStyle} />
       <Handle type="source" position={Position.Right} id="out"   style={outHandleStyle} />

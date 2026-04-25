@@ -38,13 +38,81 @@ import type {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import type { NodeType, PipelineNode } from '../../../types/pipeline';
+import type { NodeType, PipelineDefinition, PipelineNode } from '../../../types/pipeline';
 import { usePipelineEditor } from '../context/PipelineEditorContext';
 import { isValidHandleConnection } from '../validation/handleCompatibility';
 import { nodeTypes as registeredNodeTypes } from '../nodes';
 import { colors } from '../../../constants/styles';
 import AnimatedEdge from './edges/AnimatedEdge';
 import QuickInsertPopover from './QuickInsertPopover';
+import { autoArrange } from './autoArrange';
+
+// ---------------------------------------------------------------------------
+// Keyboard helpers (lifted from `useReplayKeyboard.ts` so the canvas honours
+// the same bail-on-input rule the replay scrubber uses).
+// ---------------------------------------------------------------------------
+
+function isEditableTarget(el: EventTarget | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
+/**
+ * Compute a topological-ish ordering of node ids for keyboard navigation.
+ * Tab cycles through nodes in this order. Falls back to insertion order when
+ * the graph has cycles or unreachable components (orphans appended at end,
+ * sorted by id for determinism — same convention as `autoArrange`).
+ *
+ * Exported so unit tests can verify the order without spinning up React Flow.
+ */
+export function topologicalNodeOrder(def: PipelineDefinition): string[] {
+  if (def.nodes.length === 0) return [];
+
+  // Build adjacency + indegree.
+  const adj = new Map<string, string[]>();
+  const indegree = new Map<string, number>();
+  for (const n of def.nodes) {
+    adj.set(n.id, []);
+    indegree.set(n.id, 0);
+  }
+  for (const e of def.edges) {
+    if (!adj.has(e.source) || !indegree.has(e.target)) continue;
+    (adj.get(e.source) as string[]).push(e.target);
+    indegree.set(e.target, (indegree.get(e.target) ?? 0) + 1);
+  }
+
+  // Kahn's algorithm. Process zero-indegree nodes in id-sorted order so the
+  // result is deterministic across renders.
+  const result: string[] = [];
+  const ready: string[] = def.nodes
+    .filter((n) => (indegree.get(n.id) ?? 0) === 0)
+    .map((n) => n.id)
+    .sort();
+  while (ready.length > 0) {
+    const id = ready.shift() as string;
+    result.push(id);
+    const neighbors = (adj.get(id) ?? []).slice().sort();
+    for (const next of neighbors) {
+      const deg = (indegree.get(next) ?? 0) - 1;
+      indegree.set(next, deg);
+      if (deg === 0) ready.push(next);
+    }
+  }
+  // Cycle members never reach indegree 0 — append them in id-sorted order so
+  // they're still reachable via Tab.
+  if (result.length < def.nodes.length) {
+    const seen = new Set(result);
+    const stragglers = def.nodes
+      .filter((n) => !seen.has(n.id))
+      .map((n) => n.id)
+      .sort();
+    result.push(...stragglers);
+  }
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,6 +223,7 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
     addEdge: addDefEdge,
     removeEdge: removeDefEdge,
     removeNode,
+    selectedNodeId,
     setSelectedNodeId,
   } = usePipelineEditor();
 
@@ -411,22 +480,151 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
   // Toggle MiniMap / Controls via the [M] and [C] keys per §18.4.3.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Skip when typing in inputs.
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
+      if (isEditableTarget(e.target)) return;
       if (e.key === 'm' || e.key === 'M') setShowMiniMap((x) => !x);
       if (e.key === 'c' || e.key === 'C') setShowControls((x) => !x);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // ── Canvas keyboard navigation (a11y) ─────────────────────────────────
+  //
+  // Active only when focus is inside the canvas container so the global
+  // PipelineEditorPage shortcuts (⌘S, ⌘Enter, etc.) keep working from the
+  // top bar. Bail rule mirrors the replay scrubber's `isEditableTarget` —
+  // we never swallow keys destined for an input/textarea/contenteditable.
+  //
+  // Shortcut table (kept in sync with PIPELINES_PLAN.md §18.13):
+  //   Tab            cycle focus to next node (in topological order)
+  //   Shift+Tab      cycle focus to previous node
+  //   Enter / Space  select the focused node (same as click)
+  //   Delete / Bksp  remove the selected node (with the existing remove flow)
+  //   Shift+Arrows   nudge the selected node by 8px
+  //   Escape         clear selection
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const focusNodeById = (id: string) => {
+      // React Flow wraps each rendered node in a `.react-flow__node` element
+      // with `data-id`. Walk into the wrapper and focus its inner BaseNode
+      // (`role="button"` + `data-pipeline-node`). When the inner card isn't
+      // there yet (jsdom render edge), fall back to focusing the wrapper.
+      const wrapper = container.querySelector<HTMLElement>(
+        `.react-flow__node[data-id="${CSS.escape(id)}"]`,
+      );
+      if (!wrapper) return false;
+      const inner = wrapper.querySelector<HTMLElement>('[data-pipeline-node="true"]');
+      (inner ?? wrapper).focus();
+      return true;
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      // Only act when focus is inside the canvas (or there's no focused element
+      // and the user pressed a node-targeting key — Tab still gets a chance to
+      // land on the first node).
+      const active = document.activeElement as HTMLElement | null;
+      const focusInCanvas = !!active && container.contains(active);
+
+      // ── Tab cycling ────────────────────────────────────────────────
+      if (e.key === 'Tab') {
+        if (!focusInCanvas) return;
+        if (!definition || definition.nodes.length === 0) return;
+        const order = topologicalNodeOrder(definition);
+        if (order.length === 0) return;
+        // Identify the currently focused node by its data-id (set by React
+        // Flow on the wrapper). The BaseNode card sits inside that wrapper.
+        const currentWrapper = active?.closest<HTMLElement>('.react-flow__node');
+        const currentId = currentWrapper?.getAttribute('data-id') ?? null;
+        const currentIdx = currentId !== null ? order.indexOf(currentId) : -1;
+        const delta = e.shiftKey ? -1 : 1;
+        const nextIdx = currentIdx === -1
+          ? (e.shiftKey ? order.length - 1 : 0)
+          : (currentIdx + delta + order.length) % order.length;
+        const nextId = order[nextIdx];
+        if (focusNodeById(nextId)) {
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // The remaining shortcuts only fire when the canvas already has focus.
+      if (!focusInCanvas) return;
+
+      // Don't fight ⌘/Ctrl/Alt combos — those belong to the page-level
+      // shortcut handler in PipelineEditorPage.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // ── Enter / Space — select the focused node ────────────────────
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        const wrapper = active?.closest<HTMLElement>('.react-flow__node');
+        const id = wrapper?.getAttribute('data-id');
+        if (id) {
+          e.preventDefault();
+          setSelectedNodeId(id);
+        }
+        return;
+      }
+
+      // ── Delete / Backspace — remove the selected node ──────────────
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!selectedNodeId) return;
+        e.preventDefault();
+        removeNode(selectedNodeId);
+        return;
+      }
+
+      // ── Escape — clear selection ───────────────────────────────────
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSelectedNodeId(null);
+        return;
+      }
+
+      // ── Arrow keys — Shift nudges by 8px, plain arrows are swallowed
+      // so React Flow's built-in arrow-key node-move (a11y default) doesn't
+      // double-fire alongside our handler.
+      if (
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight'
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.shiftKey) return;
+        if (!selectedNodeId) return;
+        const NUDGE = 8;
+        const dx =
+          e.key === 'ArrowLeft' ? -NUDGE : e.key === 'ArrowRight' ? NUDGE : 0;
+        const dy =
+          e.key === 'ArrowUp' ? -NUDGE : e.key === 'ArrowDown' ? NUDGE : 0;
+        setNodes((curr) => {
+          const next = curr.map((n) =>
+            n.id === selectedNodeId
+              ? {
+                  ...n,
+                  position: {
+                    x: n.position.x + dx,
+                    y: n.position.y + dy,
+                  },
+                }
+              : n,
+          );
+          const moved = next.find((n) => n.id === selectedNodeId);
+          if (moved) {
+            setPositions([{ id: moved.id, position: moved.position }]);
+          }
+          return next;
+        });
+      }
+    };
+
+    container.addEventListener('keydown', onKey);
+    return () => container.removeEventListener('keydown', onKey);
+  }, [definition, selectedNodeId, setSelectedNodeId, removeNode, setNodes, setPositions]);
 
   const containerStyle = useMemo<CSSProperties>(
     () => ({
@@ -505,9 +703,62 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
     [],
   );
 
+  // Auto-arrange button sits immediately to the left of the fit-view control,
+  // sharing the same 32×32 card treatment so the two read as a control group.
+  const autoArrangeBtnStyle = useMemo<CSSProperties>(
+    () => ({
+      ...fitViewBtnStyle,
+      right: 12 + 32 + 6,
+    }),
+    [fitViewBtnStyle],
+  );
+
   const handleFitView = useCallback(() => {
     fitView({ padding: 0.15, duration: 500 });
   }, [fitView]);
+
+  // Auto-arrange: rebuild the canvas layout into BFS-layered columns from the
+  // trigger, then animate the viewport to fit so the new layout is visible.
+  // Both Shift+A and the toolbar button funnel through this single handler.
+  const handleAutoArrange = useCallback(() => {
+    if (!definition) return;
+    const positions = autoArrange(definition);
+    if (positions.length === 0) return;
+    setPositions(positions);
+    // fitView reads the latest node geometry from React Flow's internal store;
+    // the setNodes effect that mirrors the definition runs synchronously after
+    // setPositions commits, so we can call fitView on the next tick. Using
+    // requestAnimationFrame keeps it framework-agnostic and test-friendly.
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => fitView({ padding: 0.15, duration: 500 }));
+    } else {
+      fitView({ padding: 0.15, duration: 500 });
+    }
+  }, [definition, setPositions, fitView]);
+
+  // Listen for Shift+A on the window — same skip rule as the [M]/[C] toggles.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      // Shift+A only — bare 'a' must not steal focus from other handlers.
+      if (e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        // Don't fire when other modifiers are pressed (Cmd+Shift+A etc).
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        e.preventDefault();
+        handleAutoArrange();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleAutoArrange]);
 
   // TODO Phase 2: alignment guides — when a node drags, render 1px blue lines
   // where its top/middle/bottom or left/center/right align with other nodes.
@@ -518,6 +769,10 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
     <div
       ref={containerRef}
       style={containerStyle}
+      role="application"
+      aria-label="Pipeline editor canvas"
+      tabIndex={0}
+      data-testid="pipeline-canvas"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onDoubleClick={handlePaneDoubleClick}
@@ -578,6 +833,25 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
           onInsert={handleQuickInsertInsert}
         />
       ) : null}
+      <button
+        type="button"
+        onClick={handleAutoArrange}
+        style={autoArrangeBtnStyle}
+        title="Auto-arrange (Shift+A)"
+        aria-label="Auto-arrange"
+        data-testid="auto-arrange-btn"
+      >
+        {/* Stack-of-rows pictogram — three left-aligned bars suggesting an
+            ordered, layered layout. Pure stroke so it picks up currentColor. */}
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path
+            d="M2 4h8M2 8h12M2 12h6"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
       <button
         type="button"
         onClick={handleFitView}

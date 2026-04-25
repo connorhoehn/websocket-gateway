@@ -10,7 +10,7 @@ import { useHangoutEmbed } from '../../lib/video/useHangoutEmbed';
 import { useActiveSpeaker } from '../../lib/video/useActiveSpeaker';
 import type { HangoutParticipant } from '../../lib/video/types';
 import { Button, IconButton } from '../ui/Panel';
-import { colors, borderRadius } from '../../styles/tokens';
+import { colors } from '../../styles/tokens';
 
 // ---------------------------------------------------------------------------
 // Props

@@ -41,6 +41,118 @@ tags:
     description: User profile search (UserPicker backing store)
 
 paths:
+  # --- Public webhook trigger ---------------------------------------------
+  # Mounted at the app root (NOT under /api) — see `social-api/src/app.ts`.
+  # Public by design: no Cognito JWT required, since external systems
+  # (Stripe, GitHub, internal cron, etc.) won't carry one. Authenticity is
+  # enforced via per-pipeline HMAC-SHA256 signatures when the matched
+  # pipeline definition's webhook trigger binding has a `webhookSecret`
+  # configured. No secret ⇒ unsigned-OK fallback (Phase-1 behavior).
+  #
+  # Note: `/hooks/pipeline/{path}` is sibling to the `/api` server URL
+  # declared above — the OpenAPI `servers` block describes the JWT-gated
+  # surface; this endpoint is documented here for completeness, callers
+  # should target it at `<host>/hooks/pipeline/{path}` directly.
+  /hooks/pipeline/{path}:
+    parameters:
+      - in: path
+        name: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-zA-Z0-9_-]{1,64}$'
+        description: |
+          Webhook path — matches the regex enforced by both the route and
+          the frontend `TriggerConfig` "Full URL" preview. Alphanumeric,
+          underscore, hyphen; 1-64 chars.
+    post:
+      tags: [pipelines]
+      summary: Public webhook trigger for pipeline definitions
+      security: []  # No bearer token — see signature header instead.
+      description: |
+        Fires the pipeline whose published `triggerBinding` matches
+        `(event: 'webhook', webhookPath: <path>)`. Body is forwarded
+        verbatim; only `x-*` headers (minus the signature header) are
+        captured into pipeline context.
+
+        ## Authenticity
+        When the matched pipeline definition has a `webhookSecret` configured
+        on its trigger binding, the request MUST carry a valid
+        `X-Pipeline-Signature-256` header of the form:
+
+        ```
+        X-Pipeline-Signature-256: sha256=<hex>
+        ```
+
+        where `<hex>` is HMAC-SHA256(secret, raw_request_body) — same
+        convention as GitHub webhooks. Comparison is constant-time
+        (`crypto.timingSafeEqual`). On mismatch the route returns
+        `401 Unauthorized` with an RFC-7807 problem-details body and emits
+        a structured `[pipeline-webhook] signature verification failed`
+        log line for observability.
+
+        When no `webhookSecret` is configured, unsigned requests are
+        accepted (Phase-1 dev fallback). Phase-5 will add a global config
+        flag to require signatures everywhere.
+      operationId: triggerPipelineWebhook
+      parameters:
+        - in: header
+          name: X-Pipeline-Signature-256
+          required: false
+          schema:
+            type: string
+            pattern: '^sha256=[0-9a-f]{64}$'
+          description: |
+            HMAC-SHA256 signature of the raw request body, formatted as
+            `sha256=<64-hex-chars>`. Required when the matched pipeline
+            definition's trigger binding has a `webhookSecret`; ignored
+            otherwise.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+          '*/*':
+            schema:
+              type: string
+              format: binary
+              description: |
+                Raw payload — the route preserves exact bytes for HMAC
+                verification before attempting JSON parsing.
+      responses:
+        '202':
+          description: Webhook accepted (and signature verified, if required)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, webhookPath, at]
+                properties:
+                  accepted:
+                    type: boolean
+                    enum: [true]
+                  webhookPath:
+                    type: string
+                  at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Path failed regex validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          description: |
+            Signature missing or invalid for a pipeline that requires one.
+            Body is RFC-7807 problem-details.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/WebhookSignatureProblem'
+
   # --- Definitions ---------------------------------------------------------
   # Mounted at /api/pipelines/defs — the `/defs` segment exists to avoid
   # colliding with the static `/metrics` segment under `/api/pipelines`.
@@ -486,6 +598,26 @@ components:
           type: string
           description: Optional human-readable detail.
 
+    # RFC 7807 problem-details body returned by /hooks/pipeline/{path} on a
+    # signature-verification failure. Mirrors what the route emits — kept
+    # narrow so SDK consumers get a stable shape.
+    WebhookSignatureProblem:
+      type: object
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          description: 'RFC 7807 problem type URI; `about:blank` for inline problems.'
+        title:
+          type: string
+          enum: ['Invalid webhook signature']
+        status:
+          type: integer
+          enum: [401]
+        detail:
+          type: string
+          description: Human-readable reason — missing header vs digest mismatch.
+
     # -----------------------------------------------------------------
     # Trigger run request/response
     # -----------------------------------------------------------------
@@ -882,6 +1014,16 @@ components:
         documentTypeId: { type: string }
         schedule: { type: string }
         webhookPath: { type: string }
+        webhookSecret:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: |
+            32-byte HMAC-SHA256 secret (64 lowercase hex chars). Minted
+            server-side on first PUT of a webhook-trigger binding; surfaced
+            in `PipelineDefinition` responses so the UI can show it for
+            copy-out into the external webhook source. Absent ⇒ the public
+            `/hooks/pipeline/:path` route accepts unsigned requests
+            (Phase-1 dev fallback).
 
     PipelineStatus:
       type: string

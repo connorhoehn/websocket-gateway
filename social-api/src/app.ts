@@ -4,6 +4,7 @@ import { requestLogger } from './middleware/request-logger';
 import { errorHandler } from './middleware/error-handler';
 import healthRouter from './routes/health';
 import apiRouter from './routes/index';
+import { pipelineWebhooksRouter } from './routes/pipelineWebhooks';
 
 export function createApp(): express.Application {
   const app = express();
@@ -22,6 +23,11 @@ export function createApp(): express.Application {
 
   // Health check — no auth required
   app.use('/health', healthRouter);
+
+  // Pipeline webhooks — public endpoints (no auth) for external systems to
+  // fire pipelines. Mounted BEFORE requireAuth because webhook callers don't
+  // carry a Cognito JWT. See routes/pipelineWebhooks.ts.
+  app.use('/hooks/pipeline', pipelineWebhooksRouter);
 
   // All routes below this line require a valid Cognito JWT
   app.use(requireAuth);

@@ -10,6 +10,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { ForkNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 type ForkData = ForkNodeData & {
   _state?: NodeExecutionState;
@@ -20,8 +21,12 @@ type ForkFlowNode = Node<ForkData, 'fork'>;
 const BRANCH_HANDLE_COLOR = '#2563eb'; // blue per §18.4.4 handles spec
 
 export default function ForkNode(props: NodeProps<ForkFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 retry-from-here — see TriggerNode for the rationale.
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
 
   const count = Math.max(2, Math.min(8, data.branchCount ?? 2));
   const labels: string[] = Array.from({ length: count }, (_, i) => {
@@ -56,6 +61,7 @@ export default function ForkNode(props: NodeProps<ForkFlowNode>) {
         </ul>
       }
       selected={selected}
+      onRetry={onRetry}
     >
       <Handle type="target" position={Position.Left} id="in" style={inHandle} />
       {labels.map((_label, i) => {

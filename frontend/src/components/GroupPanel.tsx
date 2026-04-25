@@ -457,7 +457,7 @@ export function GroupPanel({ idToken, rooms, createGroupRoom, onRoomSelect, room
   };
 
   const selectedGroup = selectedGroupId ? groups.find(g => g.groupId === selectedGroupId) : null;
-  const selectedGroupRole = selectedGroup && currentUserId
+  const selectedGroupRole: string = selectedGroup && currentUserId
     ? (selectedGroup.ownerId === currentUserId ? 'owner' : 'member')
     : 'member';
 

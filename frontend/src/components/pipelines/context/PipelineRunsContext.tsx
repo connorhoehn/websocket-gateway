@@ -628,3 +628,16 @@ export function usePipelineRuns(): PipelineRunsValue {
   }
   return ctx;
 }
+
+/**
+ * Ergonomic shortcut: returns just the `retryFromStep` callback so per-node
+ * components don't have to destructure the whole runs value. See §17.6.
+ *
+ * Graceful when no `PipelineRunsProvider` is in scope — returns a no-op so
+ * standalone visual renders (storybook, isolated unit tests) don't throw just
+ * for asking for the retry handler.
+ */
+export function useRetryFromStep(): (nodeId: string) => void {
+  const ctx = useContext(PipelineRunsContext);
+  return ctx?.retryFromStep ?? (() => {});
+}

@@ -173,6 +173,53 @@ On an empty `/pipelines` list, click **"try the demo pipeline"** in the empty
 state. It spawns a pre-built showcase (Trigger → LLM → Transform → Action)
 so you can skip straight to step 3.
 
+### Seeding sample pipelines + run history (dev only)
+
+For a more realistic playground — three published pipelines drawn from the
+templates registry, each with 15 runs spread across the last 30 days and a
+mix of completed / failed / running / cancelled / awaiting-approval statuses
+— run the seeder from the browser DevTools console:
+
+```js
+// Available only when the app was started with `npm run dev` (Vite sets
+// import.meta.env.DEV = true). Not present in production builds.
+__pipelineDemo.seed();
+// → { pipelines: 3, runs: 45 }
+
+// Wipe just the demo rows (leaves user-created pipelines intact):
+__pipelineDemo.clear();
+// → { pipelines: 3, runs: 45 }
+```
+
+The seeder is deterministic — re-running it (after a `clear()` or with
+`{ clearExisting: true }`) yields byte-identical pipeline ids, run ids,
+timestamps, and token counts. Useful when diffing UI snapshots or capturing
+reproducible bug reports.
+
+Options:
+
+```js
+__pipelineDemo.seed({ clearExisting: true });   // wipe demo rows first
+__pipelineDemo.seed({ runsPerPipeline: 30 });   // denser run history
+__pipelineDemo.seed({ nowMs: 1_700_000_000_000 }); // anchor the 30-day window
+```
+
+The three pipelines spawned are pulled directly from
+`frontend/src/components/pipelines/templates/index.ts`:
+
+| Template id           | Why it's interesting                                       |
+|-----------------------|------------------------------------------------------------|
+| `incident-response`   | Webhook trigger + condition + approval branch.             |
+| `code-review`         | Fork-into-3 → Join → synthesize — exercises parallelism.  |
+| `support-triage`      | Condition + approval gate; awaiting-approval runs land on the **Pending Approvals** page. |
+
+Cost-by-node and cost-by-day charts populate from real `MODEL_PRICING`
+entries (every demo LLM step references a model the pricing table knows
+about), so the **Stats** tab renders dollar figures rather than dashes.
+
+The persistence module is `frontend/src/components/pipelines/persistence/seedDemoData.ts`.
+Tests covering the seeder live alongside it under `__tests__/`.
+
 ### Resetting storage
 
 Open DevTools → Application → Local Storage → your origin, and delete every

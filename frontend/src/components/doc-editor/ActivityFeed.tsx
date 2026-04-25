@@ -92,7 +92,7 @@ const presenceBarStyle: React.CSSProperties = {
   flexWrap: 'wrap',
 };
 
-const presenceDotStyle = (color: string): React.CSSProperties => ({
+const presenceDotStyle = (_color: string): React.CSSProperties => ({
   display: 'inline-flex',
   alignItems: 'center',
   gap: 4,

@@ -10,6 +10,7 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { ApprovalNodeData, Approver } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 type ApprovalData = ApprovalNodeData & {
   _state?: NodeExecutionState;
@@ -22,8 +23,12 @@ function approverLabel(a: Approver): string {
 }
 
 export default function ApprovalNode(props: NodeProps<ApprovalFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 retry-from-here — see TriggerNode for the rationale.
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
 
   const approvers = data.approvers ?? [];
   const total = approvers.length;
@@ -84,6 +89,7 @@ export default function ApprovalNode(props: NodeProps<ApprovalFlowNode>) {
       state={state}
       body={body}
       selected={selected}
+      onRetry={onRetry}
     >
       <Handle type="target" position={Position.Left}  id="in"       style={inHandle} />
       <Handle type="source" position={Position.Right} id="approved" style={approvedHandle} />

@@ -281,6 +281,59 @@ describe('useReplayDriver', () => {
     expect(result.current.state.playing).toBe(false);
   });
 
+  test('setSpeed accepts each canonical multiplier (0.5, 1, 2, 4) and keeps cursor', () => {
+    const run = makeRun();
+    const { result } = renderHook(() => useReplayDriver(run), {
+      wrapper: Wrapper,
+    });
+
+    // Park the cursor mid-stream so we can verify setSpeed never resets it.
+    act(() => {
+      result.current.seek(2);
+    });
+    const parked = result.current.state.cursor;
+    expect(parked).toBe(2);
+
+    for (const multiplier of [0.5, 1, 2, 4] as const) {
+      act(() => {
+        result.current.setSpeed(multiplier);
+      });
+      expect(result.current.state.speedMultiplier).toBe(multiplier);
+      // Speed change MUST NOT rewind / advance the cursor.
+      expect(result.current.state.cursor).toBe(parked);
+    }
+  });
+
+  test('setSpeed mid-playback keeps the cursor and continues at the new rate', () => {
+    const run = makeRun();
+    const { result } = renderHook(() => useReplayDriver(run), {
+      wrapper: Wrapper,
+    });
+    const total = result.current.events.length;
+
+    act(() => {
+      result.current.play();
+    });
+    // After play kicks off, cursor is at 1 (first event already emitted).
+    const cursorBefore = result.current.state.cursor;
+    expect(result.current.state.playing).toBe(true);
+
+    // Bump to 4× while playing — must not reset cursor or stop playback.
+    act(() => {
+      result.current.setSpeed(4);
+    });
+    expect(result.current.state.speedMultiplier).toBe(4);
+    expect(result.current.state.playing).toBe(true);
+    expect(result.current.state.cursor).toBe(cursorBefore);
+
+    // Drain timers — playback should still complete cleanly at the new rate.
+    act(() => {
+      vi.runAllTimers();
+    });
+    expect(result.current.state.cursor).toBe(total);
+    expect(result.current.state.playing).toBe(false);
+  });
+
   test('events dispatched by the driver preserve ordering invariants over a full play-through', () => {
     const run = makeRun();
     const seen: string[] = [];

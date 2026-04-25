@@ -18,7 +18,14 @@ import { documentImportExportRouter } from './documentImportExport';
 import { videoSessionsRouter } from './videoSessions';
 import { pipelineMetricsRouter, observabilityRouter } from './pipelineMetrics';
 import { pipelineDefinitionsRouter } from './pipelineDefinitions';
-import { pipelineTriggersRouter, pipelineApprovalsRouter } from './pipelineTriggers';
+import { pipelineHealthRouter } from './pipelineHealth';
+import {
+  pipelineTriggersRouter,
+  pipelineApprovalsRouter,
+  pipelineActiveRunsRouter,
+  pipelineCancelRouter,
+} from './pipelineTriggers';
+import { pipelineValidationRouter } from './pipelineValidation';
 
 const router = Router();
 
@@ -50,10 +57,24 @@ router.use('/video', videoSessionsRouter);
 // param would otherwise swallow `/pipelines/metrics`.
 router.use('/pipelines/metrics', pipelineMetricsRouter);
 router.use('/pipelines/defs', pipelineDefinitionsRouter);
-// Per-pipeline run trigger. Mounted AFTER the static `/metrics` and `/defs`
-// segments so their specific paths match first (Express resolves mounts in
-// registration order — a `:pipelineId` mount would otherwise swallow them).
+// Health introspection — same precedence rule as `/metrics` and `/defs`:
+// register the static segment BEFORE any `:pipelineId` mount.
+router.use('/pipelines/health', pipelineHealthRouter);
+// Validation — POST /api/pipelines/validate. Static segment, must precede
+// the `:pipelineId` mount below for the same reason as `/metrics`/`/defs`.
+router.use('/pipelines/validate', pipelineValidationRouter);
+// Active-runs listing — GET /api/pipelines/runs/active. Static segment,
+// must precede the `:pipelineId` mount below so `runs` doesn't get
+// interpreted as a pipelineId.
+router.use('/pipelines/runs/active', pipelineActiveRunsRouter);
+// Per-pipeline run trigger. Mounted AFTER the static `/metrics`, `/defs`,
+// `/health`, `/validate`, and `/runs/active` segments so their specific
+// paths match first (Express resolves mounts in registration order — a
+// `:pipelineId` mount would otherwise swallow them).
 router.use('/pipelines/:pipelineId/runs', pipelineTriggersRouter);
+// Cancel — POST /api/pipelines/:runId/cancel. Mounted at the same level
+// as approvals; both are run-scoped (not pipeline-scoped).
+router.use('/pipelines/:runId/cancel', pipelineCancelRouter);
 // Approvals — POST /api/pipelines/:runId/approvals (per PIPELINES_PLAN §17.10).
 router.use('/pipelines/:runId/approvals', pipelineApprovalsRouter);
 // Observability — GET /api/observability/dashboard, /api/observability/metrics.

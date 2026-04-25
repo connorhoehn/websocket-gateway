@@ -13,6 +13,7 @@ import {
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { JoinNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
+import { useRetryFromStep } from '../../context/PipelineRunsContext';
 
 type JoinData = JoinNodeData & {
   _state?: NodeExecutionState;
@@ -36,8 +37,12 @@ function mergeLabel(strategy: JoinData['mergeStrategy']): string {
 }
 
 export default function JoinNode(props: NodeProps<JoinFlowNode>) {
-  const { data, selected } = props;
+  const { id, data, selected } = props;
   const state: NodeExecutionState = data._state ?? 'idle';
+
+  // §17.6 retry-from-here — see TriggerNode for the rationale.
+  const retry = useRetryFromStep();
+  const onRetry = state === 'failed' ? () => retry(id) : undefined;
 
   // Count incoming connections. Always render at least 2 handles so the
   // node has a visible join-point even when unconnected; grow beyond the
@@ -56,6 +61,7 @@ export default function JoinNode(props: NodeProps<JoinFlowNode>) {
       state={state}
       body={<span style={{ fontStyle: 'italic' }}>{mergeLabel(data.mergeStrategy)}</span>}
       selected={selected}
+      onRetry={onRetry}
     >
       {Array.from({ length: handleCount }, (_, i) => {
         const pct = ((i + 1) / (handleCount + 1)) * 100;

@@ -162,9 +162,19 @@ export interface TriggerBinding {
   documentTypeId?: string;
   schedule?: string;
   webhookPath?: string;
+  /**
+   * 32-byte hex secret used to verify HMAC-SHA256 signatures on incoming
+   * webhook payloads. Generated server-side by social-api the first time a
+   * webhook trigger binding is saved (see
+   * `social-api/src/routes/pipelineDefinitions.ts`). The frontend never
+   * mints this — it only displays it so the user can copy it into the
+   * external webhook source's "secret" field. Absent → the route falls
+   * back to Phase-1 unsigned-OK behavior.
+   */
+  webhookSecret?: string;
 }
 
-export type PipelineStatus = 'draft' | 'published';
+export type PipelineStatus = 'draft' | 'published' | 'archived';
 
 export interface PipelineDefinition {
   id: string;
@@ -405,6 +415,17 @@ export type PipelineEventMap = {
     at: string;
   };
 
+  // External webhook arrived at /hooks/pipeline/:path. Phase 4 will deliver
+  // these from the gateway bridge to the frontend so `useWebhookTriggers` can
+  // match and fire a run; Phase 1 the event type exists but no producer is
+  // wired (the social-api route only logs + 202s).
+  'pipeline.webhook.triggered': {
+    webhookPath: string;
+    body: unknown;
+    headers: Record<string, string>;
+    at: string;
+  };
+
   // Join bookkeeping (observability / debugging)
   'pipeline.join.waiting': {
     runId: string;
@@ -462,7 +483,9 @@ export type ValidationCode =
   | 'DEEP_CHAIN'
   | 'DUPLICATE_NODE_NAME'
   | 'LOW_TEMPERATURE_NON_DETERMINISTIC_PROMPT'
-  | 'NO_PUBLISHED_VERSION_BUT_TRIGGER_SCHEDULED';
+  | 'NO_PUBLISHED_VERSION_BUT_TRIGGER_SCHEDULED'
+  | 'UNREACHABLE_AFTER_CONDITION_FALSE'
+  | 'FORK_WITHOUT_MATCHING_JOIN';
 
 export interface ValidationIssue {
   code: ValidationCode;

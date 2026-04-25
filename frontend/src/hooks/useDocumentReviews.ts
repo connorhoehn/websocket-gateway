@@ -53,7 +53,7 @@ function groupBySection(
 export function useDocumentReviews(
   options: UseDocumentReviewsOptions,
 ): UseDocumentReviewsReturn {
-  const { documentId, idToken, sendMessage, onMessage, connectionState } = options;
+  const { documentId, idToken, sendMessage, onMessage } = options;
 
   // ---- State ---------------------------------------------------------------
   const [sectionReviews, setSectionReviews] = useState<Record<string, SectionReview[]>>({});
@@ -66,12 +66,10 @@ export function useDocumentReviews(
   const documentIdRef = useRef(documentId);
   useEffect(() => { documentIdRef.current = documentId; }, [documentId]);
 
-  const authHeaders = useMemo(() => {
-    if (!idToken) return {};
-    return {
-      Authorization: `Bearer ${idToken}`,
-      'Content-Type': 'application/json',
-    };
+  const authHeaders = useMemo((): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = `Bearer ${idToken}`;
+    return headers;
   }, [idToken]);
 
   // ---- Fetch initial reviews on mount / documentId change ------------------

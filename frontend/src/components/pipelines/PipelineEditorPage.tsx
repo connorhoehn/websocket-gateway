@@ -54,6 +54,7 @@ import IconPicker from '../shared/IconPicker';
 import TagEditor from '../shared/TagEditor';
 import { useToast } from '../shared/ToastProvider';
 import SimulatorPanel from './dev/SimulatorPanel';
+import SourceDiagnosticBanner from './diagnostics/SourceDiagnosticBanner';
 import { colors } from '../../constants/styles';
 import type {
   NodeType,
@@ -1077,6 +1078,12 @@ function EditorFrame({ pipelineId }: EditorFrameProps) {
           ) : null}
         </div>
       </div>
+
+      {/* ── Source-diagnostic banner ─────────────────────────────────
+          Shows only when VITE_PIPELINE_SOURCE=websocket AND no events
+          have flowed for 10s after mount. Self-renders null otherwise so
+          this slot is invisible on the default mock path. */}
+      <SourceDiagnosticBanner />
 
       {/* ── Tags row (compact metadata strip) — hidden by default ── */}
       {showTags ? (

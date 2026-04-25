@@ -372,7 +372,12 @@ export default function DashboardPage() {
         <div style={sectionTitleStyle}>
           Active runs ({PHASE1_ACTIVE_RUNS.length})
         </div>
-        <ActiveRunsTable runs={PHASE1_ACTIVE_RUNS} />
+        <ActiveRunsTable
+          runs={PHASE1_ACTIVE_RUNS}
+          onRowClick={(run) =>
+            navigate(`/pipelines/${run.pipelineId}/runs/${run.runId}`)
+          }
+        />
       </div>
 
       {/* Recent events */}

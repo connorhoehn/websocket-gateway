@@ -51,3 +51,4 @@ Each type change appends a line here (date, one-line description, commit SHA pla
 
 - 2026-04-24 — Initial split. Both copies shape-equal.
 - 2026-04-24 — Added `PipelineWireEvent` envelope type — both repos updated. (commit TBD)
+- 2026-04-23 — Added cron parser duplicates: `frontend/src/components/pipelines/cron/cronUtils.ts` (parseCron / matchesCron / nextFires) and `social-api/src/services/scheduleEvaluator.ts` (parseCronExpression / cronMatches). Same 5-field grammar (`*`, `N`, `N,M,...`, `A-B`, `*\/N`). Cross-project module sharing isn't possible yet — keep both copies in lockstep. (commit TBD)

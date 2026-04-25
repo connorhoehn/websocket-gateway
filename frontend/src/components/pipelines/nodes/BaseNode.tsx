@@ -10,6 +10,12 @@
 // "⟳ Retry from here" pill is rendered inline below the header per
 // §18.4.4 / §17.6. Clicking it stops propagation so it doesn't select
 // the node on the React Flow canvas.
+//
+// Accessibility: the card itself carries `role="button"`, an aria-label
+// composed from icon/subtitle/state, `aria-selected` mirroring the
+// React-Flow selection state, `data-node-state` for execution state, and
+// a `tabIndex` so keyboard users can land on it. A `:focus-visible` outline
+// (drawn from `colors.primary`) is added so keyboard focus is obvious.
 
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { colors } from '../../../constants/styles';
@@ -42,6 +48,13 @@ export interface BaseNodeProps {
    * Per PIPELINES_PLAN.md §18.4.4 / §17.6.
    */
   onRetry?: () => void;
+  /**
+   * Optional override for the accessible name. When omitted we synthesize one
+   * from `subtitle` + `state`. Callers (per node-type) can pass a richer
+   * string (e.g. "LLM node, Claude Opus 4, system prompt: …") for screen
+   * reader users.
+   */
+  ariaLabel?: string;
   children?: ReactNode;
 }
 
@@ -72,7 +85,7 @@ const STATE_STYLES: Record<NodeExecutionState, StateStyle> = {
 // ---------------------------------------------------------------------------
 
 export default function BaseNode(props: BaseNodeProps) {
-  const { icon, subtitle, state, body, footer, selected, onRetry, children } = props;
+  const { icon, subtitle, state, body, footer, selected, onRetry, ariaLabel, children } = props;
   const tokens = STATE_STYLES[state];
   const reduceMotion = usePrefersReducedMotion();
   const [retryHover, setRetryHover] = useState(false);
@@ -117,6 +130,9 @@ export default function BaseNode(props: BaseNodeProps) {
     transition: reduceMotion
       ? 'none'
       : 'border-color 200ms cubic-bezier(0.4, 0, 0.2, 1), background-color 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+    // Native button reset — we use `role="button"` on a div so React Flow can
+    // own pointer events, but we still want a tight focus model.
+    outline: 'none',
   };
 
   const headerStyle: CSSProperties = {
@@ -182,15 +198,33 @@ export default function BaseNode(props: BaseNodeProps) {
     color: colors.textSecondary,
   };
 
+  // Synthesize a sensible default aria-label when the caller didn't supply one.
+  const defaultAriaLabel = subtitle ? `${subtitle}, state: ${state}` : `Node, state: ${state}`;
+
   return (
-    <div style={cardStyle} data-state={state}>
-      {/* Keyframes for the pending/running dot pulse. Injected per-node
-          render; the browser dedupes identical @keyframes so this stays
-          cheap. See PIPELINES_PLAN.md §18.12. */}
+    <div
+      style={cardStyle}
+      role="button"
+      tabIndex={0}
+      aria-label={ariaLabel ?? defaultAriaLabel}
+      aria-selected={!!selected}
+      data-state={state}
+      data-node-state={state}
+      data-pipeline-node="true"
+    >
+      {/* Keyframes for the pending/running dot pulse and a focus-visible
+          outline. Pulse keyframes were already documented in PIPELINES_PLAN.md
+          §18.12; the focus-visible outline uses `colors.primary` so it matches
+          the rest of the editor's keyboard-focus treatment. The browser dedupes
+          identical @keyframes / selectors so this stays cheap per render. */}
       <style>{`
         @keyframes basenode-pulse {
           0%, 100% { opacity: 1;   transform: scale(1);   }
           50%      { opacity: 0.55; transform: scale(1.25); }
+        }
+        [data-pipeline-node="true"]:focus-visible {
+          outline: 2px solid ${colors.primary};
+          outline-offset: 2px;
         }
       `}</style>
       <div style={headerStyle}>
