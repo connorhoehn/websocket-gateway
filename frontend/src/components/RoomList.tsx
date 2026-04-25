@@ -20,6 +20,7 @@ interface RoomListProps {
   loading: boolean;
   onRoomSelect: (room: RoomItem) => void;
   activeRoomId?: string | null;
+  compact?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,10 +252,39 @@ function RoomRow({ room, isActive, onClick }: RoomRowProps) {
 }
 
 // ---------------------------------------------------------------------------
+// CompactRoomRow (internal — sidebar style)
+// ---------------------------------------------------------------------------
+
+function CompactRoomRow({ room, isActive, onClick }: RoomRowProps) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        width: '100%', border: 'none', borderRadius: 5,
+        padding: '6px 8px', cursor: 'pointer',
+        background: isActive ? '#ede9fe' : 'transparent',
+        color: isActive ? '#4c1d95' : '#374151',
+        fontWeight: isActive ? 600 : 400,
+        fontSize: 13, textAlign: 'left',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+      }}
+    >
+      <span style={{ color: isActive ? '#646cff' : '#94a3b8', fontSize: 13, flexShrink: 0 }}>
+        {room.type === 'dm' ? '●' : '#'}
+      </span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+        {room.name}
+      </span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // RoomList (exported)
 // ---------------------------------------------------------------------------
 
-export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoomSelect, activeRoomId }: RoomListProps) {
+export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoomSelect, activeRoomId, compact }: RoomListProps) {
   const { friends } = useFriends({ idToken });
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -263,6 +293,50 @@ export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoom
     await createRoom(name);
     setShowCreateForm(false);
   };
+
+  if (compact) {
+    return (
+      <div style={{ padding: '8px 8px 0' }}>
+        {/* Compact "+ New Room" link */}
+        <button
+          onClick={() => setShowCreateForm(prev => !prev)}
+          style={{
+            width: '100%', textAlign: 'left', padding: '5px 8px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 12, color: '#646cff', fontWeight: 600,
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            borderRadius: 4,
+          }}
+        >
+          + New Room
+        </button>
+        {showCreateForm && (
+          <CreateRoomForm
+            onCreate={handleCreateRoom}
+            onDiscard={() => setShowCreateForm(false)}
+            loading={loading}
+          />
+        )}
+        <DMRoomButton onCreateDM={createDM} loading={loading} friends={friends} />
+        <div>
+          {loading && rooms.length === 0 ? (
+            <div style={{ padding: '8px', color: '#94a3b8', fontSize: 12, textAlign: 'center' }}>Loading…</div>
+          ) : rooms.length === 0 ? (
+            <div style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 12 }}>No rooms yet</div>
+          ) : (
+            rooms.map(room => (
+              <CompactRoomRow
+                key={room.roomId}
+                room={room}
+                isActive={room.roomId === activeRoomId}
+                onClick={() => onRoomSelect(room)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const sectionCardStyle: React.CSSProperties = {
     background: '#ffffff',

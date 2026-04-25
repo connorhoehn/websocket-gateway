@@ -43,18 +43,12 @@ class DocumentToolHandler {
         return this.getItems(args, authToken);
       case 'document_update_item':
         return this.updateItem(args, authToken);
-      case 'document_get_workflow':
-        return this.getWorkflow(args, authToken);
-      case 'document_advance_workflow':
-        return this.advanceWorkflow(args, authToken);
       case 'document_get_activity':
         return this.getActivity(args, authToken);
       case 'my_pending_items':
         return this.myPendingItems(args, authToken);
       case 'my_pending_reviews':
         return this.myPendingReviews(authToken);
-      case 'my_pending_workflows':
-        return this.myPendingWorkflows(authToken);
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
@@ -148,7 +142,7 @@ class DocumentToolHandler {
     };
   }
 
-  /** Get full document with sections, items, comments, reviews, workflows. */
+  /** Get full document with sections, items, comments, and reviews. */
   async getDocument(documentId, authToken) {
     return this._get(`/documents/${documentId}/export?format=json`, authToken);
   }
@@ -198,22 +192,6 @@ class DocumentToolHandler {
     return this._patch(`/documents/${documentId}/sections/${sectionId}/items/${itemId}`, body, authToken);
   }
 
-  /** Get workflow(s) for a document, optionally a specific workflow. */
-  async getWorkflow({ documentId, workflowId }, authToken) {
-    if (workflowId) {
-      return this._get(`/documents/${documentId}/workflows/${workflowId}`, authToken);
-    }
-    return this._get(`/documents/${documentId}/workflows`, authToken);
-  }
-
-  /** Advance a workflow step (approve / reject / skip). */
-  async advanceWorkflow({ documentId, workflowId, action, comment }, authToken) {
-    return this._post(`/documents/${documentId}/workflows/${workflowId}/advance`, {
-      action,
-      ...(comment ? { comment } : {}),
-    }, authToken);
-  }
-
   /** Get activity feed for current user. */
   async getActivity({ limit }, authToken) {
     const qs = limit ? `?limit=${limit}` : '';
@@ -229,11 +207,6 @@ class DocumentToolHandler {
   /** Get pending review requests for the current user. */
   async myPendingReviews(authToken) {
     return this._get('/reviews/mine', authToken);
-  }
-
-  /** Get pending workflow approvals for the current user. */
-  async myPendingWorkflows(authToken) {
-    return this._get('/workflows/pending', authToken);
   }
 }
 

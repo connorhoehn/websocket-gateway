@@ -1,29 +1,17 @@
 // frontend/src/components/SocialTabContent.tsx
 //
-// Lazy-loadable view for the "Social" tab — profile card + channels/groups/DMs + activity.
+// Slack-style layout: compact room/DM sidebar on the left, chat view on the right.
 
 import { useState } from 'react';
 import type { RoomItem } from '../hooks/useRooms';
 import type { ActivityEvent } from '../hooks/useActivityBus';
+import type { GatewayMessage } from '../types/gateway';
 
 import { RoomList } from './RoomList';
 import { GroupPanel } from './GroupPanel';
+import { ChatRoom } from './ChatRoom';
 
-const sectionCardStyle: React.CSSProperties = {
-  background: '#ffffff',
-  border: '1px solid #e2e8f0',
-  borderRadius: 8,
-  padding: '1.25rem',
-};
-
-const sectionHeaderStyle: React.CSSProperties = {
-  fontSize: '0.75rem',
-  fontWeight: 600,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  color: '#64748b',
-  margin: '0 0 0.75rem 0',
-};
+type OnMessageFn = (handler: (msg: GatewayMessage) => void) => () => void;
 
 export interface SocialTabContentProps {
   userId: string;
@@ -39,13 +27,12 @@ export interface SocialTabContentProps {
   handleRoomSelect: (room: RoomItem) => void;
   activeRoomId: string | null;
   activityEvents: ActivityEvent[];
+  onMessage: OnMessageFn;
 }
 
 export default function SocialTabContent({
   userId,
   displayName,
-  userEmail,
-  connectionState,
   idToken,
   rooms,
   createRoom,
@@ -54,98 +41,82 @@ export default function SocialTabContent({
   roomsLoading,
   handleRoomSelect,
   activeRoomId,
-  activityEvents,
+  onMessage,
 }: SocialTabContentProps) {
-  const [socialTab, setSocialTab] = useState<'groups' | 'channels' | 'dms'>('channels');
+  const [socialTab, setSocialTab] = useState<'channels' | 'groups' | 'dms'>('channels');
 
   const initials = displayName
     ? displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : userId.slice(0, 2).toUpperCase();
 
+  const activeRoom = rooms.find(r => r.roomId === activeRoomId) ?? null;
+
   return (
-    <>
-      {/* Profile card */}
+    <div style={{
+      display: 'flex',
+      height: 'calc(100vh - 120px)',
+      background: '#fff',
+      borderRadius: 8,
+      border: '1px solid #e2e8f0',
+      overflow: 'hidden',
+    }}>
+      {/* ── Left sidebar ──────────────────────────────────────────────────── */}
       <div style={{
-        ...sectionCardStyle,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1rem',
+        width: 240, flexShrink: 0,
+        display: 'flex', flexDirection: 'column',
+        borderRight: '1px solid #e2e8f0',
+        background: '#f8fafc',
+        overflow: 'hidden',
       }}>
+        {/* Profile row */}
         <div style={{
-          width: 48, height: 48, borderRadius: '50%',
-          background: 'linear-gradient(135deg, #646cff, #9b59b6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '12px 14px',
+          borderBottom: '1px solid #e2e8f0',
+          flexShrink: 0,
         }}>
-          {initials}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {displayName || userId}
-          </div>
-          {userEmail && (
-            <div style={{ fontSize: '0.8125rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userEmail}
-            </div>
-          )}
-        </div>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.375rem',
-          fontSize: '0.75rem', fontWeight: 500,
-          color: connectionState === 'connected' ? '#16a34a' : '#ef4444', flexShrink: 0,
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: connectionState === 'connected' ? '#16a34a' : '#ef4444',
-            display: 'inline-block',
-          }} />
-          {connectionState === 'connected' ? 'Online' : 'Offline'}
-        </div>
-      </div>
-
-      {/* Split layout: left tabs + right activity */}
-      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-        {/* Left panel — Groups / Channels / DMs */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Sub-tabs */}
           <div style={{
-            display: 'flex', alignItems: 'center',
-            borderBottom: '1px solid #e2e8f0', marginBottom: '0.75rem',
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #646cff, #9b59b6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 700, fontSize: 12, flexShrink: 0,
           }}>
-            {([
-              ['channels', 'Channels'],
-              ['groups', 'Groups'],
-              ['dms', 'DMs'],
-            ] as const).map(([tab, label]) => (
-              <button
-                key={tab}
-                onClick={() => setSocialTab(tab)}
-                style={{
-                  padding: '0.5rem 1rem', border: 'none',
-                  borderBottom: socialTab === tab ? '2px solid #646cff' : '2px solid transparent',
-                  background: 'none',
-                  color: socialTab === tab ? '#0f172a' : '#64748b',
-                  fontWeight: socialTab === tab ? 600 : 400,
-                  fontSize: '0.875rem', cursor: 'pointer',
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            {initials}
           </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayName || userId}
+          </span>
+        </div>
 
+        {/* Sub-tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+          {([['channels', 'Channels'], ['groups', 'Groups'], ['dms', 'DMs']] as const).map(([tab, label]) => (
+            <button key={tab} onClick={() => setSocialTab(tab)} style={{
+              flex: 1, padding: '7px 0', border: 'none', background: 'none',
+              borderBottom: socialTab === tab ? '2px solid #646cff' : '2px solid transparent',
+              color: socialTab === tab ? '#0f172a' : '#64748b',
+              fontWeight: socialTab === tab ? 600 : 400,
+              fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Room list */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {socialTab === 'channels' && (
             <RoomList
               idToken={idToken}
-              rooms={rooms}
+              rooms={rooms.filter(r => r.type !== 'dm')}
               createRoom={createRoom}
               createDM={createDM}
               loading={roomsLoading}
               onRoomSelect={handleRoomSelect}
               activeRoomId={activeRoomId}
+              compact
             />
           )}
-
           {socialTab === 'groups' && (
             <GroupPanel
               idToken={idToken}
@@ -155,61 +126,43 @@ export default function SocialTabContent({
               roomsLoading={roomsLoading}
             />
           )}
-
           {socialTab === 'dms' && (
-            <div style={sectionCardStyle}>
-              <p style={sectionHeaderStyle}>Direct Messages</p>
-              <RoomList
-                idToken={idToken}
-                rooms={rooms}
-                createRoom={createRoom}
-                createDM={createDM}
-                loading={roomsLoading}
-                onRoomSelect={handleRoomSelect}
-                activeRoomId={activeRoomId}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Right panel — Activity (always visible) */}
-        <div style={{
-          width: 320, flexShrink: 0,
-          ...sectionCardStyle,
-          position: 'sticky', top: '1rem',
-          maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
-        }}>
-          <p style={sectionHeaderStyle}>Activity</p>
-          {activityEvents.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.875rem', margin: 0 }}>No activity yet.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              {activityEvents.slice().reverse().slice(0, 50).map((evt) => (
-                <div key={evt.id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-                  fontSize: '0.8125rem', padding: '0.375rem 0.5rem',
-                  borderRadius: 6, background: '#f8fafc',
-                }}>
-                  <span style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: evt.color || '#646cff', flexShrink: 0, marginTop: 6,
-                  }} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                      {evt.displayName || evt.userId || 'System'}
-                    </span>
-                    {' '}
-                    <span style={{ color: '#64748b' }}>{evt.eventType}</span>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 1 }}>
-                      {new Date(evt.timestamp).toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <RoomList
+              idToken={idToken}
+              rooms={rooms.filter(r => r.type === 'dm')}
+              createRoom={createRoom}
+              createDM={createDM}
+              loading={roomsLoading}
+              onRoomSelect={handleRoomSelect}
+              activeRoomId={activeRoomId}
+              compact
+            />
           )}
         </div>
       </div>
-    </>
+
+      {/* ── Main chat area ────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {activeRoom ? (
+          <ChatRoom
+            key={activeRoom.roomId}
+            idToken={idToken}
+            roomId={activeRoom.roomId}
+            roomName={activeRoom.name}
+            onMessage={onMessage}
+          />
+        ) : (
+          <div style={{
+            height: '100%', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            color: '#94a3b8', gap: 8,
+          }}>
+            <span style={{ fontSize: 36 }}>💬</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#374151' }}>Select a room to start chatting</span>
+            <span style={{ fontSize: 13 }}>Choose a channel or DM from the sidebar</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

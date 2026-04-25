@@ -20,7 +20,6 @@ interface CreateGroupFormProps {
 
 function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps) {
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -41,7 +40,7 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
     if (!name.trim()) return;
     setFormError(null);
     try {
-      await onCreate(name.trim(), description.trim() || undefined, visibility);
+      await onCreate(name.trim(), undefined, visibility);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to create group');
     }
@@ -49,7 +48,7 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
 
   return (
     <form onSubmit={(e) => { void handleSubmit(e); }} style={{ marginBottom: 12, padding: '12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ marginBottom: 12 }}>
         <label style={{ fontSize: 14, color: '#374151', display: 'block', marginBottom: 4 }}>Group name</label>
         <input
           value={name}
@@ -60,41 +59,36 @@ function CreateGroupForm({ onCreate, onDiscard, loading }: CreateGroupFormProps)
           style={inputStyle}
         />
       </div>
-      <div style={{ marginBottom: 8 }}>
-        <label style={{ fontSize: 14, color: '#374151', display: 'block', marginBottom: 4 }}>Description (optional)</label>
-        <textarea
-          value={description}
-          onChange={e => setDescription(e.target.value.slice(0, 160))}
-          placeholder="Describe your group (max 160 characters)"
-          maxLength={160}
-          rows={2}
-          style={{ ...inputStyle, resize: 'vertical' }}
-        />
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <div role="radiogroup" aria-label="Group visibility" style={{ display: 'flex', gap: 8 }}>
-          {(['public', 'private'] as const).map(v => (
-            <button
-              key={v}
-              type="button"
-              role="radio"
-              aria-checked={visibility === v}
-              onClick={() => setVisibility(v)}
-              style={{
-                padding: '4px 16px',
-                borderRadius: 20,
-                fontSize: 14,
-                cursor: 'pointer',
-                border: '1px solid #e2e8f0',
-                background: visibility === v ? '#646cff' : '#ffffff',
-                color: visibility === v ? '#ffffff' : '#374151',
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-              }}
-            >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
-        </div>
+      {/* Visibility toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <span style={{ fontSize: 13, color: '#374151', minWidth: 42 }}>
+          {visibility === 'public' ? 'Public' : 'Private'}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={visibility === 'private'}
+          onClick={() => setVisibility(v => v === 'public' ? 'private' : 'public')}
+          style={{
+            position: 'relative',
+            width: 44, height: 24, borderRadius: 12,
+            background: visibility === 'private' ? '#646cff' : '#d1d5db',
+            border: 'none', cursor: 'pointer', padding: 0,
+            transition: 'background 200ms ease', flexShrink: 0,
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 3,
+            left: visibility === 'private' ? 23 : 3,
+            width: 18, height: 18, borderRadius: '50%',
+            background: '#fff',
+            transition: 'left 200ms ease',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          }} />
+        </button>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          {visibility === 'public' ? 'Visible to everyone' : 'Invite only'}
+        </span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button
@@ -486,34 +480,11 @@ export function GroupPanel({ idToken, rooms, createGroupRoom, onRoomSelect, room
   return (
     <div style={sectionCardStyle}>
       <h2 style={sectionHeaderStyle}>Groups</h2>
-      <button
-        onClick={() => setShowCreateForm(prev => !prev)}
-        style={{
-          width: '100%',
-          height: 36,
-          marginBottom: 12,
-          background: '#646cff',
-          color: '#ffffff',
-          border: 'none',
-          borderRadius: 8,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-        }}
-      >
-        Create Group
-      </button>
-      {showCreateForm && (
-        <CreateGroupForm
-          onCreate={handleCreateGroup}
-          onDiscard={() => setShowCreateForm(false)}
-          loading={loading}
-        />
-      )}
-      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+
+      {/* Group list — always above the create form */}
+      <div style={{ maxHeight: 320, overflowY: 'auto', marginBottom: 12 }}>
         {groups.length === 0 ? (
-          <div style={{ padding: '24px 0', textAlign: 'center' }}>
+          <div style={{ padding: '16px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>
               No groups yet
             </div>
@@ -534,8 +505,9 @@ export function GroupPanel({ idToken, rooms, createGroupRoom, onRoomSelect, room
           ))
         )}
       </div>
+
       {selectedGroupId && (
-        <div>
+        <div style={{ marginBottom: 12 }}>
           <MemberList members={members} />
           {(selectedGroupRole === 'owner' || selectedGroupRole === 'admin') && (
             <InviteForm groupId={selectedGroupId} onInvite={inviteUser} />
@@ -549,6 +521,33 @@ export function GroupPanel({ idToken, rooms, createGroupRoom, onRoomSelect, room
             loading={roomsLoading}
           />
         </div>
+      )}
+
+      {/* Create form — at the bottom */}
+      <button
+        onClick={() => setShowCreateForm(prev => !prev)}
+        style={{
+          width: '100%',
+          height: 36,
+          marginBottom: showCreateForm ? 8 : 0,
+          background: '#646cff',
+          color: '#ffffff',
+          border: 'none',
+          borderRadius: 8,
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+        }}
+      >
+        {showCreateForm ? 'Cancel' : 'Create Group'}
+      </button>
+      {showCreateForm && (
+        <CreateGroupForm
+          onCreate={handleCreateGroup}
+          onDiscard={() => setShowCreateForm(false)}
+          loading={loading}
+        />
       )}
     </div>
   );

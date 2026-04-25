@@ -1,7 +1,7 @@
 {
   "name": "websocket-gateway-documents",
   "version": "1.0.0",
-  "description": "MCP server for collaborative document management — comments, reviews, action items, workflows",
+  "description": "MCP server for collaborative document management — comments, reviews, action items",
   "transport": "stdio",
   "command": "node",
   "args": ["src/mcp/document-mcp-server.js"],
@@ -18,11 +18,8 @@
     "document_submit_review",
     "document_get_items",
     "document_update_item",
-    "document_get_workflow",
-    "document_advance_workflow",
     "document_get_activity",
     "my_pending_items",
-    "my_pending_reviews",
-    "my_pending_workflows"
+    "my_pending_reviews"
   ]
 }

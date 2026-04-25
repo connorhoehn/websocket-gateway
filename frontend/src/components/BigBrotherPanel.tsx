@@ -50,6 +50,26 @@ function formatActivity(event: ActivityEvent): { icon: string; text: string } {
       return { icon: '\uD83D\uDCC1', text: 'Added new section' };
     case 'doc.edit_section':
       return { icon: '\u270F\uFE0F', text: 'Edited section' };
+    // Pipeline run-lifecycle events (relayed via usePipelineActivityRelay)
+    case 'pipeline.run.started': {
+      const pid = (d.pipelineId as string) ?? '';
+      return { icon: '▶', text: pid ? `Triggered pipeline ${pid}` : 'Triggered pipeline' };
+    }
+    case 'pipeline.run.completed':
+      return {
+        icon: '✓',
+        text:
+          typeof d.durationMs === 'number'
+            ? `Pipeline run completed in ${d.durationMs}ms`
+            : 'Pipeline run completed',
+      };
+    case 'pipeline.run.failed':
+      return {
+        icon: '✕',
+        text: `Pipeline run failed: ${(d.error as string) ?? 'unknown error'}`,
+      };
+    case 'pipeline.approval.requested':
+      return { icon: '✋', text: 'Approval requested' };
     default:
       return { icon: '\u2139\uFE0F', text: event.eventType };
   }

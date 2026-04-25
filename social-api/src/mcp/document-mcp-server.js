@@ -30,7 +30,7 @@ const TOOLS = [
   },
   {
     name: 'document_get',
-    description: 'Get full document with sections, items, comments, reviews, and workflows',
+    description: 'Get full document with sections, items, comments, and reviews',
     inputSchema: {
       type: 'object',
       properties: {
@@ -123,32 +123,6 @@ const TOOLS = [
     },
   },
   {
-    name: 'document_get_workflow',
-    description: 'Get approval workflow status and progress for a document',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        documentId: { type: 'string', description: 'Document ID' },
-        workflowId: { type: 'string', description: 'Optional workflow ID for a specific workflow' },
-      },
-      required: ['documentId'],
-    },
-  },
-  {
-    name: 'document_advance_workflow',
-    description: 'Advance an approval workflow step (approve, reject, or skip)',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        documentId: { type: 'string', description: 'Document ID' },
-        workflowId: { type: 'string', description: 'Workflow ID' },
-        action: { type: 'string', enum: ['approve', 'reject', 'skip'], description: 'Action to take' },
-        comment: { type: 'string', description: 'Optional comment for the action' },
-      },
-      required: ['documentId', 'workflowId', 'action'],
-    },
-  },
-  {
     name: 'document_get_activity',
     description: 'Get recent activity events for the current user across all documents',
     inputSchema: {
@@ -171,14 +145,6 @@ const TOOLS = [
   {
     name: 'my_pending_reviews',
     description: 'Get all pending review/approval requests for the current user',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'my_pending_workflows',
-    description: 'Get all pending workflow approvals for the current user',
     inputSchema: {
       type: 'object',
       properties: {},

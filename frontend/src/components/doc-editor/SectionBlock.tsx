@@ -3,13 +3,13 @@
 // Renders a single document section with header, rich-text editor, and task list.
 // Includes presence-aware left border, avatar stack, and focus glow.
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
 import type { Section, TaskItem, Participant } from '../../types/document';
-import TiptapEditor from './TiptapEditor';
 import type { CollaborationProvider } from './TiptapEditor';
-import TaskList from './TaskList';
+import { getRenderer } from '../../renderers';
+import DefaultRenderer from '../../renderers/default/DefaultRenderer';
 import type { CommentThread } from '../../types/document';
 
 export interface SectionBlockProps {
@@ -100,18 +100,6 @@ const collapseBtnBase: React.CSSProperties = {
 
 const bodyStyle: React.CSSProperties = {
   padding: 14,
-};
-
-const addTaskBtnStyle: React.CSSProperties = {
-  marginTop: 8,
-  padding: '6px 14px',
-  fontSize: 13,
-  border: '1px dashed #cbd5e1',
-  borderRadius: 6,
-  background: 'transparent',
-  color: '#64748b',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 };
 
 /* ---- helpers ------------------------------------------------------------ */
@@ -242,7 +230,6 @@ export default function SectionBlock({
   commentPresence,
 }: SectionBlockProps) {
   const [collapsed, setCollapsed] = useState(section.collapsed);
-  const focusLastItemRef = useRef(false);
 
   const toggleCollapse = () => {
     const next = !collapsed;
@@ -250,28 +237,7 @@ export default function SectionBlock({
     onUpdateSection({ collapsed: next });
   };
 
-  const handleAddTask = () => {
-    onAddItem({
-      text: '',
-      status: 'pending',
-      assignee: '',
-      ackedBy: '',
-      ackedAt: '',
-      priority: 'medium',
-      notes: '',
-    });
-    focusLastItemRef.current = true;
-  };
-
-  // Determine rendering mode from sectionType (if set), falling back to legacy type
-  const effectiveSectionType = section.sectionType ?? null;
-  const showTaskList =
-    effectiveSectionType === 'tasks' ||
-    effectiveSectionType === 'checklist' ||
-    (!effectiveSectionType && section.type === 'tasks');
-
-  // Resolve placeholder: prefer section-level, then fall back to generic
-  const editorPlaceholder = section.placeholder ?? `Write ${section.type} content...`;
+  const Renderer = getRenderer(section.sectionType ?? section.type, 'editor') ?? DefaultRenderer;
 
   // Presence-aware left border: pick first participant's color or none
   const hasPresence = participants && participants.length > 0;
@@ -412,33 +378,24 @@ export default function SectionBlock({
 
       {!collapsed && (
         <div style={bodyStyle}>
-          {fragment && (
-            <TiptapEditor
-              fragment={fragment}
-              ydoc={ydoc}
-              provider={provider}
-              user={user}
-              editable={editable}
-              placeholder={editorPlaceholder}
-              sectionId={section.id}
-              onUpdateCursorInfo={onUpdateCursorInfo}
-            />
-          )}
-
-          {(showTaskList || section.items.length > 0) && (
-            <TaskList
-              items={section.items}
-              editable={editable}
-              onUpdateItem={onUpdateItem}
-              onRemoveItem={onRemoveItem}
-              focusLastItem={focusLastItemRef}
-            />
-          )}
-          {editable && (
-            <button type="button" onClick={handleAddTask} style={addTaskBtnStyle}>
-              + Add item
-            </button>
-          )}
+          <Renderer
+            section={section}
+            viewMode="editor"
+            editable={editable}
+            fragment={fragment}
+            ydoc={ydoc}
+            provider={provider}
+            user={user}
+            onUpdateSection={onUpdateSection}
+            onAddItem={onAddItem}
+            onUpdateItem={onUpdateItem}
+            onRemoveItem={onRemoveItem}
+            participants={participants}
+            onUpdateCursorInfo={onUpdateCursorInfo}
+            comments={comments}
+            commentCount={commentCount}
+            onOpenComments={onOpenComments}
+          />
         </div>
       )}
     </div>

@@ -16,18 +16,23 @@ const REDIS_URL = `redis://${process.env.REDIS_ENDPOINT ?? 'redis'}:${process.en
 
 let client: RedisClientType | null = null;
 let connecting = false;
+let unavailable = false;
 
 export async function getRedisClient(): Promise<RedisClientType | null> {
   if (client?.isReady) return client;
-  if (connecting) return null;
+  if (connecting || unavailable) return null;
 
   connecting = true;
   try {
-    const c = createClient({ url: REDIS_URL }) as RedisClientType;
+    const c = createClient({
+      url: REDIS_URL,
+      socket: { reconnectStrategy: false },
+    }) as RedisClientType;
     c.on('error', (err: Error) => {
-      console.warn('[redis-client] Redis error:', err.message);
+      console.warn('[redis-client] Redis unavailable:', err.message);
       client = null;
       connecting = false;
+      unavailable = true;
     });
     await c.connect();
     client = c;
@@ -37,6 +42,7 @@ export async function getRedisClient(): Promise<RedisClientType | null> {
     console.warn('[redis-client] Redis connect failed:', (err as Error).message);
     client = null;
     connecting = false;
+    unavailable = true;
     return null;
   }
 }

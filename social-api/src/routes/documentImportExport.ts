@@ -11,7 +11,6 @@ import {
   documentCommentRepo,
   sectionReviewRepo,
   sectionItemRepo,
-  approvalWorkflowRepo,
   documentSectionRepo,
 } from '../repositories';
 import {
@@ -71,19 +70,18 @@ documentImportExportRouter.get(
       throw new NotFoundError('Document not found');
     }
 
-    const [sections, commentsResult, reviews, items, workflows] = await Promise.all([
+    const [sections, commentsResult, reviews, items] = await Promise.all([
       documentSectionRepo.getSectionsForDocument(documentId),
       documentCommentRepo.getCommentsForDocument(documentId),
       sectionReviewRepo.getReviewsForDocument(documentId),
       sectionItemRepo.getItemsForDocument(documentId),
-      approvalWorkflowRepo.getWorkflowsForDocument(documentId),
     ]);
 
     const comments = commentsResult.items;
 
     if (format === 'json') {
       res.status(200).json(
-        buildJsonExport({ meta, sections, comments, reviews, items, workflows }),
+        buildJsonExport({ meta, sections, comments, reviews, items }),
       );
     } else {
       const md = buildMarkdownExport({ meta, sections, comments, reviews, items });

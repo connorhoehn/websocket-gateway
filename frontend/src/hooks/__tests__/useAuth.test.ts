@@ -7,6 +7,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 // ---------------------------------------------------------------------------
+// Stub env BEFORE importing useAuth so DEV_BYPASS evaluates to false.
+// (`.env` sets VITE_DEV_BYPASS_AUTH=true for local dev; the Cognito code path
+// is what these tests exercise, so we force it off here.)
+// vi.hoisted ensures this runs before the hoisted `import` of useAuth below.
+// ---------------------------------------------------------------------------
+
+vi.hoisted(() => {
+  vi.stubEnv('VITE_DEV_BYPASS_AUTH', 'false');
+});
+
+// ---------------------------------------------------------------------------
 // Mocks — amazon-cognito-identity-js
 // ---------------------------------------------------------------------------
 

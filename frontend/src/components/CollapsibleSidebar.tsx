@@ -20,6 +20,14 @@ export interface PresenceUser {
 
 type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
+export interface PipelineSidebarEntry {
+  id: string;
+  name: string;
+  status: 'draft' | 'published';
+  updatedAt: string;
+  icon?: string;
+}
+
 export interface CollapsibleSidebarProps {
   // Connection
   connectionState: ConnectionState;
@@ -38,6 +46,11 @@ export interface CollapsibleSidebarProps {
   // Documents
   documents: DocumentInfo[];
   onOpenDocument: (id: string) => void;
+
+  // Pipelines (optional)
+  pipelines?: PipelineSidebarEntry[];
+  onOpenPipeline?: (id: string) => void;
+  onSeeAllPipelines?: () => void;
 
   // Docked video panel slot (rendered between Activity and Documents)
   videoSlot?: React.ReactNode;
@@ -162,10 +175,14 @@ const separatorStyle: React.CSSProperties = {
 
 function CollapsibleSection({
   title,
+  emoji,
+  count,
   defaultExpanded = true,
   children,
 }: {
   title: string;
+  emoji?: string;
+  count?: number;
   defaultExpanded?: boolean;
   children: React.ReactNode;
 }) {
@@ -188,7 +205,23 @@ function CollapsibleSection({
         }}>
           {'\u25B8'}
         </span>
-        {title}
+        {emoji && <span style={{ fontSize: 12 }}>{emoji}</span>}
+        <span>{title}</span>
+        {typeof count === 'number' && count > 0 && (
+          <span style={{
+            marginLeft: 4,
+            fontSize: 10,
+            fontWeight: 600,
+            color: '#64748b',
+            background: '#e2e8f0',
+            borderRadius: 8,
+            padding: '1px 6px',
+            letterSpacing: 0,
+            textTransform: 'none',
+          }}>
+            {count}
+          </span>
+        )}
       </div>
       <div style={{
         maxHeight: expanded ? 600 : 0,
@@ -216,6 +249,9 @@ export function CollapsibleSidebar({
   userId,
   documents,
   onOpenDocument,
+  pipelines,
+  onOpenPipeline,
+  onSeeAllPipelines,
   videoSlot,
 }: CollapsibleSidebarProps) {
   ensureKeyframes();
@@ -223,6 +259,9 @@ export function CollapsibleSidebar({
   const isConnected = connectionState === 'connected';
   const recentEvents = useMemo(() => activityEvents.slice(0, 5), [activityEvents]);
   const recentDocs = useMemo(() => documents.slice(0, 5), [documents]);
+  const pipelineList = pipelines ?? [];
+  const visiblePipelines = useMemo(() => pipelineList.slice(0, 12), [pipelineList]);
+  const showPipelinesSection = pipelines !== undefined;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -469,6 +508,114 @@ export function CollapsibleSidebar({
           ))}
         </div>
       </CollapsibleSection>
+
+      {/* ---- Pipelines ---- */}
+      {showPipelinesSection && (
+        <>
+          <hr style={separatorStyle} />
+          <CollapsibleSection title="Pipelines" emoji={'\u{1F500}'} count={pipelineList.length}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingBottom: 8 }}>
+              {pipelineList.length === 0 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '2px 4px',
+                  fontSize: 12,
+                  color: '#94a3b8',
+                  fontStyle: 'italic',
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                }}>
+                  <span>No pipelines yet</span>
+                  {onSeeAllPipelines && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={onSeeAllPipelines}
+                      onKeyDown={e => { if (e.key === 'Enter') onSeeAllPipelines(); }}
+                      style={{
+                        fontSize: 11,
+                        color: '#2563eb',
+                        fontStyle: 'normal',
+                        cursor: 'pointer',
+                        marginLeft: 8,
+                      }}
+                    >
+                      + New
+                    </span>
+                  )}
+                </div>
+              )}
+              {visiblePipelines.map(p => (
+                <div
+                  key={p.id}
+                  onClick={() => onOpenPipeline?.(p.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter') onOpenPipeline?.(p.id); }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 4px',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    color: '#374151',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    gap: 6,
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#f1f5f9'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                >
+                  <span style={{ flexShrink: 0, fontSize: 12, width: 16, textAlign: 'center' }}>
+                    {p.icon ?? '\u{1F500}'}
+                  </span>
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}>
+                    {p.name}
+                  </span>
+                  <span style={{
+                    flexShrink: 0,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.4px',
+                    padding: '1px 6px',
+                    borderRadius: 8,
+                    color: p.status === 'published' ? '#166534' : '#92400e',
+                    background: p.status === 'published' ? '#dcfce7' : '#fef3c7',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                  }}>
+                    {p.status}
+                  </span>
+                </div>
+              ))}
+              {pipelineList.length > 12 && onSeeAllPipelines && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={onSeeAllPipelines}
+                  onKeyDown={e => { if (e.key === 'Enter') onSeeAllPipelines(); }}
+                  style={{
+                    padding: '4px 4px',
+                    fontSize: 11,
+                    color: '#2563eb',
+                    cursor: 'pointer',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                  }}
+                >
+                  See all pipelines {'→'}
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
+        </>
+      )}
 
       {/* ---- Docked Video (bottom) ---- */}
       {videoSlot && (

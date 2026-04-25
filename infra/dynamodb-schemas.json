@@ -149,20 +149,6 @@
       ]
     },
     {
-      "tableName": "approval-workflows",
-      "hashKey": { "name": "documentId", "type": "S" },
-      "rangeKey": { "name": "workflowId", "type": "S" },
-      "billing": "PAY_PER_REQUEST",
-      "gsi": [
-        {
-          "indexName": "status-index",
-          "hashKey": { "name": "workflowStatus", "type": "S" },
-          "rangeKey": { "name": "createdAt", "type": "S" },
-          "projection": "ALL"
-        }
-      ]
-    },
-    {
       "tableName": "section-items",
       "hashKey": { "name": "sectionKey", "type": "S" },
       "rangeKey": { "name": "itemId", "type": "S" },

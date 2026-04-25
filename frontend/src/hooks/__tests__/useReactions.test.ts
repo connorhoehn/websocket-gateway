@@ -67,7 +67,7 @@ describe('useReactions', () => {
 
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          service: 'reactions',
+          service: 'reaction',
           action: 'subscribe',
           channel: 'ch-1',
         })
@@ -127,7 +127,7 @@ describe('useReactions', () => {
 
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          service: 'reactions',
+          service: 'reaction',
           action: 'unsubscribe',
           channel: 'ch-1',
         })
@@ -148,8 +148,8 @@ describe('useReactions', () => {
 
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          service: 'reactions',
-          action: 'react',
+          service: 'reaction',
+          action: 'send',
           channel: 'ch-1',
           emoji: '👍',
         })
@@ -164,11 +164,14 @@ describe('useReactions', () => {
 
       act(() => {
         opts.dispatch({
-          type: 'reactions:reaction',
-          channel: 'ch-1',
-          clientId: 'c1',
-          emoji: '🎉',
-          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'reaction',
+          action: 'reaction_received',
+          data: {
+            channel: 'ch-1',
+            clientId: 'c1',
+            emoji: '🎉',
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
         });
       });
 
@@ -191,11 +194,14 @@ describe('useReactions', () => {
 
       act(() => {
         opts.dispatch({
-          type: 'reactions:reaction',
-          channel: 'other',
-          clientId: 'c2',
-          emoji: '😂',
-          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'reaction',
+          action: 'reaction_received',
+          data: {
+            channel: 'other',
+            clientId: 'c2',
+            emoji: '😂',
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
         });
       });
 
@@ -210,11 +216,14 @@ describe('useReactions', () => {
 
       act(() => {
         opts.dispatch({
-          type: 'reactions:reaction',
-          channel: 'ch-1',
-          clientId: 'c1',
-          emoji: '🔥',
-          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'reaction',
+          action: 'reaction_received',
+          data: {
+            channel: 'ch-1',
+            clientId: 'c1',
+            emoji: '🔥',
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
         });
       });
 
@@ -236,11 +245,14 @@ describe('useReactions', () => {
       // Reaction A at t=0
       act(() => {
         opts.dispatch({
-          type: 'reactions:reaction',
-          channel: 'ch-1',
-          clientId: 'c1',
-          emoji: '👍',
-          timestamp: '2026-01-01T00:00:00.000Z',
+          type: 'reaction',
+          action: 'reaction_received',
+          data: {
+            channel: 'ch-1',
+            clientId: 'c1',
+            emoji: '👍',
+            timestamp: '2026-01-01T00:00:00.000Z',
+          },
         });
       });
 
@@ -250,11 +262,14 @@ describe('useReactions', () => {
       act(() => {
         vi.advanceTimersByTime(1000);
         opts.dispatch({
-          type: 'reactions:reaction',
-          channel: 'ch-1',
-          clientId: 'c2',
-          emoji: '❤️',
-          timestamp: '2026-01-01T00:00:01.000Z',
+          type: 'reaction',
+          action: 'reaction_received',
+          data: {
+            channel: 'ch-1',
+            clientId: 'c2',
+            emoji: '❤️',
+            timestamp: '2026-01-01T00:00:01.000Z',
+          },
         });
       });
 
@@ -302,8 +317,9 @@ describe('useReactions', () => {
       expect(() => {
         act(() => {
           opts.dispatch({
-            type: 'reactions:subscribed',
-            channel: 'ch-1',
+            type: 'reaction',
+            action: 'reaction_subscribed',
+            data: { channel: 'ch-1' },
           });
         });
       }).not.toThrow();
@@ -323,8 +339,8 @@ describe('useReactions', () => {
 
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          service: 'reactions',
-          action: 'react',
+          service: 'reaction',
+          action: 'send',
           emoji: '👏',
         })
       );

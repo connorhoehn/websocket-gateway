@@ -9,6 +9,25 @@ import type { GatewayMessage } from '../types/gateway';
 import type { TaskItem } from '../types/document';
 import { SOCIAL_API_URL } from '../utils/socialApi';
 
+// Backend stores itemId; frontend uses id. Normalize on the way in.
+function normalizeItem(raw: Record<string, unknown>): TaskItem {
+  const statusMap: Record<string, TaskItem['status']> = {
+    open: 'pending', pending: 'pending', acked: 'acked', done: 'done', rejected: 'rejected',
+  };
+  return {
+    id: (raw.id ?? raw.itemId) as string,
+    text: (raw.text ?? '') as string,
+    status: statusMap[(raw.status as string) ?? 'open'] ?? 'pending',
+    assignee: (raw.assignee ?? '') as string,
+    ackedBy: (raw.ackedBy ?? '') as string,
+    ackedAt: (raw.ackedAt ?? '') as string,
+    priority: (raw.priority ?? 'medium') as TaskItem['priority'],
+    notes: (raw.notes ?? '') as string,
+    dueDate: raw.dueDate as string | undefined,
+    category: raw.category as string | undefined,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -77,8 +96,8 @@ export function useDocumentItems(
           { headers: { Authorization: `Bearer ${idToken}` } },
         );
         if (!res.ok) throw new Error(`Failed to load items for section ${sectionId} (${res.status})`);
-        const data = (await res.json()) as { items: TaskItem[] };
-        return { sectionId, items: data.items ?? [] };
+        const data = (await res.json()) as { items: Record<string, unknown>[] };
+        return { sectionId, items: (data.items ?? []).map(normalizeItem) };
       } catch (err) {
         console.warn(`[useDocumentItems] fetch error for section ${sectionId}:`, (err as Error).message);
         return { sectionId, items: [] as TaskItem[] };
@@ -115,8 +134,9 @@ export function useDocumentItems(
       // section:item:created
       if (eventType === 'social:post' && payload.type === 'section:item:created') {
         const sectionId = payload.sectionId as string | undefined;
-        const item = payload.item as TaskItem | undefined;
-        if (!sectionId || !item) return;
+        const rawItem = payload.item as Record<string, unknown> | undefined;
+        if (!sectionId || !rawItem) return;
+        const item = normalizeItem(rawItem);
 
         setItems((prev) => {
           const existing = prev[sectionId] ?? [];
@@ -207,11 +227,12 @@ export function useDocumentItems(
         throw new Error(`Failed to add item (${res.status})`);
       }
 
-      const data = (await res.json()) as { item: TaskItem };
+      const data = (await res.json()) as { item: Record<string, unknown> };
+      const normalized = normalizeItem(data.item);
       setItems((prev) => {
         const existing = prev[sectionId] ?? [];
-        if (existing.some((i) => i.id === data.item.id)) return prev;
-        return { ...prev, [sectionId]: [...existing, data.item] };
+        if (existing.some((i) => i.id === normalized.id)) return prev;
+        return { ...prev, [sectionId]: [...existing, normalized] };
       });
     },
     [idToken, authHeaders],
@@ -235,13 +256,14 @@ export function useDocumentItems(
         throw new Error(`Failed to update item (${res.status})`);
       }
 
-      const data = (await res.json()) as { item: TaskItem };
+      const data = (await res.json()) as { item: Record<string, unknown> };
+      const normalized = normalizeItem(data.item);
       setItems((prev) => {
         const existing = prev[sectionId];
         if (!existing) return prev;
         return {
           ...prev,
-          [sectionId]: existing.map((i) => (i.id === itemId ? data.item : i)),
+          [sectionId]: existing.map((i) => (i.id === itemId ? normalized : i)),
         };
       });
     },
@@ -294,13 +316,14 @@ export function useDocumentItems(
         throw new Error(`Failed to acknowledge item (${res.status})`);
       }
 
-      const data = (await res.json()) as { item: TaskItem };
+      const data = (await res.json()) as { item: Record<string, unknown> };
+      const normalized = normalizeItem(data.item);
       setItems((prev) => {
         const existing = prev[sectionId];
         if (!existing) return prev;
         return {
           ...prev,
-          [sectionId]: existing.map((i) => (i.id === itemId ? data.item : i)),
+          [sectionId]: existing.map((i) => (i.id === itemId ? normalized : i)),
         };
       });
     },

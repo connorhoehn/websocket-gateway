@@ -79,4 +79,45 @@ export class ProfileRepository extends BaseRepository {
 
     return (result.Responses?.[this.tableName] ?? []) as ProfileItem[];
   }
+
+  /**
+   * Case-insensitive substring search across displayName.
+   *
+   * Phase 1 implementation: full-table Scan with a lowercase-contains filter.
+   * This is acceptable for small user bases but MUST be replaced with a GSI
+   * (e.g. on a normalized `displayNameLower` attribute) before the profiles
+   * table grows — Scan cost scales with total item count, not match count.
+   *
+   * Note: DynamoDB has no built-in case-insensitive contains; we pull a capped
+   * page of items and filter in memory. `limit` bounds the returned matches,
+   * not the items scanned.
+   */
+  async searchProfiles(query: string, limit: number): Promise<ProfileItem[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
+    const needle = trimmed.toLowerCase();
+
+    // Cap the Scan page size to keep Phase 1 costs bounded. At scale this
+    // should be replaced with a GSI query on a normalized name attribute.
+    const SCAN_LIMIT = 500;
+
+    const result = await this.docClient.send(
+      new ScanCommand({
+        TableName: this.tableName,
+        Limit: SCAN_LIMIT,
+      }),
+    );
+
+    const items = (result.Items ?? []) as ProfileItem[];
+
+    const matches = items.filter((item) => {
+      const dn = typeof item.displayName === 'string' ? item.displayName.toLowerCase() : '';
+      const uid = typeof item.userId === 'string' ? item.userId.toLowerCase() : '';
+      return dn.includes(needle) || uid.includes(needle);
+    });
+
+    return matches.slice(0, limit);
+  }
 }

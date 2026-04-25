@@ -15,7 +15,7 @@ import { useDocumentReviews } from '../../hooks/useDocumentReviews';
 import { useDocumentItems } from '../../hooks/useDocumentItems';
 import { useIdentityContext } from '../../contexts/IdentityContext';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
-import { DOCUMENT_TEMPLATES } from '../../data/documentTemplates';
+import { loadTypes } from '../../hooks/useDocumentTypes';
 import { useMyMentionsAndTasks } from '../../hooks/useMyMentionsAndTasks';
 import { useVideoSessions } from '../../hooks/useVideoSessions';
 import { useDocumentActions } from './useDocumentActions';
@@ -23,13 +23,13 @@ import { useSidebarPanels } from './useSidebarPanels';
 import DocumentHeader from './DocumentHeader';
 import FollowModeBar from './FollowModeBar';
 import VersionHistoryPanel from './VersionHistoryPanel';
-import WorkflowPanel from './WorkflowPanel';
 import VideoCallPanel from './VideoCallPanel';
 import VideoHistoryPanel from './VideoHistoryPanel';
 import MyMentionsPanel from './MyMentionsPanel';
 import ReviewMode from './ReviewMode';
 import ReaderMode from './ReaderMode';
 import SectionList from './SectionList';
+import AttachmentsPanel from './AttachmentsPanel';
 import SectionComments from './SectionComments';
 import TableOfContents from './TableOfContents';
 
@@ -106,11 +106,9 @@ export default function DocumentEditorPage({
   const {
     showHistory,
     showMyItems,
-    showWorkflows,
     showVideoHistory,
     toggleHistory: panelToggleHistory,
     toggleMyItems: panelToggleMyItems,
-    toggleWorkflows: panelToggleWorkflows,
     toggleVideoHistory: panelToggleVideoHistory,
     closePanel,
   } = useSidebarPanels();
@@ -189,6 +187,9 @@ export default function DocumentEditorPage({
     updateMeta,
     addSection,
     updateSection,
+    addItem: yjsAddItem,
+    updateItem: yjsUpdateItem,
+    removeItem: yjsRemoveItem,
     getSectionFragment,
     ydoc,
     provider,
@@ -390,21 +391,23 @@ export default function DocumentEditorPage({
   // ------ Activity helpers --------------------------------------------------
 
   const handleAddItem = useCallback((sectionId: string, item: Omit<import('../../types/document').TaskItem, 'id'>) => {
-    restAddItem(sectionId, item);
+    const newItem = { id: crypto.randomUUID(), ...item } as import('../../types/document').TaskItem;
+    yjsAddItem(sectionId, newItem);
+    restAddItem(sectionId, newItem).catch(() => { /* social-api unavailable */ });
     const section = sections.find(s => s.id === sectionId);
     activityPublish('doc.add_item', { sectionTitle: section?.title, documentId, documentTitle: meta?.title });
-  }, [restAddItem, sections, activityPublish, documentId, meta?.title]);
+  }, [yjsAddItem, restAddItem, sections, activityPublish, documentId, meta?.title]);
 
-  const handleAddSection = useCallback(() => {
-    addSection({
-      id: crypto.randomUUID(),
-      type: 'tasks',
-      title: 'New Section',
-      collapsed: false,
-      items: [],
-    });
-    activityPublish('doc.add_section', { documentId, documentTitle: meta?.title });
-  }, [addSection, activityPublish, documentId, meta?.title]);
+  const handleUpdateItem = useCallback((sectionId: string, itemId: string, patch: Partial<import('../../types/document').TaskItem>) => {
+    yjsUpdateItem(sectionId, itemId, patch);
+    restUpdateItem(sectionId, itemId, patch).catch(() => { /* social-api unavailable */ });
+  }, [yjsUpdateItem, restUpdateItem]);
+
+  const handleRemoveItem = useCallback((sectionId: string, itemId: string) => {
+    yjsRemoveItem(sectionId, itemId);
+    restRemoveItem(sectionId, itemId).catch(() => { /* social-api unavailable */ });
+  }, [yjsRemoveItem, restRemoveItem]);
+
 
   // ------ Auto-focus first section on load ----------------------------------
   // Sets currentSectionId in awareness so other users know where we are.
@@ -504,13 +507,6 @@ export default function DocumentEditorPage({
   const handleToggleHistory = panelToggleHistory;
   const handleToggleVideoHistory = panelToggleVideoHistory;
 
-  // Workflows panel intentionally also closes an open video call — legacy
-  // interaction preserved because workflows UI is large and crowds the video.
-  const handleToggleWorkflows = useCallback(() => {
-    panelToggleWorkflows();
-    setShowVideoCall(false);
-  }, [panelToggleWorkflows]);
-
   const handleToggleVideoCall = useCallback(() => {
     setShowVideoCall(v => !v);
     closePanel();
@@ -547,36 +543,57 @@ export default function DocumentEditorPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHistory]);
 
-  // ------ Auto-populate from template when new document is empty ----------
-  // Guard: wait for Y.js sync, then check the Y.js meta flag (not React state)
-  // to prevent duplicate application on HMR/remount. The flag persists with the doc.
+  // ------ Auto-populate sections when a new document is empty ----------
+  // Looks up the user-defined DocumentType by name (passed via URL ?type=),
+  // then creates one Y.js section per field definition.
+  // Guard: wait for sync, check Y.js templateApplied flag to survive HMR.
   useEffect(() => {
     if (!synced || !documentType || !ydoc) return;
 
-    // Check Y.js directly — React state may lag behind
     const yMeta = ydoc.getMap('meta');
     if (yMeta.get('templateApplied')) return;
 
     const ySections = ydoc.getArray('sections');
     if (ySections.length > 0) return;
 
-    const tmpl = DOCUMENT_TEMPLATES.find(t => t.type === documentType);
-    if (!tmpl) return;
+    const docTypes = loadTypes();
+    const dt = docTypes.find(t => t.name === documentType);
+    if (!dt) return;
 
-    // Apply template in a single transaction
     ydoc.transact(() => {
       yMeta.set('templateApplied', true);
     });
 
+    // Map SectionType (tasks, rich-text, decisions, checklist) → legacy Section.type
+    const legacyType = (st: string): 'tasks' | 'decisions' | 'notes' | 'summary' | 'custom' => {
+      if (st === 'tasks')     return 'tasks';
+      if (st === 'decisions') return 'decisions';
+      return 'notes';
+    };
+
     updateMeta({
-      id: documentId, title: meta?.title || tmpl.name,
-      sourceType: documentType === 'meeting' ? 'meeting' : 'notes',
-      sourceId: '', createdBy: userId, createdByName: displayName,
+      id: documentId,
+      title: meta?.title || dt.name,
+      sourceType: 'notes',
+      sourceId: '',
+      createdBy: userId,
+      createdByName: displayName,
       createdAt: new Date().toISOString(),
-      aiModel: '', status: 'draft',
+      aiModel: '',
+      status: 'draft',
+      documentType: dt.name,
     });
-    for (const s of tmpl.defaultSections) {
-      addSection({ id: crypto.randomUUID(), type: s.type, title: s.title, collapsed: false, items: [] });
+
+    for (const field of dt.fields) {
+      addSection({
+        id: crypto.randomUUID(),
+        type: legacyType(field.sectionType),
+        sectionType: field.sectionType,
+        title: field.name,
+        collapsed: field.defaultCollapsed,
+        placeholder: field.placeholder || undefined,
+        items: [],
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [synced, documentType, ydoc]);
@@ -701,7 +718,6 @@ export default function DocumentEditorPage({
         onUpdateMeta={updateMeta}
         onExport={handleExport}
         onToggleHistory={handleToggleHistory}
-        onToggleWorkflows={handleToggleWorkflows}
         onToggleVideoCall={handleToggleVideoCall}
         onToggleVideoHistory={handleToggleVideoHistory}
         isCallActive={!!meta?.activeCallSessionId}
@@ -716,6 +732,7 @@ export default function DocumentEditorPage({
         followingUserId={followingUserId}
         onFinalize={handleFinalize}
         onUnlock={handleUnlock}
+        pastCallsCount={videoSessions.sessions.length}
       />
       <FollowModeBar
         followingUserId={followingUserId}
@@ -790,7 +807,17 @@ export default function DocumentEditorPage({
             {/* Center: section content */}
             <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
               <SectionList
-                sections={sections.map(s => ({ ...s, items: restItems[s.id] ?? s.items ?? [] }))}
+                sections={sections.map(s => {
+                  // Y.Doc is the primary live state. Merge in REST items that
+                  // aren't already in Y.Doc (for docs that predate Y.js item storage).
+                  const yItems = s.items ?? [];
+                  const rItems = restItems[s.id] ?? [];
+                  const merged = [
+                    ...yItems,
+                    ...rItems.filter(r => !yItems.some(y => y.id === r.id)),
+                  ];
+                  return { ...s, items: merged };
+                })}
                 getSectionFragment={getSectionFragment}
                 ydoc={ydoc}
                 provider={provider}
@@ -798,9 +825,8 @@ export default function DocumentEditorPage({
                 editable={!isFinalized}
                 onUpdateSection={updateSection}
                 onAddItem={handleAddItem}
-                onUpdateItem={restUpdateItem}
-                onRemoveItem={restRemoveItem}
-                onAddSection={handleAddSection}
+                onUpdateItem={handleUpdateItem}
+                onRemoveItem={handleRemoveItem}
                 participants={participants}
                 onSectionFocus={handleSectionFocus}
                 focusedSectionId={focusedSectionId}
@@ -811,6 +837,8 @@ export default function DocumentEditorPage({
                 onUpdateCursorInfo={awareness.updateCursorInfo}
                 onOpenComments={handleOpenComments}
               />
+
+              <AttachmentsPanel documentId={documentId} editable={!isFinalized} />
             </div>
 
             {/* TOC rendered as fixed bottom-right overlay — see below */}
@@ -948,19 +976,6 @@ export default function DocumentEditorPage({
         <MyMentionsPanel
           items={myItems}
           onNavigateToSection={handleNavigateToSection}
-          onClose={closePanel}
-        />
-      )}
-
-      {/* Workflow sidebar */}
-      {showWorkflows && (
-        <WorkflowPanel
-          documentId={documentId}
-          userId={userId}
-          idToken={idToken}
-          sendMessage={ws.sendMessage}
-          onMessage={onMessage}
-          connectionState={ws.connectionState}
           onClose={closePanel}
         />
       )}

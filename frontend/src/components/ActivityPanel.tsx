@@ -63,6 +63,26 @@ function formatActivity(item: ActivityItem): { icon: string; text: string } {
       return { icon: '\uD83D\uDCDD', text: `Posted in room ${(d.roomId as string)?.slice(0, 8) ?? ''}` };
     case 'social.comment.created':
       return { icon: '\uD83D\uDCAC', text: `Commented in room ${(d.roomId as string)?.slice(0, 8) ?? ''}` };
+    // Pipeline run-lifecycle events (relayed via usePipelineActivityRelay)
+    case 'pipeline.run.started': {
+      const pid = (d.pipelineId as string) ?? '';
+      return { icon: '▶', text: pid ? `Triggered pipeline ${pid}` : 'Triggered pipeline' };
+    }
+    case 'pipeline.run.completed':
+      return {
+        icon: '✓',
+        text:
+          typeof d.durationMs === 'number'
+            ? `Pipeline run completed in ${d.durationMs}ms`
+            : 'Pipeline run completed',
+      };
+    case 'pipeline.run.failed':
+      return {
+        icon: '✕',
+        text: `Pipeline run failed: ${(d.error as string) ?? 'unknown error'}`,
+      };
+    case 'pipeline.approval.requested':
+      return { icon: '✋', text: 'Approval requested' };
     default:
       return { icon: '\u2139\uFE0F', text: item.eventType };
   }

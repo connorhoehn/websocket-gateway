@@ -1,6 +1,7 @@
 // frontend/src/components/doc-editor/SectionList.tsx
 //
-// Renders all document sections in order with an "Add Section" button.
+// Renders all document sections in order.
+// Sections are defined by the document type — not added ad-hoc here.
 
 import type { XmlFragment } from 'yjs';
 import * as Y from 'yjs';
@@ -20,7 +21,6 @@ export interface SectionListProps {
   onAddItem: (sectionId: string, item: Omit<TaskItem, 'id'>) => void;
   onUpdateItem: (sectionId: string, itemId: string, patch: Partial<TaskItem>) => void;
   onRemoveItem: (sectionId: string, itemId: string) => void;
-  onAddSection: () => void;
   participants?: Participant[];
   onSectionFocus?: (sectionId: string) => void;
   focusedSectionId?: string | null;
@@ -41,19 +41,6 @@ const containerStyle: React.CSSProperties = {
   padding: '0 0 16px 0',
 };
 
-const addSectionBtnStyle: React.CSSProperties = {
-  marginTop: 8,
-  padding: '10px 20px',
-  fontSize: 14,
-  border: '2px dashed #cbd5e1',
-  borderRadius: 8,
-  background: 'transparent',
-  color: '#64748b',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  textAlign: 'center',
-};
-
 export default function SectionList({
   sections,
   getSectionFragment,
@@ -65,7 +52,6 @@ export default function SectionList({
   onAddItem,
   onUpdateItem,
   onRemoveItem,
-  onAddSection,
   participants,
   onSectionFocus,
   focusedSectionId,
@@ -104,11 +90,6 @@ export default function SectionList({
         />
       ))}
 
-      {editable && (
-        <button type="button" onClick={onAddSection} style={addSectionBtnStyle}>
-          + Add Section
-        </button>
-      )}
     </div>
   );
 }

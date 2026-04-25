@@ -1,7 +1,7 @@
 // frontend/src/components/doc-editor/useSidebarPanels.test.ts
 //
 // Unit tests for the useSidebarPanels hook — a mutually-exclusive
-// activePanel state machine across four sidebar panels.
+// activePanel state machine across sidebar panels.
 
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -14,7 +14,6 @@ describe('useSidebarPanels', () => {
     expect(result.current.activePanel).toBeNull();
     expect(result.current.showHistory).toBe(false);
     expect(result.current.showMyItems).toBe(false);
-    expect(result.current.showWorkflows).toBe(false);
     expect(result.current.showVideoHistory).toBe(false);
   });
 
@@ -26,12 +25,11 @@ describe('useSidebarPanels', () => {
     expect(result.current.activePanel).toBe('history');
     expect(result.current.showHistory).toBe(true);
     expect(result.current.showMyItems).toBe(false);
-    expect(result.current.showWorkflows).toBe(false);
     expect(result.current.showVideoHistory).toBe(false);
   });
 
-  it('accepts each of the four initialPanel values', () => {
-    const panels = ['history', 'myItems', 'workflows', 'videoHistory'] as const;
+  it('accepts each of the initialPanel values', () => {
+    const panels = ['history', 'myItems', 'videoHistory'] as const;
     for (const p of panels) {
       const { result } = renderHook(() => useSidebarPanels({ initialPanel: p }));
       expect(result.current.activePanel).toBe(p);
@@ -48,7 +46,6 @@ describe('useSidebarPanels', () => {
     expect(result.current.activePanel).toBe('history');
     expect(result.current.showHistory).toBe(true);
     expect(result.current.showMyItems).toBe(false);
-    expect(result.current.showWorkflows).toBe(false);
     expect(result.current.showVideoHistory).toBe(false);
   });
 
@@ -65,7 +62,6 @@ describe('useSidebarPanels', () => {
     expect(result.current.activePanel).toBeNull();
     expect(result.current.showHistory).toBe(false);
     expect(result.current.showMyItems).toBe(false);
-    expect(result.current.showWorkflows).toBe(false);
     expect(result.current.showVideoHistory).toBe(false);
   });
 
@@ -85,46 +81,45 @@ describe('useSidebarPanels', () => {
     expect(result.current.activePanel).toBe('myItems');
     expect(result.current.showHistory).toBe(false);
     expect(result.current.showMyItems).toBe(true);
-    expect(result.current.showWorkflows).toBe(false);
     expect(result.current.showVideoHistory).toBe(false);
   });
 
-  it('toggleWorkflows and toggleVideoHistory participate in mutual exclusion', () => {
+  it('toggleMyItems and toggleVideoHistory participate in mutual exclusion', () => {
     const { result } = renderHook(() => useSidebarPanels());
 
     act(() => {
-      result.current.toggleWorkflows();
+      result.current.toggleMyItems();
     });
-    expect(result.current.showWorkflows).toBe(true);
+    expect(result.current.showMyItems).toBe(true);
 
     act(() => {
       result.current.toggleVideoHistory();
     });
-    expect(result.current.showWorkflows).toBe(false);
+    expect(result.current.showMyItems).toBe(false);
     expect(result.current.showVideoHistory).toBe(true);
     expect(result.current.activePanel).toBe('videoHistory');
   });
 
-  it('openPanel("workflows") sets activePanel regardless of prior state', () => {
+  it('openPanel("history") sets activePanel regardless of prior state', () => {
     const { result } = renderHook(() => useSidebarPanels());
 
     // From null
     act(() => {
-      result.current.openPanel('workflows');
+      result.current.openPanel('history');
     });
-    expect(result.current.activePanel).toBe('workflows');
-    expect(result.current.showWorkflows).toBe(true);
+    expect(result.current.activePanel).toBe('history');
+    expect(result.current.showHistory).toBe(true);
 
     // From another open panel
     act(() => {
-      result.current.openPanel('history');
+      result.current.openPanel('myItems');
     });
     act(() => {
-      result.current.openPanel('workflows');
+      result.current.openPanel('history');
     });
-    expect(result.current.activePanel).toBe('workflows');
-    expect(result.current.showWorkflows).toBe(true);
-    expect(result.current.showHistory).toBe(false);
+    expect(result.current.activePanel).toBe('history');
+    expect(result.current.showHistory).toBe(true);
+    expect(result.current.showMyItems).toBe(false);
   });
 
   it('closePanel() sets activePanel back to null', () => {
@@ -158,7 +153,6 @@ describe('useSidebarPanels', () => {
     const before = {
       toggleHistory: result.current.toggleHistory,
       toggleMyItems: result.current.toggleMyItems,
-      toggleWorkflows: result.current.toggleWorkflows,
       toggleVideoHistory: result.current.toggleVideoHistory,
       openPanel: result.current.openPanel,
       closePanel: result.current.closePanel,
@@ -168,7 +162,6 @@ describe('useSidebarPanels', () => {
 
     expect(result.current.toggleHistory).toBe(before.toggleHistory);
     expect(result.current.toggleMyItems).toBe(before.toggleMyItems);
-    expect(result.current.toggleWorkflows).toBe(before.toggleWorkflows);
     expect(result.current.toggleVideoHistory).toBe(before.toggleVideoHistory);
     expect(result.current.openPanel).toBe(before.openPanel);
     expect(result.current.closePanel).toBe(before.closePanel);

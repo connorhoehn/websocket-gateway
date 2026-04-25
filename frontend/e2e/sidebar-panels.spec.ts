@@ -4,8 +4,12 @@ import { test, expect, type Page } from '@playwright/test';
 // E2E: DocumentEditorPage sidebar panel mutual-exclusion
 //
 // Verifies the contract enforced by `useSidebarPanels.ts`:
-//   at most one of { History, My Items, Workflows, Past Calls } is open at a
-//   time. Opening a new panel automatically closes any sibling.
+//   at most one of { History, My Items, Past Calls } is open at a time.
+//   Opening a new panel automatically closes any sibling.
+//
+// NOTE: The "Workflows" panel was removed in Phase 0 of the doc-types refactor.
+// Tests that exercised Workflows toggling have been removed; the remaining
+// tests cover the same mutex contract via the surviving panels.
 //
 // Environment assumptions:
 //   - Vite dev server running on http://localhost:5174 (or PLAYWRIGHT_BASE_URL)
@@ -21,7 +25,6 @@ const DOC_ROUTE = '/documents/e2e-test-doc';
 const PANEL_TITLES = {
   history: 'Version History',
   myItems: 'My Mentions & Tasks',
-  workflows: 'Workflows',
   videoHistory: 'Past Conversations',
 } as const;
 
@@ -34,9 +37,9 @@ function headerButton(page: Page, name: string | RegExp) {
 
 function panelHeading(page: Page, title: string) {
   // PanelHeader renders the title in a <span>, so we target `span` specifically
-  // to avoid colliding with the header's <button>Workflows</button> (same text)
-  // when Workflows is both the open panel and a toggle button. The panel span
-  // sits inside the fixed-position .Panel, next to the "Close panel" button.
+  // to avoid colliding with any header <button> that shares the same text.
+  // The panel span sits inside the fixed-position .Panel, next to the
+  // "Close panel" button.
   return page.locator('span', { hasText: new RegExp(`^${escapeRe(title)}$`) });
 }
 
@@ -96,24 +99,6 @@ async function clickDirect(locator: ReturnType<Page['locator']>) {
 }
 
 test.describe('Sidebar panel mutual exclusion', () => {
-  test('opening a second panel closes the first', async ({ page }) => {
-    await gotoEditor(page);
-
-    // Open History -> assert its panel heading is visible.
-    await clickDirect(headerButton(page, /^History$/));
-    await expect(panelHeading(page, PANEL_TITLES.history)).toBeVisible();
-
-    // Open Workflows -> History should close, Workflows should open.
-    await clickDirect(headerButton(page, /^Workflows$/));
-    await expect(panelHeading(page, PANEL_TITLES.workflows)).toBeVisible();
-    await expect(panelHeading(page, PANEL_TITLES.history)).toHaveCount(0);
-
-    // Click Workflows again -> it toggles off. No panel heading visible.
-    await clickDirect(headerButton(page, /^Workflows$/));
-    await expect(panelHeading(page, PANEL_TITLES.workflows)).toHaveCount(0);
-    await expect(panelHeading(page, PANEL_TITLES.history)).toHaveCount(0);
-  });
-
   test('My Items and Past Calls participate in the same mutex', async ({ page }) => {
     await gotoEditor(page);
 
@@ -164,8 +149,8 @@ test.describe('Sidebar panel mutual exclusion', () => {
     await clickDirect(panelRoot(page).getByRole('button', { name: 'Close panel' }));
     await expect(panelHeading(page, PANEL_TITLES.history)).toHaveCount(0);
 
-    // Now open Workflows — closePanel() path did not wedge state.
-    await clickDirect(headerButton(page, /^Workflows$/));
-    await expect(panelHeading(page, PANEL_TITLES.workflows)).toBeVisible();
+    // Now open My Items — closePanel() path did not wedge state.
+    await clickDirect(headerButton(page, /^My Items(\s*\(\d+\))?$/));
+    await expect(panelHeading(page, PANEL_TITLES.myItems)).toBeVisible();
   });
 });

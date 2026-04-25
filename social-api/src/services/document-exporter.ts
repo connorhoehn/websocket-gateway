@@ -3,14 +3,12 @@
  * into JSON and Markdown export formats.
  *
  * These functions perform NO DynamoDB access. The caller is responsible
- * for fetching the raw data (meta, sections, comments, items, reviews,
- * workflows) and passing it in. This keeps the builders trivially
- * testable without mocks.
+ * for fetching the raw data (meta, sections, comments, items, reviews)
+ * and passing it in. This keeps the builders trivially testable without mocks.
  */
 import type { DocumentComment } from '../repositories/DocumentCommentRepository';
 import type { SectionItemFields } from '../repositories/SectionItemRepository';
 import type { SectionReview } from '../repositories/SectionReviewRepository';
-import type { ApprovalWorkflow } from '../repositories/ApprovalWorkflowRepository';
 import type { DocumentSectionFields } from '../repositories/DocumentSectionRepository';
 
 export interface DocumentMeta {
@@ -31,7 +29,6 @@ export interface DocumentExportData {
   comments: DocumentComment[];
   reviews: SectionReview[];
   items: SectionItemFields[];
-  workflows: ApprovalWorkflow[];
 }
 
 function groupBySection<T extends { sectionId: string }>(entries: T[]): Map<string, T[]> {
@@ -49,7 +46,7 @@ function groupBySection<T extends { sectionId: string }>(entries: T[]): Map<stri
  * returns the same shape.
  */
 export function buildJsonExport(data: DocumentExportData) {
-  const { meta, sections, comments, reviews, items, workflows } = data;
+  const { meta, sections, comments, reviews, items } = data;
 
   const commentsBySection = groupBySection(comments);
   const itemsBySection = groupBySection(items);
@@ -103,14 +100,6 @@ export function buildJsonExport(data: DocumentExportData) {
           ...(r.comment ? { comment: r.comment } : {}),
         })),
       })),
-      workflows: workflows.map((w) => ({
-        name: w.name,
-        type: w.type,
-        steps: w.steps,
-        status: w.workflowStatus,
-        createdBy: w.createdBy,
-        createdAt: w.createdAt,
-      })),
     },
   };
 }
@@ -118,12 +107,8 @@ export function buildJsonExport(data: DocumentExportData) {
 /**
  * Build the Markdown export string. Pure — given the same inputs,
  * always returns the same string.
- *
- * Workflows are intentionally not rendered (matches original behaviour).
  */
-export function buildMarkdownExport(
-  data: Omit<DocumentExportData, 'workflows'>,
-): string {
+export function buildMarkdownExport(data: DocumentExportData): string {
   const { meta, sections, comments, reviews, items } = data;
   const lines: string[] = [];
 

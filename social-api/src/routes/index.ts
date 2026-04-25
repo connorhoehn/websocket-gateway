@@ -14,9 +14,11 @@ import { activityRouter } from './activity';
 import { documentCommentsRouter } from './documentComments';
 import { sectionReviewsRouter, documentReviewsRouter, myReviewsRouter } from './sectionReviews';
 import { sectionItemsRouter, myItemsRouter } from './sectionItems';
-import { approvalWorkflowsRouter, pendingWorkflowsRouter } from './approvalWorkflows';
 import { documentImportExportRouter } from './documentImportExport';
 import { videoSessionsRouter } from './videoSessions';
+import { pipelineMetricsRouter, observabilityRouter } from './pipelineMetrics';
+import { pipelineDefinitionsRouter } from './pipelineDefinitions';
+import { pipelineTriggersRouter, pipelineApprovalsRouter } from './pipelineTriggers';
 
 const router = Router();
 
@@ -42,8 +44,19 @@ router.use('/reviews', myReviewsRouter);
 router.use('/documents/:documentId/sections/:sectionId/items', sectionItemsRouter);
 router.use('/items', myItemsRouter);
 router.use('/documents/:documentId', documentImportExportRouter);
-router.use('/documents/:documentId/workflows', approvalWorkflowsRouter);
-router.use('/workflows', pendingWorkflowsRouter);
 router.use('/video', videoSessionsRouter);
+// Mount metrics (static segment) BEFORE defs — Express resolves mounts in
+// registration order. A hypothetical `/pipelines` mount with a `:pipelineId`
+// param would otherwise swallow `/pipelines/metrics`.
+router.use('/pipelines/metrics', pipelineMetricsRouter);
+router.use('/pipelines/defs', pipelineDefinitionsRouter);
+// Per-pipeline run trigger. Mounted AFTER the static `/metrics` and `/defs`
+// segments so their specific paths match first (Express resolves mounts in
+// registration order — a `:pipelineId` mount would otherwise swallow them).
+router.use('/pipelines/:pipelineId/runs', pipelineTriggersRouter);
+// Approvals — POST /api/pipelines/:runId/approvals (per PIPELINES_PLAN §17.10).
+router.use('/pipelines/:runId/approvals', pipelineApprovalsRouter);
+// Observability — GET /api/observability/dashboard, /api/observability/metrics.
+router.use('/observability', observabilityRouter);
 
 export default router;

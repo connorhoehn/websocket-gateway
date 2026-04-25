@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { docClient } from '../lib/aws-clients';
 import { getCachedProfile, setCachedProfile, invalidateProfileCache } from '../lib/cache';
 import { profileRepo } from '../repositories';
 import type { ProfileItem } from '../repositories';
@@ -10,7 +12,90 @@ import {
   ConflictError,
 } from '../middleware/error-handler';
 
+const REL_TABLE = 'social-relationships';
+
 export const profilesRouter = Router();
+
+// GET /api/profiles?q=<search>&limit=<n> — case-insensitive substring search
+// over displayName (and userId). Phase 1 uses a Scan — see ProfileRepository
+// for scalability caveats. Results are visibility-gated: private profiles are
+// only returned when the requester is the owner OR a mutual follow.
+profilesRouter.get('/', asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const rawQuery = typeof req.query['q'] === 'string' ? req.query['q'] : '';
+  const q = rawQuery.trim();
+
+  if (!q) {
+    throw new ValidationError('Query parameter q is required');
+  }
+  if (q.length > 100) {
+    throw new ValidationError('Query parameter q must be 100 chars or fewer');
+  }
+
+  const rawLimit = typeof req.query['limit'] === 'string' ? parseInt(req.query['limit'], 10) : NaN;
+  let limit = Number.isFinite(rawLimit) ? rawLimit : 20;
+  if (limit < 1) limit = 1;
+  if (limit > 50) limit = 50;
+
+  const requesterId = req.user!.sub;
+
+  // Pull matches from the repository. We fetch a bit more than `limit` so
+  // visibility-gating that drops private profiles still fills the page.
+  const candidates = await profileRepo.searchProfiles(q, limit * 2);
+
+  // Partition public vs. private-not-owned so we only compute mutual-follow
+  // sets when we actually need to gate something.
+  const privateOthers = candidates.filter(
+    (p) => p.visibility === 'private' && p.userId !== requesterId,
+  );
+
+  let mutualFollowIds = new Set<string>();
+  if (privateOthers.length > 0) {
+    // Users the requester follows (PK query — no scan).
+    const followingResult = await docClient.send(
+      new QueryCommand({
+        TableName: REL_TABLE,
+        KeyConditionExpression: 'followerId = :fid',
+        ExpressionAttributeValues: { ':fid': requesterId },
+      }),
+    );
+    const followeeSet = new Set(
+      (followingResult.Items ?? []).map((i) => i['followeeId'] as string),
+    );
+
+    // For each private candidate the requester follows, confirm the reverse
+    // relationship via a point-get (O(1)).
+    const reverseChecks = await Promise.all(
+      privateOthers
+        .filter((p) => followeeSet.has(p.userId))
+        .map(async (p) => {
+          const reverse = await docClient.send(
+            new GetCommand({
+              TableName: REL_TABLE,
+              Key: { followerId: p.userId, followeeId: requesterId },
+            }),
+          );
+          return reverse.Item ? p.userId : null;
+        }),
+    );
+    mutualFollowIds = new Set(reverseChecks.filter((id): id is string => id !== null));
+  }
+
+  const visible = candidates.filter((p) => {
+    if (p.visibility !== 'private') return true;
+    if (p.userId === requesterId) return true;
+    return mutualFollowIds.has(p.userId);
+  });
+
+  // Shape to ProfileSummary. Note: email is not persisted in the profiles
+  // table (it lives in Cognito), so it is intentionally omitted here.
+  const profiles = visible.slice(0, limit).map((p) => ({
+    userId: p.userId,
+    displayName: p.displayName,
+    ...(p.avatarUrl ? { avatarUrl: p.avatarUrl } : {}),
+  }));
+
+  res.status(200).json({ profiles });
+}));
 
 // POST /api/profiles — create own profile (PROF-01)
 profilesRouter.post('/', asyncHandler(async (req: Request, res: Response): Promise<void> => {

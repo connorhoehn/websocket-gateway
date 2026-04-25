@@ -32,7 +32,6 @@ function baseData(): DocumentExportData {
     comments: [],
     reviews: [],
     items: [],
-    workflows: [],
   };
 }
 
@@ -51,7 +50,6 @@ describe('buildJsonExport', () => {
           updatedAt: '2026-04-18T11:00:00.000Z',
         },
         sections: [],
-        workflows: [],
       },
     });
   });
@@ -128,7 +126,6 @@ describe('buildJsonExport', () => {
           timestamp: '2026-04-18T10:30:00.000Z',
         },
       ],
-      workflows: [],
     };
 
     const out = buildJsonExport(data);
@@ -282,7 +279,6 @@ describe('exporter → importer round trip', () => {
       ],
       comments: [],
       reviews: [],
-      workflows: [],
     };
 
     const json = buildJsonExport(data);

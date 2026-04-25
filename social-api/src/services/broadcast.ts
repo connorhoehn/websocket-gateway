@@ -23,25 +23,28 @@ type SocialEventType =
   | 'social:member_left'
   | 'doc:comment_added'
   | 'doc:comment_resolved'
-  | 'doc:comment_deleted'
-  | 'doc:workflow_advanced'
-  | 'doc:workflow_completed';
+  | 'doc:comment_deleted';
 
 class BroadcastService {
   private client: RedisClientType | null = null;
   private connecting = false;
+  private unavailable = false;
 
   private async getClient(): Promise<RedisClientType | null> {
     if (this.client?.isReady) return this.client;
-    if (this.connecting) return null;
+    if (this.connecting || this.unavailable) return null;
 
     this.connecting = true;
     try {
-      const c = createClient({ url: REDIS_URL }) as RedisClientType;
+      const c = createClient({
+        url: REDIS_URL,
+        socket: { reconnectStrategy: false },
+      }) as RedisClientType;
       c.on('error', (err: Error) => {
-        console.warn('[broadcast] Redis error:', err.message);
+        console.warn('[broadcast] Redis unavailable:', err.message);
         this.client = null;
         this.connecting = false;
+        this.unavailable = true;
       });
       await c.connect();
       this.client = c;
@@ -51,6 +54,7 @@ class BroadcastService {
       console.warn('[broadcast] Redis connect failed:', (err as Error).message);
       this.client = null;
       this.connecting = false;
+      this.unavailable = true;
       return null;
     }
   }

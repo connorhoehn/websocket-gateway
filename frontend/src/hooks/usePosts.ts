@@ -48,7 +48,8 @@ export interface UsePostsReturn {
 export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePostsReturn {
   const [posts, setPosts] = useState<PostItem[]>([]);
   const [lastKey, setLastKey] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);       // initial fetch / loadMore
+  const [_mutating, setMutating] = useState(false);    // createPost / editPost / deletePost
   const [error, setError] = useState<string | null>(null);
 
   const baseUrl = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
@@ -139,7 +140,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
 
   const createPost = useCallback(async (content: string): Promise<void> => {
     if (!idToken || !roomId) return;
-    setLoading(true);
+    setMutating(true);
     setError(null);
     try {
       const res = await fetch(`${baseUrl}/api/rooms/${roomId}/posts`, {
@@ -157,7 +158,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
       setError((err as Error).message);
       throw err;
     } finally {
-      setLoading(false);
+      setMutating(false);
     }
   }, [idToken, roomId, baseUrl]);  
 
@@ -165,6 +166,7 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
 
   const editPost = useCallback(async (postId: string, content: string): Promise<void> => {
     if (!idToken || !roomId) return;
+    setMutating(true);
     setError(null);
     try {
       const res = await fetch(`${baseUrl}/api/rooms/${roomId}/posts/${postId}`, {
@@ -180,13 +182,16 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
       setPosts((prev) => prev.map((p) => (p.postId === postId ? updated : p)));
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setMutating(false);
     }
-  }, [idToken, roomId, baseUrl]);  
+  }, [idToken, roomId, baseUrl]);
 
   // ---- deletePost ----------------------------------------------------------
 
   const deletePost = useCallback(async (postId: string): Promise<void> => {
     if (!idToken || !roomId) return;
+    setMutating(true);
     setError(null);
     try {
       const res = await fetch(`${baseUrl}/api/rooms/${roomId}/posts/${postId}`, {
@@ -197,6 +202,8 @@ export function usePosts({ idToken, roomId, onMessage }: UsePostsOptions): UsePo
       setPosts((prev) => prev.filter((p) => p.postId !== postId));
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setMutating(false);
     }
   }, [idToken, roomId, baseUrl]);  
 

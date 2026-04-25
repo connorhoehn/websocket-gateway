@@ -18,6 +18,12 @@ export async function requireRoomMembership(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
+  // In local dev (SKIP_AUTH=true), skip membership check so any dev identity can post
+  if (process.env.SKIP_AUTH === 'true') {
+    next();
+    return;
+  }
+
   try {
     const { roomId } = req.params;
     const userId = req.user!.sub;

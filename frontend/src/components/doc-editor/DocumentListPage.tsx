@@ -347,6 +347,21 @@ export default function DocumentListPage({
                       {doc.title}
                     </span>
                     <StatusBadge status={doc.status} />
+                    {doc.type && (
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '1px 8px',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        borderRadius: 9999,
+                        background: '#f1f5f9',
+                        color: '#475569',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}>
+                        {doc.type}
+                      </span>
+                    )}
                     {doc.activeCallSessionId && (
                       <span style={{
                         display: 'inline-flex',

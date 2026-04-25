@@ -47,7 +47,7 @@ export interface Section {
   collapsed: boolean;
   items: TaskItem[];
   // Rich-text content is stored as Y.XmlFragment, not serialized here
-  sectionType?: SectionType;                  // renderer hint (falls back to type-based rendering)
+  sectionType?: string;                       // renderer hint — built-in SectionType or user-defined field type ID
   metadata?: Record<string, unknown>;         // section-level metadata (dates, severity, etc.)
   placeholder?: string;                       // guidance text shown when section is empty
 }

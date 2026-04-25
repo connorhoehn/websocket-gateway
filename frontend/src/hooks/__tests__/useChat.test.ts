@@ -1,7 +1,21 @@
 // frontend/src/hooks/__tests__/useChat.test.ts
 //
-// TDD RED phase: Tests written before implementation.
-// These tests define the expected behaviour of the useChat hook.
+// Tests for useChat — aligned with the current chat protocol as implemented
+// by `useChat.ts` and `src/services/chat-service.js`.
+//
+// Protocol summary:
+//   Outgoing (client -> gateway):
+//     Join:    { service: 'chat', action: 'join',  channel }
+//     Leave:   { service: 'chat', action: 'leave', channel }
+//     Send:    { service: 'chat', action: 'send',  channel, message, metadata: { displayName } }
+//
+//   Incoming (gateway -> client):
+//     History: { type: 'chat', action: 'history', channel,
+//                messages: [{ clientId, message, timestamp, metadata? }, ...] }
+//     Message: { type: 'chat', action: 'message', channel,
+//                message: { id?, clientId, message, timestamp, channel, metadata? } }
+//
+// The hook internally translates wire field `message` -> ChatMessage.content.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -16,6 +30,7 @@ type MessageHandler = (msg: GatewayMessage) => void;
 function makeChatOptions(overrides: {
   connectionState?: ConnectionState;
   currentChannel?: string;
+  displayName?: string;
   sendMessageMock?: ReturnType<typeof vi.fn>;
 } = {}) {
   const sendMessage = (overrides.sendMessageMock ?? vi.fn()) as unknown as ((msg: Record<string, unknown>) => void) & ReturnType<typeof vi.fn>;
@@ -37,6 +52,7 @@ function makeChatOptions(overrides: {
     dispatch,
     connectionState: overrides.connectionState ?? 'connected' as ConnectionState,
     currentChannel: overrides.currentChannel ?? 'general',
+    displayName: overrides.displayName ?? 'tester',
   };
 }
 
@@ -61,27 +77,27 @@ afterEach(() => {
 
 describe('useChat', () => {
   describe('subscribe on connect', () => {
-    it('sends subscribe message when connectionState is connected and channel is set', () => {
+    it('sends join message when connectionState is connected and channel is set', () => {
       const opts = makeChatOptions();
       renderHook(() => useChat(opts));
 
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'chat',
-          action: 'subscribe',
+          action: 'join',
           channel: 'general',
         })
       );
     });
 
-    it('does NOT send subscribe when connectionState is disconnected', () => {
+    it('does NOT send join when connectionState is disconnected', () => {
       const opts = makeChatOptions({ connectionState: 'disconnected' });
       renderHook(() => useChat(opts));
 
       expect(opts.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('does NOT send subscribe when connectionState is connecting', () => {
+    it('does NOT send join when connectionState is connecting', () => {
       const opts = makeChatOptions({ connectionState: 'connecting' });
       renderHook(() => useChat(opts));
 
@@ -89,18 +105,19 @@ describe('useChat', () => {
     });
   });
 
-  describe('chat:history — initial message load', () => {
-    it('populates messages array from chat:history event (chronological order)', () => {
+  describe('chat history — initial message load', () => {
+    it('populates messages array from chat history event (chronological order)', () => {
       const opts = makeChatOptions();
       const { result } = renderHook(() => useChat(opts));
 
       act(() => {
         opts.dispatch({
-          type: 'chat:history',
+          type: 'chat',
+          action: 'history',
           channel: 'general',
           messages: [
-            { clientId: 'a', content: 'hi', timestamp: 'T1' },
-            { clientId: 'b', content: 'hello', timestamp: 'T2' },
+            { clientId: 'a', message: 'hi', timestamp: 'T1' },
+            { clientId: 'b', message: 'hello', timestamp: 'T2' },
           ],
         });
       });
@@ -112,13 +129,14 @@ describe('useChat', () => {
       expect(result.current.messages[1].content).toBe('hello');
     });
 
-    it('sets messages to [] when chat:history has empty messages array', () => {
+    it('sets messages to [] when chat history has empty messages array', () => {
       const opts = makeChatOptions();
       const { result } = renderHook(() => useChat(opts));
 
       act(() => {
         opts.dispatch({
-          type: 'chat:history',
+          type: 'chat',
+          action: 'history',
           channel: 'general',
           messages: [],
         });
@@ -128,7 +146,7 @@ describe('useChat', () => {
     });
   });
 
-  describe('chat:message — real-time receive', () => {
+  describe('chat message — real-time receive', () => {
     it('appends a new message to the messages array', () => {
       const opts = makeChatOptions();
       const { result } = renderHook(() => useChat(opts));
@@ -136,20 +154,25 @@ describe('useChat', () => {
       // Load history first
       act(() => {
         opts.dispatch({
-          type: 'chat:history',
+          type: 'chat',
+          action: 'history',
           channel: 'general',
-          messages: [{ clientId: 'a', content: 'hi', timestamp: 'T1' }],
+          messages: [{ clientId: 'a', message: 'hi', timestamp: 'T1' }],
         });
       });
 
-      // Receive a real-time message
+      // Receive a real-time message — server wraps payload in `message`
       act(() => {
         opts.dispatch({
-          type: 'chat:message',
+          type: 'chat',
+          action: 'message',
           channel: 'general',
-          clientId: 'b',
-          content: 'hey',
-          timestamp: 'T2',
+          message: {
+            clientId: 'b',
+            message: 'hey',
+            timestamp: 'T2',
+            channel: 'general',
+          },
         });
       });
 
@@ -158,17 +181,21 @@ describe('useChat', () => {
       expect(result.current.messages[1].clientId).toBe('b');
     });
 
-    it('ignores chat:message for a different channel', () => {
+    it('ignores chat message for a different channel', () => {
       const opts = makeChatOptions({ currentChannel: 'general' });
       const { result } = renderHook(() => useChat(opts));
 
       act(() => {
         opts.dispatch({
-          type: 'chat:message',
+          type: 'chat',
+          action: 'message',
           channel: 'other-channel',
-          clientId: 'x',
-          content: 'wrong channel',
-          timestamp: 'T1',
+          message: {
+            clientId: 'x',
+            message: 'wrong channel',
+            timestamp: 'T1',
+            channel: 'other-channel',
+          },
         });
       });
 
@@ -177,11 +204,11 @@ describe('useChat', () => {
   });
 
   describe('send()', () => {
-    it('emits a chat:message protocol message with correct fields', () => {
+    it('emits a chat send protocol message with correct fields', () => {
       const opts = makeChatOptions();
       const { result } = renderHook(() => useChat(opts));
 
-      // Clear the subscribe call
+      // Clear the join call
       (opts.sendMessage as ReturnType<typeof vi.fn>).mockClear();
 
       act(() => {
@@ -191,9 +218,9 @@ describe('useChat', () => {
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'chat',
-          action: 'message',
+          action: 'send',
           channel: 'general',
-          content: 'hello',
+          message: 'hello',
         })
       );
     });
@@ -211,15 +238,15 @@ describe('useChat', () => {
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'chat',
-          action: 'message',
-          content: '',
+          action: 'send',
+          message: '',
         })
       );
     });
   });
 
   describe('channel change', () => {
-    it('unsubscribes from old channel and subscribes to new channel when channel changes', () => {
+    it('leaves old channel and joins new channel when channel changes', () => {
       const opts = makeChatOptions({ currentChannel: 'general' });
       const sendMessage = opts.sendMessage as ReturnType<typeof vi.fn>;
 
@@ -235,15 +262,15 @@ describe('useChat', () => {
       rerender({ channel: 'dev' });
 
       const calls = sendMessage.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>);
-      const unsubscribe = calls.find(
-        (c) => c.action === 'unsubscribe' && c.channel === 'general'
+      const leave = calls.find(
+        (c) => c.action === 'leave' && c.channel === 'general'
       );
-      const subscribe = calls.find(
-        (c) => c.action === 'subscribe' && c.channel === 'dev'
+      const join = calls.find(
+        (c) => c.action === 'join' && c.channel === 'dev'
       );
 
-      expect(unsubscribe).toBeDefined();
-      expect(subscribe).toBeDefined();
+      expect(leave).toBeDefined();
+      expect(join).toBeDefined();
     });
 
     it('clears messages array when channel changes', () => {
@@ -258,9 +285,10 @@ describe('useChat', () => {
       // Load history on general
       act(() => {
         opts.dispatch({
-          type: 'chat:history',
+          type: 'chat',
+          action: 'history',
           channel: 'general',
-          messages: [{ clientId: 'a', content: 'hi', timestamp: 'T1' }],
+          messages: [{ clientId: 'a', message: 'hi', timestamp: 'T1' }],
         });
       });
 
@@ -273,8 +301,8 @@ describe('useChat', () => {
     });
   });
 
-  describe('unsubscribe on unmount', () => {
-    it('sends unsubscribe when hook unmounts', () => {
+  describe('leave on unmount', () => {
+    it('sends leave when hook unmounts', () => {
       const opts = makeChatOptions();
       const { unmount } = renderHook(() => useChat(opts));
 
@@ -285,7 +313,7 @@ describe('useChat', () => {
       expect(opts.sendMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           service: 'chat',
-          action: 'unsubscribe',
+          action: 'leave',
           channel: 'general',
         })
       );

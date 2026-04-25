@@ -129,6 +129,11 @@ function eventIcon(eventType: string): string {
   if (eventType.endsWith('.join')) return '\u{1F7E2}';
   if (eventType.endsWith('.leave')) return '\u{1F534}';
   if (eventType.startsWith('social.')) return '\u{1F4AC}';
+  // Pipeline run-lifecycle events (relayed via usePipelineActivityRelay)
+  if (eventType === 'pipeline.run.started') return '\u25b6';
+  if (eventType === 'pipeline.run.completed') return '\u2713';
+  if (eventType === 'pipeline.run.failed') return '\u2715';
+  if (eventType === 'pipeline.approval.requested') return '\u270b';
   return '\u2022';
 }
 
@@ -150,6 +155,19 @@ function eventDescription(eventType: string, detail: Record<string, unknown>): s
       return `removed "${(detail.itemText as string) || 'item'}"${docCtx}`;
     case 'doc.comment':
       return `commented: "${(detail.text as string) || '...'}"${docCtx}`;
+    // Pipeline run-lifecycle events (relayed via usePipelineActivityRelay)
+    case 'pipeline.run.started': {
+      const pid = (detail.pipelineId as string) ?? '';
+      return pid ? `triggered pipeline ${pid}` : 'triggered a pipeline';
+    }
+    case 'pipeline.run.completed':
+      return typeof detail.durationMs === 'number'
+        ? `pipeline run completed in ${detail.durationMs}ms`
+        : 'pipeline run completed';
+    case 'pipeline.run.failed':
+      return `pipeline run failed: ${(detail.error as string) ?? 'unknown error'}`;
+    case 'pipeline.approval.requested':
+      return 'approval requested';
     default:
       // For social.* or unknown events, use detail.description if available
       if (detail.description) return String(detail.description);

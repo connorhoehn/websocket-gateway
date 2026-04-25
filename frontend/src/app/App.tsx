@@ -1,6 +1,6 @@
 // frontend/src/app/App.tsx
 import { useRef, useState, useCallback, useEffect, lazy } from 'react';
-import { Routes, Route, Navigate, useParams, useNavigate, useOutletContext } from 'react-router';
+import { Routes, Route, Navigate, useParams, useNavigate, useOutletContext, useSearchParams } from 'react-router';
 import type { DockVideoContext } from '../components/AppLayout';
 import { useAuth } from '../hooks/useAuth';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -17,6 +17,7 @@ import { AppLayout } from '../components/AppLayout';
 import { WebSocketProvider } from '../contexts/WebSocketContext';
 import { IdentityProvider } from '../contexts/IdentityContext';
 import { PresenceProvider } from '../contexts/PresenceContext';
+import { ToastProvider } from '../components/shared/ToastProvider';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useDocuments } from '../hooks/useDocuments';
 import { useRooms } from '../hooks/useRooms';
@@ -25,12 +26,31 @@ import type { LogEntry } from '../components/EventLog';
 import type { GatewayMessage, GatewayError } from '../types/gateway';
 import type { UseAuthReturn } from '../hooks/useAuth';
 
+// Register custom (user-defined) field types from localStorage into the renderer registry.
+// Must run after the built-in renderer barrel so base types are already registered.
+import '../renderers';
+import { registerCustomFieldTypes } from '../hooks/useCustomFieldTypes';
+registerCustomFieldTypes();
+
 // Lazy-loaded views
 const PanelsView = lazy(() => import('../components/PanelsView'));
 const SocialTabContent = lazy(() => import('../components/SocialTabContent'));
 const BigBrotherPanel = lazy(() => import('../components/BigBrotherPanel').then(m => ({ default: m.BigBrotherPanel })));
 const DocumentEditorPage = lazy(() => import('../components/doc-editor/DocumentEditorPage'));
 const DocumentListPage = lazy(() => import('../components/doc-editor/DocumentListPage'));
+const DocumentTypesPage = lazy(() => import('../components/doc-types/DocumentTypesPage').then(m => ({ default: m.DocumentTypesPage })));
+const FieldTypesPage = lazy(() => import('../components/field-types/FieldTypesPage'));
+const PipelinesPage = lazy(() => import('../components/pipelines/PipelinesPage'));
+const PipelineEditorPage = lazy(() => import('../components/pipelines/PipelineEditorPage'));
+const PipelineRunReplayPage = lazy(() => import('../components/pipelines/PipelineRunReplayPage'));
+const PipelineRunsPage = lazy(() => import('../components/pipelines/PipelineRunsPage'));
+const PipelineStatsPage = lazy(() => import('../components/pipelines/PipelineStatsPage'));
+const PendingApprovalsPage = lazy(() => import('../components/pipelines/PendingApprovalsPage'));
+const ObservabilityLayout = lazy(() => import('../components/observability/ObservabilityLayout'));
+const DashboardPage = lazy(() => import('../components/observability/DashboardPage'));
+const NodesPage = lazy(() => import('../components/observability/NodesPage'));
+const EventsPage = lazy(() => import('../components/observability/EventsPage'));
+const MetricsPage = lazy(() => import('../components/observability/MetricsPage'));
 
 // ---------------------------------------------------------------------------
 // Identity helper
@@ -299,6 +319,7 @@ function GatewayDemo({
           currentClientId: clientId,
           setTyping,
         }}>
+          <ToastProvider>
           <Routes>
             <Route element={<AppLayout {...layoutProps} />}>
               <Route path="/previews" element={
@@ -372,10 +393,61 @@ function GatewayDemo({
                   />
                 </ErrorBoundary>
               } />
+              <Route path="/document-types" element={
+                <ErrorBoundary name="DocumentTypes">
+                  <DocumentTypesPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/field-types" element={
+                <ErrorBoundary name="FieldTypes">
+                  <FieldTypesPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines" element={
+                <ErrorBoundary name="Pipelines">
+                  <PipelinesPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines/approvals" element={
+                <ErrorBoundary name="PendingApprovals">
+                  <PendingApprovalsPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines/:pipelineId" element={
+                <ErrorBoundary name="PipelineEditor">
+                  <PipelineEditorPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines/:pipelineId/runs" element={
+                <ErrorBoundary name="PipelineRunsList">
+                  <PipelineRunsPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines/:pipelineId/stats" element={
+                <ErrorBoundary name="PipelineStats">
+                  <PipelineStatsPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/pipelines/:pipelineId/runs/:runId" element={
+                <ErrorBoundary name="PipelineReplay">
+                  <PipelineRunReplayPage />
+                </ErrorBoundary>
+              } />
+              <Route path="/observability" element={
+                <ErrorBoundary name="Observability">
+                  <ObservabilityLayout />
+                </ErrorBoundary>
+              }>
+                <Route index element={<DashboardPage />} />
+                <Route path="nodes" element={<NodesPage />} />
+                <Route path="events" element={<EventsPage />} />
+                <Route path="metrics" element={<MetricsPage />} />
+              </Route>
               <Route index element={<Navigate to="/previews" replace />} />
               <Route path="*" element={<Navigate to="/previews" replace />} />
             </Route>
           </Routes>
+          </ToastProvider>
         </PresenceProvider>
       </IdentityProvider>
     </WebSocketProvider>
@@ -413,7 +485,7 @@ function SocialRoute(props: {
     <SocialTabContent
       userId={props.userId}
       displayName={props.displayName}
-      userEmail={props.userEmail}
+      userEmail={props.userEmail ?? ''}
       connectionState={props.connectionState}
       idToken={props.idToken}
       rooms={rooms}
@@ -424,6 +496,7 @@ function SocialRoute(props: {
       handleRoomSelect={handleRoomSelect}
       activeRoomId={activeRoomId}
       activityEvents={props.activityEvents}
+      onMessage={props.onMessage}
     />
   );
 }
@@ -445,7 +518,11 @@ function DocumentListRoute(props: {
       documents={documents}
       presence={docPresence}
       hideHeader
-      onOpenDocument={(id: string) => navigate(`/documents/${id}`)}
+      onOpenDocument={(id: string) => {
+        const doc = documents.find(d => d.id === id);
+        const typeParam = doc?.type ? `?type=${encodeURIComponent(doc.type)}` : '';
+        navigate(`/documents/${id}${typeParam}`);
+      }}
       onCreateDocument={createDocument}
       onDeleteDocument={deleteDocument}
       onJumpToUser={(docId: string) => navigate(`/documents/${docId}`)}
@@ -462,8 +539,11 @@ function DocumentEditorRoute(props: {
   activityEvents: import('../hooks/useActivityBus').ActivityEvent[];
 }) {
   const { documentId } = useParams<{ documentId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { dockedVideoDocId, setDockedVideoDocId } = useOutletContext<DockVideoContext>();
+
+  const documentType = searchParams.get('type') ?? undefined;
 
   if (!documentId) return <Navigate to="/documents" replace />;
 
@@ -471,6 +551,7 @@ function DocumentEditorRoute(props: {
     <div style={{ flex: 1, minHeight: 0 }}>
       <DocumentEditorPage
         documentId={documentId}
+        documentType={documentType}
         ws={props.ws}
         userId={props.userId}
         displayName={props.displayName}

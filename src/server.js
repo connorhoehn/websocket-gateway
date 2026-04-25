@@ -5,6 +5,7 @@ const http = require("http");
 const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
+const { EventEmitter } = require("events");
 
 // Import our distributed architecture components
 const NodeManager = require("./core/node-manager");
@@ -30,6 +31,8 @@ const SessionService = require("./services/session-service");
 const SocialService = require("./services/social-service");
 const ActivityService = require("./services/activity-service");
 const DocumentEventsService = require("./services/document-events-service");
+const PipelineService = require("./services/pipeline-service");
+const { PipelineBridge } = require("./pipeline-bridge/pipeline-bridge");
 
 // Utilities
 const { createDynamoClient } = require('./utils/dynamo-client');
@@ -269,6 +272,39 @@ class DistributedWebSocketServer {
         const docEventsService = new DocumentEventsService(this.messageRouter, this.logger, this.metricsCollector);
         this.services.set('document-events', docEventsService);
         this.logger.info('✅ Document events service initialized');
+
+        // Phase 1: a local EventEmitter acts as the pipeline event source. Phase 3 swaps
+        // this for a distributed-core EventBus (same subscribeAll shape).
+        // Created before the PipelineService so cancel/resolveApproval fallbacks can
+        // synthesize events directly onto it without extra wiring.
+        // TODO Phase 3: real events will flow from distributed-core EventBus.
+        this.pipelineEventSource = new EventEmitter();
+
+        // Pipeline service is always enabled — Phase 4 scaffold pinning the WS message-routing shape.
+        // Phase 4 will register cancelHandler / resolveApprovalHandler that call
+        // PipelineModule.deleteResource() / PipelineModule.resolveApproval(); until
+        // then the service uses the local event-source fallback for both actions.
+        const pipelineService = new PipelineService(
+            this.messageRouter,
+            this.logger,
+            this.metricsCollector,
+            { eventSource: this.pipelineEventSource },
+        );
+        this.services.set('pipeline', pipelineService);
+        this.logger.info('✅ Pipeline service initialized (stub — Phase 4 integration pending)');
+
+        this.pipelineBridge = new PipelineBridge({
+            eventSource: this.pipelineEventSource,
+            pipelineService,
+            logger: this.logger,
+        });
+        this.pipelineBridge.start();
+
+        // Expose the source on the HTTP server so later phases (and tests) can grab it.
+        if (this.httpServer) {
+            this.httpServer.pipelineEventSource = this.pipelineEventSource;
+        }
+        this.logger.info('✅ Pipeline bridge started (Phase 1 stub — EventEmitter source)');
     }
 
     setupHttpServer() {
@@ -289,6 +325,9 @@ class DistributedWebSocketServer {
         const publicDir = path.join(__dirname, 'public');
 
         this.httpServer = http.createServer((req, res) => {
+            // Parse path without query string for matching
+            const urlPathOnly = (req.url || '').split('?')[0];
+
             // API routes take priority
             if (req.url === '/health' && req.method === 'GET') {
                 this.handleHealthCheck(req, res);
@@ -298,6 +337,11 @@ class DistributedWebSocketServer {
                 this.handleStats(req, res);
             } else if (req.url === '/metrics' && req.method === 'GET') {
                 this.handleMetrics(req, res);
+            } else if (req.method === 'POST' && urlPathOnly.startsWith('/hooks/pipeline/')) {
+                // Phase 4-forward: external webhook trigger for pipelines with
+                // triggerBinding.event === 'webhook'. Emits a bus event that the
+                // PipelineBridge fans out via pipeline:all → WS subscribers.
+                this.handlePipelineWebhook(req, res, urlPathOnly);
             } else if (req.method === 'GET') {
                 // Static file serving for the React SPA
                 this.serveStatic(req, res, publicDir, MIME_TYPES);
@@ -767,6 +811,117 @@ class DistributedWebSocketServer {
         res.end(JSON.stringify(metrics, null, 2));
     }
 
+    /**
+     * POST /hooks/pipeline/:path — external webhook endpoint.
+     *
+     * Extracts the path segment after `/hooks/pipeline/`, reads the body,
+     * and emits a `pipeline.webhook.triggered` event on the gateway's
+     * pipelineEventSource. The PipelineBridge fans this out to
+     * `pipeline:all` (and optionally `pipeline:run:{runId}` when a runId
+     * is present). Subscribers on the frontend match on `webhookPath`.
+     *
+     * Responds 202 Accepted with `{ accepted: true, path }`.
+     */
+    async handlePipelineWebhook(req, res, urlPathOnly) {
+        const PREFIX = '/hooks/pipeline/';
+        // Strip prefix + any trailing slash(es); allow the remainder to contain
+        // further slashes so `/hooks/pipeline/foo/bar` → webhookPath `foo/bar`.
+        let webhookPath = urlPathOnly.slice(PREFIX.length);
+        webhookPath = webhookPath.replace(/\/+$/, '');
+
+        if (!webhookPath) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'webhook path is required' }));
+            return;
+        }
+
+        // Reject payloads above a hard cap to avoid unbounded memory use.
+        const MAX_BODY_BYTES = 1024 * 1024; // 1 MiB
+
+        // Collect the body as a buffer so we can parse it as JSON when
+        // appropriate and fall back to raw text otherwise.
+        const chunks = [];
+        let received = 0;
+        let tooLarge = false;
+
+        req.on('data', (chunk) => {
+            if (tooLarge) return;
+            received += chunk.length;
+            if (received > MAX_BODY_BYTES) {
+                tooLarge = true;
+                return;
+            }
+            chunks.push(chunk);
+        });
+
+        req.on('end', () => {
+            if (tooLarge) {
+                res.writeHead(413, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'payload too large' }));
+                return;
+            }
+
+            const raw = Buffer.concat(chunks).toString('utf8');
+            const contentType = (req.headers['content-type'] || '').toLowerCase();
+            let body;
+            if (raw.length === 0) {
+                body = null;
+            } else if (contentType.includes('application/json')) {
+                try {
+                    body = JSON.parse(raw);
+                } catch (err) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'invalid JSON body' }));
+                    return;
+                }
+            } else {
+                body = raw;
+            }
+
+            // Build a header snapshot minus anything bearer-like. Pass through
+            // everything else verbatim — subscribers decide what they need.
+            const safeHeaders = {};
+            for (const [name, value] of Object.entries(req.headers)) {
+                const lower = name.toLowerCase();
+                if (lower === 'authorization' || lower === 'cookie' || lower === 'proxy-authorization') {
+                    continue;
+                }
+                safeHeaders[lower] = Array.isArray(value) ? value.join(', ') : value;
+            }
+
+            const payload = {
+                webhookPath,
+                body,
+                headers: safeHeaders,
+                at: new Date().toISOString(),
+            };
+
+            if (this.pipelineEventSource && typeof this.pipelineEventSource.emit === 'function') {
+                try {
+                    this.pipelineEventSource.emit('event', {
+                        eventType: 'pipeline.webhook.triggered',
+                        payload,
+                    });
+                } catch (err) {
+                    this.logger.error('[pipeline-webhook] emit failed', err?.message || err);
+                }
+            } else {
+                this.logger.warn('[pipeline-webhook] pipelineEventSource not available');
+            }
+
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ accepted: true, path: webhookPath }));
+        });
+
+        req.on('error', (err) => {
+            this.logger.warn('[pipeline-webhook] request error', err?.message || err);
+            try {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'request aborted' }));
+            } catch (_) { /* connection already closed */ }
+        });
+    }
+
     async cleanup() {
         this.logger.info('Cleaning up WebSocket server...');
 
@@ -779,6 +934,15 @@ class DistributedWebSocketServer {
         if (this.metricsInterval) {
             clearInterval(this.metricsInterval);
             this.metricsInterval = null;
+        }
+
+        // Stop pipeline bridge (unsubscribe from event source)
+        if (this.pipelineBridge) {
+            try {
+                this.pipelineBridge.stop();
+            } catch (err) {
+                this.logger.warn('Error stopping pipeline bridge:', err.message);
+            }
         }
 
         // Close all WebSocket connections
@@ -823,8 +987,17 @@ class DistributedWebSocketServer {
 
     async shutdown() {
         this.logger.info('🛑 Shutting down WebSocket server...');
-        
+
         try {
+            // Stop pipeline bridge first so no more events fan out to closing sockets
+            if (this.pipelineBridge) {
+                try {
+                    this.pipelineBridge.stop();
+                } catch (err) {
+                    this.logger.warn('Error stopping pipeline bridge:', err.message);
+                }
+            }
+
             // Close all WebSocket connections
             if (this.wss) {
                 this.wss.clients.forEach((ws) => {

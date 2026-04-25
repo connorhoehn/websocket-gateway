@@ -1,0 +1,582 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hoehn/websocket-gateway/schemas/pipeline.schema.json",
+  "title": "PipelineDefinition",
+  "description": "Standalone JSON Schema (Draft 2020-12) for a pipeline definition. Authoritative source of shape is frontend/src/types/pipeline.ts — keep in sync per TYPES_SYNC.md. Usable outside an OpenAPI context (e.g. for importPipelineJSON input validation).",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "status",
+    "nodes",
+    "edges",
+    "createdAt",
+    "updatedAt",
+    "createdBy"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Normalized (lowercase, trimmed) free-form labels."
+    },
+    "icon": { "type": "string" },
+    "version": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bumped on each save."
+    },
+    "status": { "$ref": "#/$defs/PipelineStatus" },
+    "publishedVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Snapshot of `version` at last publish; runs trigger on this version."
+    },
+    "publishedSnapshot": {
+      "$ref": "#/$defs/PipelineDefinitionSnapshot",
+      "description": "Deep clone of the definition at last publish (minus this field). Drives VersionDiffModal."
+    },
+    "triggerBinding": { "$ref": "#/$defs/TriggerBinding" },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/PipelineNode" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/PipelineEdge" }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "createdBy": { "type": "string" }
+  },
+
+  "$defs": {
+    "PipelineStatus": {
+      "type": "string",
+      "enum": ["draft", "published"]
+    },
+
+    "NodeType": {
+      "type": "string",
+      "enum": [
+        "trigger",
+        "llm",
+        "transform",
+        "condition",
+        "action",
+        "fork",
+        "join",
+        "approval"
+      ]
+    },
+
+    "TriggerType": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "document.finalize",
+        "document.comment",
+        "document.submit",
+        "schedule",
+        "webhook"
+      ]
+    },
+
+    "LLMProvider": {
+      "type": "string",
+      "enum": ["anthropic", "bedrock"]
+    },
+
+    "TransformType": {
+      "type": "string",
+      "enum": ["jsonpath", "template", "javascript"]
+    },
+
+    "ActionType": {
+      "type": "string",
+      "enum": [
+        "update-document",
+        "post-comment",
+        "notify",
+        "webhook",
+        "mcp-tool"
+      ]
+    },
+
+    "JoinMode": {
+      "type": "string",
+      "enum": ["all", "any", "n_of_m"]
+    },
+
+    "JoinMergeStrategy": {
+      "type": "string",
+      "enum": ["deep-merge", "array-collect", "last-writer-wins"]
+    },
+
+    "ApprovalTimeoutAction": {
+      "type": "string",
+      "enum": ["reject", "approve", "escalate"]
+    },
+
+    "Approver": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "type": "string", "enum": ["user", "role"] },
+        "value": { "type": "string" }
+      }
+    },
+
+    "TriggerNodeData": {
+      "type": "object",
+      "required": ["type", "triggerType"],
+      "properties": {
+        "type": { "const": "trigger" },
+        "triggerType": { "$ref": "#/$defs/TriggerType" },
+        "documentTypeId": { "type": "string" },
+        "schedule": { "type": "string" },
+        "webhookPath": { "type": "string" }
+      }
+    },
+
+    "LLMNodeData": {
+      "type": "object",
+      "required": [
+        "type",
+        "provider",
+        "model",
+        "systemPrompt",
+        "userPromptTemplate",
+        "streaming"
+      ],
+      "properties": {
+        "type": { "const": "llm" },
+        "provider": { "$ref": "#/$defs/LLMProvider" },
+        "model": { "type": "string" },
+        "systemPrompt": { "type": "string" },
+        "userPromptTemplate": { "type": "string" },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "streaming": { "type": "boolean" }
+      }
+    },
+
+    "TransformNodeData": {
+      "type": "object",
+      "required": ["type", "transformType", "expression"],
+      "properties": {
+        "type": { "const": "transform" },
+        "transformType": { "$ref": "#/$defs/TransformType" },
+        "expression": { "type": "string" },
+        "outputKey": { "type": "string" }
+      }
+    },
+
+    "ConditionNodeData": {
+      "type": "object",
+      "required": ["type", "expression"],
+      "properties": {
+        "type": { "const": "condition" },
+        "expression": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+
+    "ActionNodeData": {
+      "type": "object",
+      "required": ["type", "actionType", "config"],
+      "properties": {
+        "type": { "const": "action" },
+        "actionType": { "$ref": "#/$defs/ActionType" },
+        "config": { "type": "object", "additionalProperties": true },
+        "idempotent": { "type": "boolean" },
+        "onError": { "type": "string", "enum": ["route-error", "fail-run"] }
+      }
+    },
+
+    "ForkNodeData": {
+      "type": "object",
+      "required": ["type", "branchCount"],
+      "properties": {
+        "type": { "const": "fork" },
+        "branchCount": { "type": "integer", "minimum": 2, "maximum": 8 },
+        "branchLabels": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "JoinNodeData": {
+      "type": "object",
+      "required": ["type", "mode", "mergeStrategy"],
+      "properties": {
+        "type": { "const": "join" },
+        "mode": { "$ref": "#/$defs/JoinMode" },
+        "n": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Required when `mode === 'n_of_m'`."
+        },
+        "mergeStrategy": { "$ref": "#/$defs/JoinMergeStrategy" }
+      }
+    },
+
+    "ApprovalNodeData": {
+      "type": "object",
+      "required": ["type", "approvers", "requiredCount"],
+      "properties": {
+        "type": { "const": "approval" },
+        "approvers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Approver" }
+        },
+        "requiredCount": { "type": "integer", "minimum": 1 },
+        "timeoutMs": { "type": "integer", "minimum": 0 },
+        "timeoutAction": { "$ref": "#/$defs/ApprovalTimeoutAction" },
+        "message": { "type": "string" }
+      }
+    },
+
+    "NodeData": {
+      "oneOf": [
+        { "$ref": "#/$defs/TriggerNodeData" },
+        { "$ref": "#/$defs/LLMNodeData" },
+        { "$ref": "#/$defs/TransformNodeData" },
+        { "$ref": "#/$defs/ConditionNodeData" },
+        { "$ref": "#/$defs/ActionNodeData" },
+        { "$ref": "#/$defs/ForkNodeData" },
+        { "$ref": "#/$defs/JoinNodeData" },
+        { "$ref": "#/$defs/ApprovalNodeData" }
+      ],
+      "discriminator": {
+        "propertyName": "type",
+        "mapping": {
+          "trigger": "#/$defs/TriggerNodeData",
+          "llm": "#/$defs/LLMNodeData",
+          "transform": "#/$defs/TransformNodeData",
+          "condition": "#/$defs/ConditionNodeData",
+          "action": "#/$defs/ActionNodeData",
+          "fork": "#/$defs/ForkNodeData",
+          "join": "#/$defs/JoinNodeData",
+          "approval": "#/$defs/ApprovalNodeData"
+        }
+      }
+    },
+
+    "PipelineNode": {
+      "type": "object",
+      "required": ["id", "type", "position", "data"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "$ref": "#/$defs/NodeType" },
+        "position": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        },
+        "data": { "$ref": "#/$defs/NodeData" }
+      }
+    },
+
+    "PipelineEdge": {
+      "type": "object",
+      "required": ["id", "source", "sourceHandle", "target", "targetHandle"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "type": "string" },
+        "sourceHandle": {
+          "type": "string",
+          "description": "'out', 'true'/'false', 'branch-N', 'approved'/'rejected', 'error'."
+        },
+        "target": { "type": "string" },
+        "targetHandle": {
+          "type": "string",
+          "description": "'in' or 'in-N' for Join."
+        }
+      }
+    },
+
+    "TriggerBinding": {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "event": { "$ref": "#/$defs/TriggerType" },
+        "documentTypeId": { "type": "string" },
+        "schedule": { "type": "string" },
+        "webhookPath": { "type": "string" }
+      }
+    },
+
+    "PipelineDefinitionSnapshot": {
+      "description": "Same shape as PipelineDefinition minus publishedSnapshot (no recursion).",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "version",
+        "status",
+        "nodes",
+        "edges",
+        "createdAt",
+        "updatedAt",
+        "createdBy"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "icon": { "type": "string" },
+        "version": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/PipelineStatus" },
+        "publishedVersion": { "type": "integer", "minimum": 0 },
+        "triggerBinding": { "$ref": "#/$defs/TriggerBinding" },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/PipelineNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/PipelineEdge" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      }
+    },
+
+    "RunStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "awaiting_approval",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+
+    "StepStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "skipped",
+        "cancelled",
+        "awaiting"
+      ]
+    },
+
+    "ApprovalRecord": {
+      "type": "object",
+      "required": ["userId", "decision", "at"],
+      "properties": {
+        "userId": { "type": "string" },
+        "decision": { "type": "string", "enum": ["approve", "reject"] },
+        "comment": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "StepExecution": {
+      "type": "object",
+      "required": ["nodeId", "status"],
+      "properties": {
+        "nodeId": { "type": "string" },
+        "status": { "$ref": "#/$defs/StepStatus" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "input": {},
+        "output": {},
+        "error": { "type": "string" },
+        "llm": {
+          "type": "object",
+          "required": ["prompt", "response", "tokensIn", "tokensOut"],
+          "properties": {
+            "prompt": { "type": "string" },
+            "response": { "type": "string" },
+            "tokensIn": { "type": "integer", "minimum": 0 },
+            "tokensOut": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "approvals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApprovalRecord" }
+        }
+      }
+    },
+
+    "PipelineRunTrigger": {
+      "type": "object",
+      "required": ["triggerType", "payload"],
+      "properties": {
+        "userId": { "type": "string" },
+        "triggerType": { "type": "string" },
+        "payload": { "type": "object", "additionalProperties": true }
+      }
+    },
+
+    "PipelineRunError": {
+      "type": "object",
+      "required": ["nodeId", "message"],
+      "properties": {
+        "nodeId": { "type": "string" },
+        "message": { "type": "string" },
+        "stack": { "type": "string" }
+      }
+    },
+
+    "PipelineRun": {
+      "type": "object",
+      "required": [
+        "id",
+        "pipelineId",
+        "pipelineVersion",
+        "status",
+        "triggeredBy",
+        "ownerNodeId",
+        "startedAt",
+        "currentStepIds",
+        "steps",
+        "context"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "pipelineId": { "type": "string" },
+        "pipelineVersion": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/RunStatus" },
+        "triggeredBy": { "$ref": "#/$defs/PipelineRunTrigger" },
+        "ownerNodeId": {
+          "type": "string",
+          "description": "Distributed-core ResourceRouter owner."
+        },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "currentStepIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "steps": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/StepExecution" }
+        },
+        "context": { "type": "object", "additionalProperties": true },
+        "error": { "$ref": "#/$defs/PipelineRunError" }
+      }
+    },
+
+    "PipelineEventType": {
+      "type": "string",
+      "enum": [
+        "pipeline.run.started",
+        "pipeline.run.completed",
+        "pipeline.run.failed",
+        "pipeline.run.cancelled",
+        "pipeline.run.orphaned",
+        "pipeline.run.reassigned",
+        "pipeline.step.started",
+        "pipeline.step.completed",
+        "pipeline.step.failed",
+        "pipeline.step.skipped",
+        "pipeline.step.cancelled",
+        "pipeline.llm.prompt",
+        "pipeline.llm.token",
+        "pipeline.llm.response",
+        "pipeline.approval.requested",
+        "pipeline.approval.recorded",
+        "pipeline.run.paused",
+        "pipeline.run.resumed",
+        "pipeline.run.resumeFromStep",
+        "pipeline.run.retry",
+        "pipeline.join.waiting",
+        "pipeline.join.fired"
+      ]
+    },
+
+    "PipelineWireEvent": {
+      "description": "Wire envelope wrapping every PipelineEventMap event. Carries ordering metadata for replay-dedupe.",
+      "type": "object",
+      "required": ["eventType", "payload", "seq", "sourceNodeId", "emittedAt"],
+      "properties": {
+        "eventType": { "$ref": "#/$defs/PipelineEventType" },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Shape varies per eventType; see PipelineEventMap in pipeline.ts."
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic per-run sequence — stable across replays."
+        },
+        "sourceNodeId": { "type": "string" },
+        "emittedAt": {
+          "type": "integer",
+          "description": "Wall-clock emission time (ms). Re-stamped on replay; NEVER use for dedupe."
+        }
+      }
+    },
+
+    "ValidationCode": {
+      "type": "string",
+      "enum": [
+        "NO_TRIGGER",
+        "MULTIPLE_TRIGGERS",
+        "CYCLE_DETECTED",
+        "INVALID_HANDLE",
+        "MISSING_CONFIG",
+        "APPROVAL_NO_APPROVERS",
+        "JOIN_INSUFFICIENT_INPUTS",
+        "ORPHAN_NODE",
+        "DEAD_END",
+        "UNUSED_FORK_BRANCH",
+        "UNUSED_CONDITION_BRANCH",
+        "NO_ERROR_HANDLER",
+        "LLM_NO_MAX_TOKENS",
+        "UNGUARDED_APPROVAL_TIMEOUT",
+        "LARGE_FORK",
+        "DEEP_CHAIN",
+        "DUPLICATE_NODE_NAME",
+        "LOW_TEMPERATURE_NON_DETERMINISTIC_PROMPT",
+        "NO_PUBLISHED_VERSION_BUT_TRIGGER_SCHEDULED"
+      ]
+    },
+
+    "ValidationIssue": {
+      "type": "object",
+      "required": ["code", "message", "severity"],
+      "properties": {
+        "code": { "$ref": "#/$defs/ValidationCode" },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["error", "warning"] },
+        "nodeId": { "type": "string" },
+        "edgeId": { "type": "string" },
+        "field": { "type": "string" }
+      }
+    },
+
+    "ValidationResult": {
+      "type": "object",
+      "required": ["errors", "warnings", "isValid", "canPublish"],
+      "properties": {
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ValidationIssue" }
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ValidationIssue" }
+        },
+        "isValid": { "type": "boolean" },
+        "canPublish": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -14,7 +14,6 @@ interface DocumentHeaderProps {
   onUpdateMeta: (patch: Partial<DocumentMeta>) => void;
   onExport: (format: 'markdown' | 'pdf' | 'json') => void;
   onToggleHistory: () => void;
-  onToggleWorkflows?: () => void;
   onToggleVideoCall?: () => void;
   onToggleVideoHistory?: () => void;
   isCallActive?: boolean;
@@ -29,6 +28,7 @@ interface DocumentHeaderProps {
   followingUserId?: string | null;
   onFinalize?: () => void;
   onUnlock?: () => void;
+  pastCallsCount?: number;
 }
 
 const headerStyle: React.CSSProperties = {
@@ -161,7 +161,6 @@ export default function DocumentHeader({
   onUpdateMeta,
   onExport,
   onToggleHistory,
-  onToggleWorkflows,
   onToggleVideoCall,
   onToggleVideoHistory,
   isCallActive,
@@ -176,8 +175,9 @@ export default function DocumentHeader({
   followingUserId,
   onFinalize,
   onUnlock,
+  pastCallsCount,
 }: DocumentHeaderProps) {
-  const [showExport, setShowExport] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
   return (
     <header style={headerStyle}>
@@ -264,120 +264,89 @@ export default function DocumentHeader({
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          style={exportBtnStyle}
-          onClick={onToggleMyItems}
-        >
-          My Items{myItemCount ? ` (${myItemCount})` : ''}
-        </button>
-        <button
-          type="button"
-          style={{
-            ...exportBtnStyle,
-            color: '#dc2626',
-            border: '1px solid #fca5a5',
-          }}
-          onClick={() => {
-            if (window.confirm('Clear all document content? This cannot be undone.')) {
-              onClearDocument();
-            }
-          }}
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          style={exportBtnStyle}
-          onClick={onToggleHistory}
-        >
-          History
-        </button>
-        {onToggleWorkflows && (
-          <button
-            type="button"
-            style={exportBtnStyle}
-            onClick={onToggleWorkflows}
-          >
-            Workflows
+
+          {/* My Items — always visible */}
+          <button type="button" style={exportBtnStyle} onClick={onToggleMyItems}>
+            My Items{myItemCount ? ` (${myItemCount})` : ''}
           </button>
-        )}
-        {onToggleVideoCall && (
-          <button
-            type="button"
-            style={{
-              ...exportBtnStyle,
-              ...(isCallActive ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : {}),
-            }}
-            onClick={onToggleVideoCall}
-          >
-            {isCallActive ? 'In Call' : 'Call'}
-          </button>
-        )}
-        {onToggleVideoHistory && (
-          <button type="button" style={exportBtnStyle} onClick={onToggleVideoHistory}>
-            Past Calls
-          </button>
-        )}
-        {meta.status === 'final' ? (
-          <button
-            type="button"
-            style={{
-              ...exportBtnStyle,
-              background: '#f0fdf4',
-              color: '#065f46',
-              border: '1px solid #86efac',
-            }}
-            onClick={onUnlock}
-          >
-            Unlock
-          </button>
-        ) : (
-          <button
-            type="button"
-            style={{
-              ...exportBtnStyle,
-              background: '#f0fdf4',
-              color: '#065f46',
-              border: '1px solid #86efac',
-            }}
-            onClick={onFinalize}
-          >
-            Finalize
-          </button>
-        )}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            style={exportBtnStyle}
-            onClick={() => setShowExport((v) => !v)}
-          >
-            Export
-          </button>
-          {showExport && (
-            <div style={dropdownStyle}>
-              {(['markdown', 'pdf', 'json'] as const).map((fmt) => (
-                <button
-                  key={fmt}
-                  type="button"
-                  style={dropdownItem}
-                  onClick={() => {
-                    onExport(fmt);
-                    setShowExport(false);
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.target as HTMLElement).style.background = '#f3f4f6';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.target as HTMLElement).style.background = 'transparent';
-                  }}
-                >
-                  {fmt.charAt(0).toUpperCase() + fmt.slice(1)}
-                </button>
-              ))}
-            </div>
+
+          {/* Call button — always visible when available */}
+          {onToggleVideoCall && (
+            <button
+              type="button"
+              style={{
+                ...exportBtnStyle,
+                ...(isCallActive ? { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' } : {}),
+              }}
+              onClick={onToggleVideoCall}
+            >
+              {isCallActive ? 'In Call' : 'Call'}
+            </button>
           )}
-        </div>
+
+          {/* Finalize / Unlock */}
+          {meta.status === 'final' ? (
+            <button type="button" style={{ ...exportBtnStyle, background: '#f0fdf4', color: '#065f46', border: '1px solid #86efac' }} onClick={onUnlock}>
+              Unlock
+            </button>
+          ) : (
+            <button type="button" style={{ ...exportBtnStyle, background: '#f0fdf4', color: '#065f46', border: '1px solid #86efac' }} onClick={onFinalize}>
+              Finalize
+            </button>
+          )}
+
+          {/* ⋯ More — secondary actions + export */}
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={{ ...exportBtnStyle, letterSpacing: 1 }}
+              onClick={() => setShowMore((v) => !v)}
+              title="More actions"
+            >
+              ⋯
+            </button>
+            {showMore && (
+              <div style={{ ...dropdownStyle, right: 0, minWidth: 160 }}>
+                <button type="button" style={dropdownItem} onClick={() => { onToggleHistory(); setShowMore(false); }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.background = '#f3f4f6'; }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
+                >
+                  History
+                </button>
+                {onToggleVideoHistory && (pastCallsCount ?? 0) > 0 && (
+                  <button type="button" style={dropdownItem} onClick={() => { onToggleVideoHistory(); setShowMore(false); }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = '#f3f4f6'; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    Past Calls ({pastCallsCount})
+                  </button>
+                )}
+                <div style={{ borderTop: '1px solid #f1f5f9', margin: '4px 0' }} />
+                {(['markdown', 'pdf', 'json'] as const).map((fmt) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    style={dropdownItem}
+                    onClick={() => { onExport(fmt); setShowMore(false); }}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.background = '#f3f4f6'; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    Export {fmt.charAt(0).toUpperCase() + fmt.slice(1)}
+                  </button>
+                ))}
+                <div style={{ borderTop: '1px solid #f1f5f9', margin: '4px 0' }} />
+                <button type="button"
+                  style={{ ...dropdownItem, color: '#dc2626' }}
+                  onClick={() => { setShowMore(false); if (window.confirm('Clear all document content? This cannot be undone.')) onClearDocument(); }}
+                  onMouseEnter={(e) => { (e.target as HTMLElement).style.background = '#fff5f5'; }}
+                  onMouseLeave={(e) => { (e.target as HTMLElement).style.background = 'transparent'; }}
+                >
+                  Clear Document
+                </button>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
     </header>

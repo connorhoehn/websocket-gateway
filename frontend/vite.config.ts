@@ -35,6 +35,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: [],
+    setupFiles: ['./src/test-setup.ts'],
+    // e2e/ is Playwright, not Vitest — skip so `vitest run` doesn't choke.
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
 })
