@@ -392,6 +392,54 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  # --- Pending approvals queue --------------------------------------------
+  # Surfaces `PipelineModule.getPendingApprovals()` to the frontend so the
+  # approvals inbox can render across all in-flight runs in one round-trip.
+  # Static segment — registered BEFORE both `/pipelines/{pipelineId}/...`
+  # and `/pipelines/{runId}/approvals` so it isn't captured as a path
+  # param. When the bridge isn't wired (or doesn't implement this method)
+  # the route returns `{ approvals: [] }` with HTTP 200 — empty queue is a
+  # valid answer in stub mode, NOT a 503.
+  /pipelines/approvals:
+    get:
+      tags: [pipelines]
+      summary: List pending approvals across all in-flight runs on this node
+      description: |
+        Returns every Approval node currently waiting on this gateway node.
+        Pass `?userId=` to filter to rows where the given user appears in
+        `approvers`; omit it to receive everything (the frontend's
+        approvals inbox typically filters visually).
+
+        ## Stub mode
+        When no live `PipelineBridge` is wired (Phase 1 / pre-bootstrap)
+        the route returns `{ approvals: [] }` with HTTP 200. Frontend
+        consumers should NOT treat the empty list as an error — it is the
+        documented Phase-1 fallback.
+      operationId: listPendingApprovals
+      parameters:
+        - in: query
+          name: userId
+          required: false
+          schema:
+            type: string
+          description: |
+            Optional approver-user filter. When present, only rows where
+            this `userId` appears in `approvers[]` are returned.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [approvals]
+                properties:
+                  approvals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PendingApprovalRow'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   # --- Approvals -----------------------------------------------------------
   # Approvals are addressed by `runId` directly (not pipeline-scoped) — the
   # caller resolving an approval generally does not know / care which
@@ -671,6 +719,37 @@ components:
         comment:
           type: string
           description: Optional human note attached to the ApprovalRecord.
+
+    # Mirror of distributed-core's `PendingApprovalRow`, surfaced via
+    # `PipelineModule.getPendingApprovals()`. Kept in lockstep with the
+    # `PendingApprovalRow` interface in `routes/pipelineTriggers.ts`.
+    PendingApprovalRow:
+      type: object
+      required: [runId, stepId, pipelineId, approvers, requestedAt]
+      properties:
+        runId:
+          type: string
+          format: uuid
+        stepId:
+          type: string
+          description: The Approval node id within the run that is waiting.
+        pipelineId:
+          type: string
+        approvers:
+          type: array
+          items:
+            type: object
+            required: [userId]
+            properties:
+              userId: { type: string }
+              teamId: { type: string }
+              role: { type: string }
+        message:
+          type: string
+          description: Optional human-readable prompt set on the Approval node.
+        requestedAt:
+          type: string
+          format: date-time
 
     RecordApprovalResponse:
       type: object

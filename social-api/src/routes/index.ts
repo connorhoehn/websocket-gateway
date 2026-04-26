@@ -24,6 +24,7 @@ import {
   pipelineApprovalsRouter,
   pipelineActiveRunsRouter,
   pipelineCancelRouter,
+  pipelinePendingApprovalsRouter,
 } from './pipelineTriggers';
 import { pipelineValidationRouter } from './pipelineValidation';
 
@@ -67,10 +68,15 @@ router.use('/pipelines/validate', pipelineValidationRouter);
 // must precede the `:pipelineId` mount below so `runs` doesn't get
 // interpreted as a pipelineId.
 router.use('/pipelines/runs/active', pipelineActiveRunsRouter);
+// Pending-approval queue — GET /api/pipelines/approvals. Static segment;
+// must precede BOTH the `:pipelineId` mount AND the `:runId/approvals`
+// mount below — otherwise `approvals` would be captured as a `:runId`
+// param and dispatched to the POST-approval handler (which 405s on GET).
+router.use('/pipelines/approvals', pipelinePendingApprovalsRouter);
 // Per-pipeline run trigger. Mounted AFTER the static `/metrics`, `/defs`,
-// `/health`, `/validate`, and `/runs/active` segments so their specific
-// paths match first (Express resolves mounts in registration order — a
-// `:pipelineId` mount would otherwise swallow them).
+// `/health`, `/validate`, `/runs/active`, and `/approvals` segments so
+// their specific paths match first (Express resolves mounts in
+// registration order — a `:pipelineId` mount would otherwise swallow them).
 router.use('/pipelines/:pipelineId/runs', pipelineTriggersRouter);
 // Cancel — POST /api/pipelines/:runId/cancel. Mounted at the same level
 // as approvals; both are run-scoped (not pipeline-scoped).

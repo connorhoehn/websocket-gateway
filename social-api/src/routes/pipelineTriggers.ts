@@ -535,6 +535,45 @@ pipelineCancelRouter.post(
 );
 
 // ---------------------------------------------------------------------------
+// Pending approvals queue — GET /api/pipelines/approvals
+//
+// Surfaces `bridge.getPendingApprovals()` to the frontend so the approvals
+// inbox can render across all runs without per-run polling. Mounted at the
+// static `/pipelines/approvals` path (NOT under `:pipelineId` and NOT under
+// `:runId/approvals`) — see routes/index.ts ordering note.
+//
+// Behaviour:
+//   - Bridge wired + getPendingApprovals defined → forward.
+//   - Bridge null OR getPendingApprovals undefined → return { approvals: [] }
+//     with HTTP 200 (an empty queue is a valid answer in stub mode; we
+//     deliberately do NOT 503 since the frontend treats this as data, not
+//     a health probe).
+//   - Optional `?userId=` query param: when present, filter to rows where
+//     the requesting user appears in `approvers`. Default is no filter —
+//     the frontend can do its own visual filtering across teammates.
+// ---------------------------------------------------------------------------
+
+export const pipelinePendingApprovalsRouter = Router();
+
+pipelinePendingApprovalsRouter.get(
+  '/',
+  asyncHandler<unknown, { approvals: PendingApprovalRow[] }, unknown, { userId?: string }>(
+    async (req, res) => {
+      if (!bridge || !bridge.getPendingApprovals) {
+        res.json({ approvals: [] });
+        return;
+      }
+      const rows = await Promise.resolve(bridge.getPendingApprovals());
+      const filterUserId = req.query.userId ? String(req.query.userId) : undefined;
+      const approvals = filterUserId
+        ? rows.filter((row) => row.approvers.some((a) => a.userId === filterUserId))
+        : rows;
+      res.json({ approvals });
+    },
+  ),
+);
+
+// ---------------------------------------------------------------------------
 // Approvals — POST /api/pipelines/:runId/approvals
 // Mounted separately from the runs router so the path matches the spec.
 // ---------------------------------------------------------------------------

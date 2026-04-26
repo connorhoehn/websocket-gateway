@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased] — Pipelines Phase 4-A (commit `d64e21c`, 2026-04-26)
+
+Phase-4-A — distributed-core `PipelineModule` wired into social-api.
+
+### Added
+- `social-api/src/pipelines/bootstrap.ts` — single-node in-process `Cluster.create()` plus `PipelineModule`, instantiated with the 6-field `ApplicationModuleContext`.
+- `social-api/src/pipelines/createBridge.ts` — wraps `PipelineModule` behind the `PipelineBridge` contract; routes `trigger`, `getRun`, `getHistory`, `listActiveRuns`, `cancelRun`, `resolveApproval`, `getPendingApprovals`, and `getMetrics` to the live module.
+- `social-api/src/pipelines/LLMClient.ts` re-exports the `LLMClient` interface from `distributed-core` (concrete Anthropic + Bedrock clients still live in social-api).
+
+### Changed
+- `social-api/src/index.ts` calls `bootstrapPipeline()` at startup; `SIGTERM` / `SIGINT` handlers now `await` graceful shutdown of the pipeline module.
+- `social-api/src/pipelines/pipelineTriggers.ts` interface extended with `getPendingApprovals` / `getMetrics` surfaces and the local `PendingApprovalRow` shape.
+- Bumped `redis@^4` → `redis@^5` in both root `package.json` and `social-api/package.json` (lockfiles regenerated).
+
+### Tests
+- social-api jest suite: 132 → 155 tests (+23) covering bootstrap lifecycle and the bridge surfaces.
+
+### Cross-repo coordination
+- distributed-core sibling pinned at SHA `7eae4f2` for `getPendingApprovals` and `4833c3a` for the `/frontdoor` exports-map fix.
+
+### Notes — Phase-4-B remaining work
+- Real-credential E2E (per-developer; needs an Anthropic key).
+- Gateway-process IPC plumbing so events emitted by social-api's `PipelineModule` reach the gateway's WebSocket layer.
+
 ## [Unreleased] — Pipelines Phase 0 + Phase 1
 
 ### Added

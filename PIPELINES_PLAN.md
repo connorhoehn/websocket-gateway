@@ -597,6 +597,25 @@ The mock's event shapes, ordering invariants (started-before-completed, run-star
 
 Do-exactly-this sequence agreed with the distributed-core sibling session on 2026-04-25 (see §11.5 "Resolved 2026-04-25" for the WHY behind each step). Execute top-to-bottom; do not reorder.
 
+**Phase-4-A status (2026-04-26): SHIPPED** at commit `d64e21c`. The full bootstrap-through-bridge-wiring path is in production; what's outstanding is Phase-4-B real-credential E2E and the gateway-process IPC plumbing. File map of what landed:
+
+| Step | Status | Lands in |
+|---|---|---|
+| 1. Pull `distributed-core` | ✓ at SHA `4833c3a` (frontdoor exposed at root) |
+| 2. Install via `file:` protocol | ✓ | `social-api/package.json` |
+| 3. Bump `redis@4` → `redis@5` | ✓ | `/package.json` + `social-api/package.json` |
+| 4. Read reference bootstrap | ✓ | (read-only) |
+| 5. Port `bootstrap.ts` | ✓ single-node in-process Cluster + PipelineModule | `social-api/src/pipeline/bootstrap.ts` |
+| 6. Wire six bridge surfaces | ✓ wrapper exists; reassigned event subscription deferred to Phase-4-B | `social-api/src/pipeline/createBridge.ts`, `setPipelineBridge` call in `social-api/src/index.ts` |
+| 7. Set env vars | ✓ already in `.env.example` | `social-api/.env.example`, `frontend/.env.example` |
+| 8. Restart processes | ✓ verified in test boot | `social-api/src/index.ts` graceful shutdown |
+| 9. Smoke test (real credentials) | ⏳ Phase-4-B (per-developer; needs real Anthropic key) | — |
+| 10. Toggle off mock | ⏳ Phase-4-B follows step 9 | — |
+
+Test coverage shipped alongside: `social-api/src/pipeline/__tests__/bootstrap.test.ts` (real cluster lifecycle, 3 tests) + `social-api/src/pipeline/__tests__/createBridge.test.ts` (mock-PipelineModule surface coverage, 20 tests). `+23` jest tests; full social-api suite at 155/155.
+
+The original 10-step procedure follows for reference (do not re-execute):
+
 1. **Pull `distributed-core`** — `git pull` the sibling repo. Required artifacts: the `Cluster.create({...})` facade, `PipelineModule` with the six bridge surfaces locked below, the `exports` map (root + `./applications/pipeline` + `./gateway` + `./routing` subpaths), and `examples/pipelines/cluster-bootstrap.ts` + `trigger-and-watch.ts`.
 2. **Bump `distributed-core` in social-api** — update `social-api/package.json` to the new version (file:/link path), then `npm install` in `social-api/`. social-api stays CJS (`"module": "commonjs"`, no `"type": "module"`); the package's conditional exports (`require → CJS`, `import → ESM`) resolve to CJS automatically. No rename, no `.cjs` shim, no ESM conversion required — we are explicitly the path-(a) consumer.
 3. **Bump Redis client to v5** — in both `/package.json` (gateway root) and `social-api/package.json`, bump `redis@^4.6.x` → `redis@^5` and run `npm install` at each. Distributed-core's `RedisPubSubManager` targets v5. Migration is cheap: we only use basic pub/sub + get/set, no RedisJSON / RedisSearch.

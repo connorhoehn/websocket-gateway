@@ -16,6 +16,12 @@ import {
   getPipelineHealthStub,
   type PipelineHealth,
 } from '../pipelineHealth';
+import {
+  setPipelineBridge,
+  type PipelineBridge,
+  type PipelineRunSnapshot,
+  type PendingApprovalRow,
+} from '../pipelineTriggers';
 
 interface MockRes {
   statusCode: number;
@@ -177,6 +183,11 @@ describe('getPipelineHealthStub', () => {
     expect(h.tokenRate).toBeNull();
     expect(typeof h.asOf).toBe('string');
     expect(new Date(h.asOf).toISOString()).toBe(h.asOf);
+    // Bridge probe defaults — additive fields, "no bridge wired" baseline.
+    expect(h.bridgeWired).toBe(false);
+    expect(h.runsActive).toBe(0);
+    expect(h.runsAwaitingApproval).toBe(0);
+    expect(h.pendingApprovals).toBe(0);
   });
 
   test('llmClientConfigured reflects env at call time', () => {
@@ -202,6 +213,12 @@ describe('getPipelineHealthStub', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /pipelines/health', () => {
+  // Ensure no bridge is wired between cases — these tests assert the
+  // "no bridge" baseline. The bridge-probe describe block below sets and
+  // tears down its own bridges.
+  beforeEach(() => setPipelineBridge(null));
+  afterEach(() => setPipelineBridge(null));
+
   test('200 with PipelineHealth shape', async () => {
     process.env.PIPELINE_LLM_PROVIDER = 'anthropic';
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
@@ -216,6 +233,10 @@ describe('GET /pipelines/health', () => {
     expect(body.lastEventAt).toBeNull();
     expect(body.tokenRate).toBeNull();
     expect(typeof body.asOf).toBe('string');
+    expect(body.bridgeWired).toBe(false);
+    expect(body.runsActive).toBe(0);
+    expect(body.runsAwaitingApproval).toBe(0);
+    expect(body.pendingApprovals).toBe(0);
   });
 
   test('llmClientConfigured=false propagates over the wire when key is missing', async () => {
@@ -226,5 +247,104 @@ describe('GET /pipelines/health', () => {
     expect(res.statusCode).toBe(200);
     const body = res.body as PipelineHealth;
     expect(body.llmClientConfigured).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bridge probe — bridgeWired / runsActive / runsAwaitingApproval / pendingApprovals
+// ---------------------------------------------------------------------------
+
+describe('GET /pipelines/health bridge probe', () => {
+  // Always tear down any wired bridge so cases don't bleed into each other or
+  // into the rest of the suite.
+  afterEach(() => setPipelineBridge(null));
+
+  test('bridge null → bridgeWired:false and the three counts are 0', async () => {
+    setPipelineBridge(null);
+    const app = buildApp();
+    const res = await run(app, 'GET', '/pipelines/health');
+    expect(res.statusCode).toBe(200);
+    const body = res.body as PipelineHealth;
+    expect(body.bridgeWired).toBe(false);
+    expect(body.runsActive).toBe(0);
+    expect(body.runsAwaitingApproval).toBe(0);
+    expect(body.pendingApprovals).toBe(0);
+  });
+
+  test('wired bridge — counts reflect listActiveRuns / getMetrics / getPendingApprovals', async () => {
+    const fakeRuns: PipelineRunSnapshot[] = [
+      { runId: 'r1', pipelineId: 'p1' },
+      { runId: 'r2', pipelineId: 'p1' },
+      { runId: 'r3', pipelineId: 'p2' },
+    ];
+    const fakePending: PendingApprovalRow[] = [
+      {
+        runId: 'r1',
+        stepId: 's1',
+        pipelineId: 'p1',
+        approvers: [{ userId: 'u1' }],
+        requestedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        runId: 'r2',
+        stepId: 's1',
+        pipelineId: 'p1',
+        approvers: [{ userId: 'u2' }],
+        requestedAt: '2026-04-25T00:00:01.000Z',
+      },
+    ];
+
+    const stub: PipelineBridge = {
+      getRun: () => null,
+      getHistory: () => [],
+      resolveApproval: () => undefined,
+      listActiveRuns: () => fakeRuns,
+      getMetrics: async () => ({ runsAwaitingApproval: 5 }),
+      getPendingApprovals: () => fakePending,
+    };
+    setPipelineBridge(stub);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/pipelines/health');
+    expect(res.statusCode).toBe(200);
+    const body = res.body as PipelineHealth;
+    expect(body.bridgeWired).toBe(true);
+    expect(body.runsActive).toBe(3);
+    expect(body.runsAwaitingApproval).toBe(5);
+    expect(body.pendingApprovals).toBe(2);
+  });
+
+  test('bridge whose getMetrics throws → runsAwaitingApproval:0 but other fields still populate', async () => {
+    const stub: PipelineBridge = {
+      getRun: () => null,
+      getHistory: () => [],
+      resolveApproval: () => undefined,
+      listActiveRuns: () => [
+        { runId: 'r1', pipelineId: 'p1' },
+        { runId: 'r2', pipelineId: 'p1' },
+      ],
+      getMetrics: () => {
+        throw new Error('bridge metrics down');
+      },
+      getPendingApprovals: () => [
+        {
+          runId: 'r1',
+          stepId: 's1',
+          pipelineId: 'p1',
+          approvers: [{ userId: 'u1' }],
+          requestedAt: '2026-04-25T00:00:00.000Z',
+        },
+      ],
+    };
+    setPipelineBridge(stub);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/pipelines/health');
+    expect(res.statusCode).toBe(200);
+    const body = res.body as PipelineHealth;
+    expect(body.bridgeWired).toBe(true);
+    expect(body.runsActive).toBe(2);
+    expect(body.runsAwaitingApproval).toBe(0);
+    expect(body.pendingApprovals).toBe(1);
   });
 });
