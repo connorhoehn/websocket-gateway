@@ -1,6 +1,9 @@
 import { createApp } from './app';
 import { createScheduleEvaluator } from './services/scheduleEvaluator';
 import { stubPipelineStore } from './routes/pipelineDefinitions';
+import { setPipelineBridge } from './routes/pipelineTriggers';
+import { bootstrapPipeline } from './pipeline/bootstrap';
+import { createBridge } from './pipeline/createBridge';
 
 const port = process.env.PORT ?? '3001';
 
@@ -13,6 +16,25 @@ const app = createApp();
 const server = app.listen(Number(port), () => {
   console.log(`social-api listening on port ${port}`);
 });
+
+// ---------------------------------------------------------------------------
+// Phase-4: bootstrap distributed-core's PipelineModule and wire its surfaces
+// into the route layer. Failure here is non-fatal — the routes' stub paths
+// keep working with the in-memory stubRunStore so dev workflows that don't
+// need real LLM streaming aren't gated on this succeeding.
+// ---------------------------------------------------------------------------
+
+let pipelineShutdown: (() => Promise<void>) | null = null;
+
+bootstrapPipeline()
+  .then(({ module, nodeId, shutdown }) => {
+    pipelineShutdown = shutdown;
+    setPipelineBridge(createBridge(module));
+    console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId}`);
+  })
+  .catch((err: unknown) => {
+    console.error('[social-api] PipelineModule bootstrap failed (continuing with stub paths):', err);
+  });
 
 // ---------------------------------------------------------------------------
 // Schedule evaluator — fires pipelines whose triggerBinding.event === 'schedule'
@@ -51,10 +73,15 @@ const scheduler = createScheduleEvaluator({
 scheduler.start();
 
 // Graceful shutdown — stop the timer so the process can exit cleanly.
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   console.log(`[social-api] received ${signal}, shutting down`);
   scheduler.stop();
+  if (pipelineShutdown) {
+    try { await pipelineShutdown(); } catch (err) {
+      console.error('[social-api] pipeline shutdown failed:', err);
+    }
+  }
   server.close(() => process.exit(0));
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.on('SIGINT',  () => { void shutdown('SIGINT'); });

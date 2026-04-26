@@ -16,10 +16,11 @@
     "@aws-sdk/client-sqs": "^3.1011.0",
     "@aws-sdk/lib-dynamodb": "^3.1010.0",
     "@types/uuid": "^10.0.0",
+    "distributed-core": "file:../../distributed-core",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
-    "redis": "^4.6.14",
+    "redis": "^5.0.0",
     "ulid": "^3.0.2",
     "uuid": "^13.0.0"
   },

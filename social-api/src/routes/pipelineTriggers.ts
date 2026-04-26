@@ -140,6 +140,32 @@ export interface PipelineBridge {
    * in-memory store entry's status to 'canceled'.
    */
   cancelRun?(runId: string, userId: string): Promise<void> | void;
+  /**
+   * (Phase 4) Pending-approval queue across all in-flight runs on this node.
+   * Maps to `PipelineModule.getPendingApprovals()`. Optional — the stub
+   * approvals route returns an empty array when the bridge isn't wired.
+   */
+  getPendingApprovals?(): Promise<PendingApprovalRow[]> | PendingApprovalRow[];
+  /**
+   * (Phase 4) `runsAwaitingApproval` count for the sub-nav badge. Maps to
+   * `PipelineModule.getMetrics().runsAwaitingApproval`. Optional.
+   */
+  getMetrics?(): Promise<{ runsAwaitingApproval: number }> | { runsAwaitingApproval: number };
+}
+
+/**
+ * Mirror of distributed-core's `PendingApprovalRow`. Kept here as a local
+ * shape so social-api consumers don't need to import `distributed-core` until
+ * the live bridge is wired. Must stay in sync — see PIPELINES_PLAN.md §11.5.
+ */
+export interface PendingApprovalRow {
+  runId: string;
+  stepId: string;
+  pipelineId: string;
+  approvers: Array<{ userId: string; teamId?: string; role?: string }>;
+  message?: string;
+  /** ISO 8601. */
+  requestedAt: string;
 }
 
 let bridge: PipelineBridge | null = null;
