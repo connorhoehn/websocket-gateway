@@ -691,6 +691,26 @@ describe('Pipeline Phase-1 integration', () => {
       // publishable — any validation error here is a seed-data bug.
       const result = validatePipeline(def);
       expect(result.errors).toEqual([]);
+
+      // Lint hygiene: the demo seed is intentionally structured to silence
+      // every avoidable warning — maxTokens set, action names unique, every
+      // branch wired, error handles routed to a shared error sink, and the
+      // single terminal sink (a `transform` node) carries `terminal: true`
+      // to opt out of the DEAD_END lint.
+      //
+      // The two fork-branch actions (post-comment, notify) intentionally
+      // leave their `error` handles unwired because wiring them would route
+      // failures away from the downstream `mode: 'all'` Join and hang the
+      // run. The NO_ERROR_HANDLER lint includes a structural exemption for
+      // exactly this topology (node downstream of a Fork AND upstream of a
+      // Join via success edges); see `lintNoErrorHandler` in
+      // `validatePipeline.ts` and PIPELINES_PLAN.md §17.1–17.2 for the
+      // executor's failed-JoinArrival semantics.
+      //
+      // Net: the demo seed is expected to produce ZERO advisory warnings.
+      // If a future change adds any, that's a seed regression.
+      const codes = result.warnings.map((w) => w.code).sort();
+      expect(codes).toEqual([]);
     });
 
     test.runIf(demoAvailable)('demo pipeline is saved under its id and listed', () => {

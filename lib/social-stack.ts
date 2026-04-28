@@ -1,5 +1,5 @@
 import { Stack, StackProps, CfnOutput, RemovalPolicy } from 'aws-cdk-lib';
-import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
+import { Table, AttributeType, BillingMode, ProjectionType } from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
 export class SocialStack extends Stack {
@@ -21,6 +21,13 @@ export class SocialStack extends Stack {
       sortKey: { name: 'followeeId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // Reverse-direction lookup: followers of a given user
+    relationshipsTable.addGlobalSecondaryIndex({
+      indexName: 'followeeId-followerId-index',
+      partitionKey: { name: 'followeeId', type: AttributeType.STRING },
+      sortKey: { name: 'followerId', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
     });
 
     // Groups (communities / channels)
@@ -56,6 +63,13 @@ export class SocialStack extends Stack {
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
     });
+    // "My rooms" lookup: rooms a given user is a member of
+    roomMembersTable.addGlobalSecondaryIndex({
+      indexName: 'userId-roomId-index',
+      partitionKey: { name: 'userId', type: AttributeType.STRING },
+      sortKey: { name: 'roomId', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
 
     // Posts within rooms
     const postsTable = new Table(this, 'SocialPostsTable', {
@@ -64,6 +78,13 @@ export class SocialStack extends Stack {
       sortKey: { name: 'postId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // User post history: every post authored by a given user, newest first via postId (ULID)
+    postsTable.addGlobalSecondaryIndex({
+      indexName: 'authorId-postId-index',
+      partitionKey: { name: 'authorId', type: AttributeType.STRING },
+      sortKey: { name: 'postId', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
     });
 
     // Comments on posts
@@ -84,6 +105,38 @@ export class SocialStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
+    // Pipeline definitions — per-user pipeline graphs (replaces in-memory stub)
+    const pipelineDefinitionsTable = new Table(this, 'PipelineDefinitionsTable', {
+      tableName: 'pipeline-definitions',
+      partitionKey: { name: 'userId', type: AttributeType.STRING },
+      sortKey: { name: 'pipelineId', type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    // Append-only audit log for pipeline operations (trigger, approve,
+    // reject, cancel, webhook). Caller-generated ULID `auditId` is the PK.
+    const pipelineAuditTable = new Table(this, 'PipelineAuditTable', {
+      tableName: 'pipeline-audit',
+      partitionKey: { name: 'auditId', type: AttributeType.STRING },
+      billingMode: BillingMode.PAY_PER_REQUEST,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    // Per-actor timeline: every audit event authored by a given user, newest first.
+    pipelineAuditTable.addGlobalSecondaryIndex({
+      indexName: 'actor-time-index',
+      partitionKey: { name: 'actorUserId', type: AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
+    // Per-pipeline timeline: every audit event for a given pipeline, newest first.
+    pipelineAuditTable.addGlobalSecondaryIndex({
+      indexName: 'pipeline-time-index',
+      partitionKey: { name: 'pipelineId', type: AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: AttributeType.STRING },
+      projectionType: ProjectionType.ALL,
+    });
+
     // CfnOutputs for all table names
     new CfnOutput(this, 'SocialProfilesTableName', { value: profilesTable.tableName });
     new CfnOutput(this, 'SocialRelationshipsName', { value: relationshipsTable.tableName });
@@ -94,5 +147,7 @@ export class SocialStack extends Stack {
     new CfnOutput(this, 'SocialPostsTableName', { value: postsTable.tableName });
     new CfnOutput(this, 'SocialCommentsTableName', { value: commentsTable.tableName });
     new CfnOutput(this, 'SocialLikesTableName', { value: likesTable.tableName });
+    new CfnOutput(this, 'PipelineDefinitionsTableName', { value: pipelineDefinitionsTable.tableName });
+    new CfnOutput(this, 'PipelineAuditTableName', { value: pipelineAuditTable.tableName });
   }
 }

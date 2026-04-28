@@ -178,28 +178,22 @@ afterEach(() => {
 
 describe('POST /pipelines/:pipelineId/runs (trigger)', () => {
   test('synthesizes runId + returns 202 when no bridge wired', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    try {
-      const app = buildApp();
-      const res = await run(app, 'POST', '/pipelines/p1/runs', { body: {} });
-      expect(res.statusCode).toBe(202);
-      const body = res.body as {
-        runId: string;
-        pipelineId: string;
-        triggeredBy: { userId: string; triggerType: string };
-        at: string;
-      };
-      expect(body.pipelineId).toBe('p1');
-      expect(body.triggeredBy).toEqual({ userId: 'user-1', triggerType: 'manual' });
-      expect(typeof body.runId).toBe('string');
-      expect(body.runId).toMatch(/^[0-9a-f-]{36}$/);
-      // TODO log line proves the stub branch ran.
-      expect(logSpy).toHaveBeenCalled();
-      const text = logSpy.mock.calls.flat().map(String).join(' ');
-      expect(text).toMatch(/bridge not wired/);
-    } finally {
-      logSpy.mockRestore();
-    }
+    // Wave 2: stub-branch logging moved from `console.log` to the pino
+    // structured logger, so we no longer spy on console here. The 202 +
+    // synthesized runId shape is the durable contract this test guards.
+    const app = buildApp();
+    const res = await run(app, 'POST', '/pipelines/p1/runs', { body: {} });
+    expect(res.statusCode).toBe(202);
+    const body = res.body as {
+      runId: string;
+      pipelineId: string;
+      triggeredBy: { userId: string; triggerType: string };
+      at: string;
+    };
+    expect(body.pipelineId).toBe('p1');
+    expect(body.triggeredBy).toEqual({ userId: 'user-1', triggerType: 'manual' });
+    expect(typeof body.runId).toBe('string');
+    expect(body.runId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   test('forwards to bridge.trigger when wired', async () => {
@@ -347,18 +341,14 @@ describe('GET /pipelines/:pipelineId/runs/:runId/history (replay)', () => {
 
 describe('POST /pipelines/:runId/approvals (resolveApproval)', () => {
   test('204 stub when no bridge wired', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    try {
-      const app = buildApp();
-      const res = await run(app, 'POST', '/pipelines/run-1/approvals', {
-        body: { stepId: 'approval-1', decision: 'approve', comment: 'lgtm' },
-      });
-      expect(res.statusCode).toBe(204);
-      expect(res.body).toBeUndefined();
-      expect(logSpy).toHaveBeenCalled();
-    } finally {
-      logSpy.mockRestore();
-    }
+    // Wave 2: stub-branch logging moved from `console.log` to the pino
+    // structured logger; the 204 contract is what this test guards.
+    const app = buildApp();
+    const res = await run(app, 'POST', '/pipelines/run-1/approvals', {
+      body: { stepId: 'approval-1', decision: 'approve', comment: 'lgtm' },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBeUndefined();
   });
 
   test('forwards to bridge.resolveApproval when wired', async () => {
@@ -391,6 +381,31 @@ describe('POST /pipelines/:runId/approvals (resolveApproval)', () => {
       body: { stepId: 's1', decision: 'maybe' },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  test('500 with structured body when bridge.resolveApproval throws (Wave 2 audit-fix)', async () => {
+    // Regression: prior behaviour let a bridge throw bubble up to the
+    // generic errorHandler, returning `{ error: "Internal server error" }`
+    // with no action context. Wave 2 wraps the bridge call so the response
+    // surfaces the bridge error message AND the action that failed, plus
+    // emits a Prometheus error counter and an audit row (fire-and-forget).
+    const resolveApproval = jest.fn(async () => {
+      throw new Error('downstream bus unavailable');
+    });
+    setPipelineBridge({
+      getRun: async () => null,
+      getHistory: async () => [],
+      resolveApproval,
+    });
+    const app = buildApp();
+    const res = await run(app, 'POST', '/pipelines/run-1/approvals', {
+      body: { stepId: 's1', decision: 'approve' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({
+      error: 'downstream bus unavailable',
+      action: 'resolveApproval',
+    });
   });
 });
 

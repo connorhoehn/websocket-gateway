@@ -35,6 +35,18 @@ services:
     networks:
       - localstack-net
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: localstack-jaeger
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      - SPAN_STORAGE_TYPE=memory
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - localstack-net
+
   websocket-gateway:
     build:
       context: .
@@ -92,8 +104,15 @@ services:
       - COGNITO_REGION=us-east-1
       - COGNITO_USER_POOL_ID=us-east-1_localdev000
       - NODE_ENV=development
+      - PIPELINE_WAL_PATH=/var/lib/social-api/pipeline-wal.log
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    volumes:
+      - social-api-state:/var/lib/social-api
     networks:
       - localstack-net
+
+volumes:
+  social-api-state:
 
 networks:
   localstack-net:

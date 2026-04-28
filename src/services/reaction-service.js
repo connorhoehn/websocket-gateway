@@ -37,6 +37,68 @@ class ReactionService {
             '💯': { name: 'hundred', effect: 'spin-gold' },
             '🚀': { name: 'rocket', effect: 'fly-up' }
         };
+
+        // Wave 4c: track whether ownership cleanup handlers have been
+        // registered so registration is idempotent across calls.
+        this._ownershipHandlersRegistered = false;
+        this._registerOwnershipHandlers();
+    }
+
+    /**
+     * Discard transient in-memory reaction-aggregator state for a room.
+     * Reactions are ephemeral by design — there is no persisted store to
+     * preserve. Drops the recent-reaction history list for the channel.
+     *
+     * @param {string} roomId - channel id (rooms map 1:1 to channels here)
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _cleanupRoom(roomId) {
+        if (!roomId) return;
+        const had = this.reactionHistory.delete(roomId);
+        this.logger.info(
+            `reaction-service flushed transient reaction state for roomId ${roomId}` +
+                (had ? '' : ' (no state present)')
+        );
+    }
+
+    /**
+     * Register cleanup handlers with the ownership-cleanup-coordinator.
+     * Idempotent. When the ownership feature flag is off, the coordinator's
+     * start() is a no-op so the handler is never invoked and behavior is
+     * byte-identical to today.
+     *
+     * The coordinator pre-registers a stub handler for 'reactions' at
+     * construction time; registerCleanupHandler() uses Map.set() so
+     * re-registering cleanly overrides the stub. We still wrap in
+     * try/catch defensively — a registration failure must NOT crash the
+     * reaction service.
+     *
+     * @private
+     */
+    _registerOwnershipHandlers() {
+        if (this._ownershipHandlersRegistered) return;
+
+        try {
+            // eslint-disable-next-line global-require
+            const { getOwnershipCleanupCoordinator } = require('./ownership-cleanup-coordinator');
+            const coordinator = getOwnershipCleanupCoordinator();
+            coordinator.registerCleanupHandler('reactions', {
+                onLost: async (roomId) => this._cleanupRoom(roomId),
+                onGained: async (roomId) => {
+                    // Reactions are ephemeral — no hydrate semantics.
+                    this.logger.debug(
+                        `reaction-service ownership gained for roomId ${roomId} (no-op; reactions don't hydrate)`
+                    );
+                },
+            });
+            this._ownershipHandlersRegistered = true;
+            this.logger.debug('reaction-service: registered ownership cleanup handlers');
+        } catch (err) {
+            this.logger.warn('reaction-service: failed to register ownership cleanup handlers', {
+                error: err && err.message,
+            });
+        }
     }
 
     async handleAction(clientId, action, data) {

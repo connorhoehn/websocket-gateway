@@ -82,9 +82,32 @@ class AuthMiddleware {
         }
 
         try {
-            // Extract token from query parameter
-            const url = new URL(req.url, 'http://localhost');
-            const token = url.searchParams.get('token');
+            // Prefer JWT from Sec-WebSocket-Protocol subprotocol header.
+            // Format: "bearer-token-v1, <jwt>" — marker first, token second.
+            // Fall back to query param for old clients (deprecated).
+            let token;
+            let tokenSource = 'subprotocol';
+
+            const protocolHeader = req.headers['sec-websocket-protocol'];
+            if (protocolHeader) {
+                const protocols = protocolHeader.split(',').map((p) => p.trim());
+                const markerIdx = protocols.indexOf('bearer-token-v1');
+                if (markerIdx !== -1 && protocols.length > markerIdx + 1) {
+                    token = protocols[markerIdx + 1];
+                }
+            }
+
+            if (!token) {
+                const url = new URL(req.url, 'http://localhost');
+                const queryToken = url.searchParams.get('token');
+                if (queryToken) {
+                    this.logger.warn(
+                        'JWT received via query parameter (deprecated — exposes token in logs/proxies). Update client to use Sec-WebSocket-Protocol header.'
+                    );
+                    token = queryToken;
+                    tokenSource = 'query';
+                }
+            }
 
             if (!token) {
                 this.logger.warn('Connection attempt without token');
@@ -142,7 +165,7 @@ class AuthMiddleware {
                 isAdmin: verified.isAdmin || false
             };
 
-            this.logger.info(`Token validated for user: ${userContext.userId}`);
+            this.logger.info(`Token validated for user: ${userContext.userId} (source: ${tokenSource})`);
 
             return userContext;
 

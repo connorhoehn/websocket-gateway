@@ -28,7 +28,18 @@ import {
   SIGNATURE_HEADER,
   verifySignature,
 } from '../lib/webhookSignature';
-import { stubPipelineStore } from './pipelineDefinitions';
+import { withContext } from '../lib/logger';
+import {
+  recordPipelineTrigger,
+  recordPipelineError,
+} from '../observability/metrics';
+import { auditRepo } from '../pipeline/audit-repository';
+import { pipelineDefinitionsCache } from '../pipeline/definitions-cache';
+import { getPipelineBridge } from './pipelineTriggers';
+
+// Route-scoped structured logger. Every log line emitted by this file
+// inherits `route: 'pipelineWebhooks'` so observability can filter on it.
+const log = withContext({ route: 'pipelineWebhooks' });
 
 export const pipelineWebhooksRouter = Router();
 
@@ -70,11 +81,19 @@ export function pickSafeHeaders(
  * the first hit. Returning `undefined` means "no secret configured" and the
  * route falls through to the Phase-1 "accept unsigned" behavior.
  *
+ * Backed by `pipelineDefinitionsCache` — a process-wide snapshot of every
+ * pipeline definition, refreshed every 60s from DynamoDB via
+ * `definitionsRepo.listAll()`. Reads are sync to keep webhook receipt off
+ * the network hot path; the 60s refresh interval is the load-bearing
+ * latency budget for "saved a new webhook secret, when does it take
+ * effect" (the route's PUT handler also pokes the cache to shrink that
+ * window for the common save-then-test UX).
+ *
  * Exported so the test suite can stub it out without coupling tests to the
  * full pipeline-definition upsert flow.
  */
 export function lookupWebhookSecret(path: string): string | undefined {
-  for (const def of stubPipelineStore.allPipelines()) {
+  for (const def of pipelineDefinitionsCache.all()) {
     const d = def as {
       triggerBinding?: {
         event?: string;
@@ -88,6 +107,39 @@ export function lookupWebhookSecret(path: string): string | undefined {
     if (typeof tb.webhookSecret === 'string' && tb.webhookSecret.length > 0) {
       return tb.webhookSecret;
     }
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the `pipelineId` whose `triggerBinding.webhookPath` matches `path`.
+ * Returns `undefined` when no pipeline definition is bound to that path —
+ * the caller is free to fall back to the path itself (e.g. for legacy
+ * unsigned dev fixtures) so the bridge.trigger call still has SOMETHING to
+ * key on. First match wins (paths are expected unique across the user
+ * surface).
+ *
+ * Backed by the same `pipelineDefinitionsCache` snapshot as
+ * `lookupWebhookSecret` so a single match traversal could serve both —
+ * we keep them as separate functions for readability since both are
+ * called per-request and the snapshot is small (single-digit thousands
+ * at most).
+ *
+ * Exported for tests so they can assert resolution without seeding the full
+ * upsert flow.
+ */
+export function lookupPipelineIdByWebhookPath(
+  path: string,
+): string | undefined {
+  for (const def of pipelineDefinitionsCache.all()) {
+    const d = def as {
+      id?: string;
+      triggerBinding?: { event?: string; webhookPath?: string };
+    };
+    const tb = d?.triggerBinding;
+    if (!tb || tb.event !== 'webhook') continue;
+    if (tb.webhookPath !== path) continue;
+    if (typeof d.id === 'string' && d.id.length > 0) return d.id;
   }
   return undefined;
 }
@@ -152,12 +204,14 @@ pipelineWebhooksRouter.post(
       if (!ok) {
         // Structured log so observability can alert on forged or
         // misconfigured webhook sources without grepping free-form text.
-        // eslint-disable-next-line no-console
-        console.error('[pipeline-webhook] signature verification failed', {
-          webhookPath: path,
-          hasHeader: typeof header === 'string' && header.length > 0,
-          bodySize: rawBody.length,
-        });
+        log.error(
+          {
+            webhookPath: path,
+            hasHeader: typeof header === 'string' && header.length > 0,
+            bodySize: rawBody.length,
+          },
+          'pipeline-webhook signature verification failed',
+        );
         return res.status(401).json({
           // RFC 7807 problem-details — `type` + `title` + `status` are the
           // mandatory fields; `detail` carries the human-readable reason.
@@ -187,20 +241,118 @@ pipelineWebhooksRouter.post(
       at: new Date().toISOString(),
     };
 
-    // TODO Phase 4: forward `payload` to the gateway pipeline event source so
-    // a `pipeline.webhook.triggered` event reaches the frontend (or
-    // PipelineModule) and matches it to a pipeline. For Phase 1, log + 202.
-    // eslint-disable-next-line no-console
-    console.log('[pipeline-webhook] received', {
-      path,
-      bodySize: rawBody.length,
-      signed: !!secret,
-    });
+    log.info(
+      {
+        path,
+        bodySize: rawBody.length,
+        signed: !!secret,
+      },
+      'pipeline-webhook received',
+    );
 
-    return res.status(202).json({
-      accepted: true,
-      webhookPath: path,
-      at: payload.at,
-    });
+    // Phase 4: forward to the PipelineModule bridge. Returning 202 without
+    // creating a run was the silent-drop bug from the audit — external
+    // systems would think they triggered a pipeline while nothing actually
+    // ran. We now resolve the bridge and either create a run, fail loudly,
+    // or report the subsystem as unavailable (503).
+    const bridge = getPipelineBridge();
+    if (!bridge || !bridge.trigger) {
+      // Surface the unavailability as a pipeline error metric so dashboards
+      // can alert on a missing bridge. No audit write here — there's no
+      // runId (and no pipeline state change) to attach the event to.
+      recordPipelineError();
+      return res.status(503).json({
+        accepted: false,
+        error: 'pipeline subsystem unavailable',
+      });
+    }
+
+    // Prefer the pipelineId bound to this webhook path; fall back to the
+    // path itself when no definition is registered (matches the "no secret
+    // configured" legacy unsigned mode and lets dev fixtures keep working).
+    const resolvedPipelineId =
+      lookupPipelineIdByWebhookPath(path) ?? path;
+
+    // The webhook route is unauthenticated by design — there's no Cognito
+    // sub to attribute the run to. Synthesize a deterministic actor id so
+    // downstream audit trails can distinguish webhook-driven runs from
+    // user-driven ones (and from each other, by webhook path).
+    const actorUserId = `webhook:${path}`;
+
+    try {
+      const out = await bridge.trigger({
+        pipelineId: resolvedPipelineId,
+        triggerPayload: payload,
+        triggeredBy: { userId: actorUserId },
+      });
+
+      // Increment the trigger counter synchronously — it's an in-process
+      // Prometheus counter so there's no I/O cost, and we want the metric
+      // to reflect reality before any audit-side hiccup can mask it.
+      recordPipelineTrigger();
+
+      // Audit write is fire-and-forget: the run has already been created
+      // upstream, the response shape is contractually fixed, and a slow or
+      // failing DynamoDB write must NOT delay (or fail) the 202 we owe the
+      // caller. A `.catch` keeps unhandled-rejection noise out of the test
+      // runner and surfaces failures via the structured logger so ops can
+      // still alert on audit-table outages.
+      auditRepo
+        .record({
+          action: 'pipeline.webhook',
+          actorUserId: 'webhook:' + path,
+          pipelineId: resolvedPipelineId,
+          runId: out.runId,
+          details: { webhookPath: path, payloadAt: payload.at },
+        })
+        .catch((auditErr: Error) =>
+          log.error(
+            { err: auditErr.message },
+            'audit write failed',
+          ),
+        );
+
+      return res.status(202).json({
+        accepted: true,
+        runId: out.runId,
+        webhookPath: path,
+        at: payload.at,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'pipeline trigger failed';
+      log.error(
+        {
+          webhookPath: path,
+          pipelineId: resolvedPipelineId,
+          error: message,
+        },
+        'pipeline-webhook bridge.trigger failed',
+      );
+
+      // Same fire-and-forget rationale as the success path: the response
+      // shape is contractually fixed and we don't want a downstream audit
+      // hiccup to compound the bridge failure we're already reporting.
+      recordPipelineError();
+      auditRepo
+        .record({
+          action: 'pipeline.webhook',
+          actorUserId: 'webhook:' + path,
+          pipelineId: resolvedPipelineId,
+          decision: 'failed',
+          details: { error: message },
+        })
+        .catch((auditErr: Error) =>
+          log.error(
+            { err: auditErr.message },
+            'audit write failed',
+          ),
+        );
+
+      return res.status(500).json({
+        accepted: false,
+        error: message,
+      });
+    }
   },
 );

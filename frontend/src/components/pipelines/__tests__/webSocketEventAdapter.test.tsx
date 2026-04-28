@@ -60,7 +60,10 @@ vi.mock('../../../contexts/WebSocketContext', () => ({
 }));
 
 // Import after the mock is installed.
-import { useWebSocketPipelineEvents } from '../context/WebSocketEventAdapter';
+import {
+  useWebSocketPipelineEvents,
+  usePipelineRunChannelSubscription,
+} from '../context/WebSocketEventAdapter';
 
 // ---------------------------------------------------------------------------
 // Thin host component so we can render and re-render with prop changes.
@@ -257,5 +260,81 @@ describe('useWebSocketPipelineEvents', () => {
 
     // No additional subscribe/unsubscribe just because onEvent identity changed.
     expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-run channel subscription helper
+// ---------------------------------------------------------------------------
+
+interface RunSubHarnessProps {
+  runId: string | null;
+  enabled?: boolean;
+}
+
+function RunSubHarness({ runId, enabled = true }: RunSubHarnessProps) {
+  usePipelineRunChannelSubscription(runId, { enabled });
+  return null;
+}
+
+describe('usePipelineRunChannelSubscription', () => {
+  test('subscribes to the per-run channel on mount and unsubscribes on unmount', () => {
+    const { unmount } = render(<RunSubHarness runId="run-123" />);
+
+    expect(sendMessageSpy).toHaveBeenCalledWith({
+      service: 'pipeline',
+      action: 'subscribe',
+      channel: 'pipeline:run:run-123',
+    });
+
+    sendMessageSpy.mockClear();
+    unmount();
+
+    expect(sendMessageSpy).toHaveBeenCalledWith({
+      service: 'pipeline',
+      action: 'unsubscribe',
+      channel: 'pipeline:run:run-123',
+    });
+  });
+
+  test('is a no-op when enabled=false', () => {
+    render(<RunSubHarness runId="run-123" enabled={false} />);
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  test('is a no-op when runId is null/empty', () => {
+    render(<RunSubHarness runId={null} />);
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  test('is a no-op when WS is not connected', () => {
+    currentConnectionState = 'connecting';
+    render(<RunSubHarness runId="run-123" />);
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+  });
+
+  test('re-subscribes when runId changes', () => {
+    const { rerender } = render(<RunSubHarness runId="run-a" />);
+
+    expect(sendMessageSpy).toHaveBeenLastCalledWith({
+      service: 'pipeline',
+      action: 'subscribe',
+      channel: 'pipeline:run:run-a',
+    });
+
+    sendMessageSpy.mockClear();
+    rerender(<RunSubHarness runId="run-b" />);
+
+    const calls = sendMessageSpy.mock.calls.map((c) => c[0]);
+    expect(calls).toContainEqual({
+      service: 'pipeline',
+      action: 'unsubscribe',
+      channel: 'pipeline:run:run-a',
+    });
+    expect(calls).toContainEqual({
+      service: 'pipeline',
+      action: 'subscribe',
+      channel: 'pipeline:run:run-b',
+    });
   });
 });

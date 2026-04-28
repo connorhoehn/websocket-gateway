@@ -10,7 +10,9 @@
 - 🔧 **v1.5 Production Hardening** — Phases 20-24 (Deferred — skipped in favor of v2.0)
 - ✅ **v2.0 Social Platform** — Phases 25-32 (shipped 2026-03-17)
 - ✅ **v2.1 Social UX Integration** — Phase 33 (shipped 2026-03-18)
-- 🚧 **v3.0 Durable Event Architecture** — Phases 34-40 (in progress)
+- ✅ **v3.0 Durable Event Architecture** — Phases 34-41 (shipped 2026-03-19)
+- ✅ **v4.0 Simulation-Ready Platform** — Phases 42-47 (shipped 2026-04-27)
+- 🔜 **v5.0 Enhancements** — Phases 48-54 (planning)
 
 ## Phases
 
@@ -65,19 +67,15 @@ See: `.planning/milestones/v1.3-ROADMAP.md` for full details
 See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 
 </details>
-### 🔧 v1.5 Production Hardening (Phases 20-24) — DEFERRED
+### ✅ v1.5 Production Hardening (Phases 20-24) — RESOLVED 2026-04-27
 
-> Deferred in favor of v2.0 Social Platform. Address in a future dedicated hardening pass once the social layer ships.
+> Originally deferred in favor of v2.0 Social Platform. Audited 2026-04-27 — 15 of 16 success criteria turned out to have been incidentally addressed during the v2.0–v4.0 build-out (LRU sessions, presence race fix, batched broadcast, sequence numbers, metadata limits, reconnection metrics, etc. all landed organically). The remaining gap (JWT in query string) was closed in this same pass.
 
-- [ ] Phase 20: Error Handling & Observability — Promise rejection handling, metrics health tracking, correlation ID propagation, validation error context (1 plan)
-- [ ] Phase 21: Connection & Subscription Resilience — Atomic subscription restore with rollback, guaranteed disconnect cleanup, JWT secure transport (1 plan)
-- [ ] Phase 22: Broadcast & Ordering — Non-blocking batched broadcast, per-channel sequence numbers for ordering (1 plan)
-- [ ] Phase 23: Resource Management — Bounded session store (LRU), presence race fix, timer tracking, O(n) channel cleanup (1 plan)
-- [ ] Phase 24: Input Validation & Telemetry — Metadata size/key limits, reconnection metrics (1 plan)
-
-**Execution waves:**
-- Wave 1 (parallel): Phase 20, Phase 22 (independent)
-- Wave 2 (parallel, depends on 20/21): Phase 21, Phase 23, Phase 24
+- [x] Phase 20: Error Handling & Observability — Promise rejection handling, metrics health tracking, correlation ID propagation, validation error context (`src/server.js:1106`, `src/utils/metrics-collector.js`, `src/core/message-router.js`)
+- [x] Phase 21: Connection & Subscription Resilience — Atomic subscription restore with rollback (`src/middleware/reconnection-handler.js:38-76`), guaranteed disconnect cleanup (`src/core/message-router.js:91-132`), JWT via Sec-WebSocket-Protocol (`src/middleware/auth-middleware.js`, `frontend/src/hooks/useWebSocket.ts`)
+- [x] Phase 22: Broadcast & Ordering — Non-blocking batched broadcast (`src/core/message-router.js:634-708`), per-channel sequence numbers (`src/core/message-router.js:217-220`)
+- [x] Phase 23: Resource Management — LRU session store (`src/services/session-service.js:21`), presence race fix (`src/services/presence-service.js:368-391`), timer tracking, O(channel) cleanup
+- [x] Phase 24: Input Validation & Telemetry — Metadata limits (`src/services/presence-service.js:19-40`), reconnection metrics (`src/utils/metrics-collector.js:171-195`)
 <details>
 <summary>✅ v2.0 Social Platform (Phases 25-32) — SHIPPED 2026-03-17</summary>
 
@@ -131,7 +129,7 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - [x] **Phase 44: Real-time Activity Push** — Gateway pushes activity-log events to connected clients over WebSocket so the activity feed updates live without polling; SSE fallback for non-WS clients (completed 2026-03-27)
 - [x] **Phase 45: Simulation Scripts** — CLI scripts (`simulate-activity.sh`, `create-scenario.sh`) that create N users, join rooms, post, react, follow at configurable intensity; headless-compatible; structured stdout logs (completed 2026-03-27)
 - [x] **Phase 46: UI Polish & Big Brother View** — Clean all rough UX edges (error display, form state); add live dashboard panel showing room activity, member counts, and activity feed scrolling in real-time (completed 2026-03-27)
-- [ ] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members; migrate existing routes to QueryCommand
+- [x] **Phase 47: DynamoDB GSIs** — Add GSIs to eliminate hot-path scans: (followeeId) on social-relationships, (authorId) on social-posts, (userId) on social-room-members. Routes were already on Query but the GSIs were absent from CDK + LocalStack bootstrap; closed 2026-04-27 (`lib/social-stack.ts`, `scripts/localstack/init/ready.d/bootstrap.sh`)
 
 **Execution order:**
 - Phase 42 first (data integrity is foundational — simulation produces corrupt state without it)
@@ -140,6 +138,25 @@ See: `.planning/milestones/v1.4-ROADMAP.md` for full details
 - Phase 45 after 44 (simulation is only meaningful once UI updates in real-time)
 - Phase 46 after 45 (polish the "big brother" view once simulation is wired)
 - Phase 47 parallel with 45-46 (GSI migrations are independent of simulation/UI work)
+
+### 🚧 v5.0 Pipeline Production Readiness (Phases 48-53)
+
+**Milestone Goal:** Make every pipeline UI surface backed by a production-grade backend — durable, observable, auditable, rate-limited, and traceable end-to-end. Drafted 2026-04-27 after a UI-vs-backend audit revealed concrete defects (silent webhook drop, 204 returned on bridge failure, in-memory pipeline definitions, synthetic metrics).
+
+Earlier v5.0 drafts (search, presence sharding, iOS client) deferred — focus is collaboration / workflows, not new product surfaces.
+
+- [ ] **Phase 48: Pipeline Webhook Forwarding** — Today `pipelineWebhooks.ts:190-192` validates signature, logs the payload, returns 202 — but does not forward to PipelineModule. External systems think they're triggering pipelines; nothing runs. Fix: forward to bridge + audit log every webhook hit (signed/verified, downstream runId, at).
+- [ ] **Phase 49: Pipeline Durability** — Today: WAL is opt-in (`PIPELINE_WAL_PATH` defaults unset); `stubRunStore` is in-memory; `pipelineDefinitions` is per-user in-memory. Restart = data loss; multi-process = inconsistent. Fix: WAL on by default with safe path + fail-fast if unwritable; pipeline definitions in DynamoDB; stubRunStore deleted (bridge is real now).
+- [ ] **Phase 50: Pipeline Error Visibility & Health** — Today: `bridge.resolveApproval()` failures are silent (route returns 204); health endpoint timeouts return zero (operator can't distinguish empty from broken); pipeline metrics endpoint returns hardcoded synthetic data. Fix: try/catch every bridge call; surface `probeStatus` from `/health/pipeline`; replace synthetic metrics with real Prometheus counters per operation.
+- [ ] **Phase 51: Pipeline Distributed Tracing** — Today: correlation IDs only on gateway. Fix: W3C `traceparent` propagation frontend → gateway → social-api → PipelineModule → bridge → WS. OpenTelemetry SDK in social-api + gateway. Jaeger in docker-compose. Spans named per pipeline operation (trigger.create, run.start, approval.resolve).
+- [ ] **Phase 52: Pipeline Audit + Moderation** — Today: no record of who triggered, approved, or cancelled. Anyone authenticated can resolve any approval. Fix: append-only audit-log table with actor identity; authorization policy at the approval route (only authorized userIds can resolve).
+- [ ] **Phase 53: Rate Limits + Structured Logs** — Today: GET endpoints unguarded (DoS risk); `console.log` calls strip context; idempotency cache silently falls back to in-memory when Redis is down. Fix: per-user rate limits on read endpoints; pino-shaped JSON logger across all pipeline routes; Redis-required-in-prod startup check.
+
+**Execution order:**
+- Phase 48 first (only one fixing currently-incorrect behavior)
+- Phase 49 + 50 in parallel after 48 (independent durability + observability work)
+- Phase 51 + 52 in parallel after 50 (both depend on observability primitives)
+- Phase 53 last (cross-cutting; benefits from all routes already touched)
 ## Phase Details
 
 ### Phase 25: Social Infrastructure
@@ -410,7 +427,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 42-01: Fix follow condition expression, atomic group+owner TransactWrite, DM ConditionExpression, post/comment trim-before-validate
+- [x] 42-01: Fix follow condition expression, atomic group+owner TransactWrite, DM ConditionExpression, post/comment trim-before-validate (verified 2026-04-27 — `social-api/src/routes/social.ts:54`, `social-api/src/repositories/GroupRepository.ts:41-64`, `social-api/src/routes/rooms.ts:57,63`, `social-api/src/services/posts-service.ts:59-65`)
 
 ### Phase 43: Transactional Outbox
 **Goal**: Every social event is durably captured — the event intent is written atomically with the social data to a DynamoDB outbox table, ensuring zero event loss even if the process crashes before publishing
@@ -425,8 +442,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 43-01: DynamoDB outbox table + TransactWrite in social write routes (follow, room-join, post, reaction)
-- [ ] 43-02: Outbox relay Lambda (polls unprocessed outbox records → SQS publish → mark processed)
+- [x] 43-01: DynamoDB outbox table + TransactWrite in social write routes (verified 2026-04-27 — `social-api/src/services/outbox-publisher.ts`, `scripts/localstack/init/ready.d/bootstrap.sh:73-87`)
+- [x] 43-02: Outbox relay Lambda (verified 2026-04-27 — `lambdas/outbox-relay/handler.ts`)
 
 ### Phase 44: Real-time Activity Push
 **Goal**: The activity feed updates live in the UI as events arrive — no polling, no refresh required — so the "big brother" view shows simulation activity in real-time
@@ -486,7 +503,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 47-01: Add GSIs to social-relationships, social-posts, social-room-members, social-rooms; migrate routes
+- [x] 47-01: Add GSIs to social-relationships, social-posts, social-room-members in CDK + LocalStack bootstrap (completed 2026-04-27 — `lib/social-stack.ts`, `scripts/localstack/init/ready.d/bootstrap.sh`). Route migrations were already in place (no Scan in hot path).
 
 ## Progress
 
@@ -510,11 +527,11 @@ Plans:
 | 17. UI Layout & Polish | v1.4 | 2/2 | Complete | 2026-03-12 |
 | 18. Typing Indicators & Presence Polish | v1.4 | 1/1 | Complete | 2026-03-12 |
 | 19. Per-Service Dev Tools | v1.4 | 2/2 | Complete | 2026-03-14 |
-| 20. Error Handling & Observability | v1.5 | 0/1 | Deferred | — |
-| 21. Connection & Subscription Resilience | v1.5 | 0/1 | Deferred | — |
-| 22. Broadcast & Ordering | v1.5 | 0/1 | Deferred | — |
-| 23. Resource Management | v1.5 | 0/1 | Deferred | — |
-| 24. Input Validation & Telemetry | v1.5 | 0/1 | Deferred | — |
+| 20. Error Handling & Observability | v1.5 | 1/1 | Complete (incidental) | 2026-04-27 |
+| 21. Connection & Subscription Resilience | v1.5 | 1/1 | Complete | 2026-04-27 |
+| 22. Broadcast & Ordering | v1.5 | 1/1 | Complete (incidental) | 2026-04-27 |
+| 23. Resource Management | v1.5 | 1/1 | Complete (incidental) | 2026-04-27 |
+| 24. Input Validation & Telemetry | v1.5 | 1/1 | Complete (incidental) | 2026-04-27 |
 | 25. Social Infrastructure | v2.0 | 1/1 | Complete | 2026-03-16 |
 | 26. User Profiles & Social Graph | v2.0 | 3/3 | Complete | 2026-03-17 |
 | 27. Groups | v2.0 | 2/2 | Complete | 2026-03-17 |
@@ -532,3 +549,15 @@ Plans:
 | 39. CRDT Integration Fix | 1/1 | Complete    | 2026-03-19 | — |
 | 40. Activity Log Full Pipeline Wiring | 1/1 | Complete    | 2026-03-19 | — |
 | 41. CRDT Live Update Relay Fix | 1/1 | Complete    | 2026-03-19 | — |
+| 42. Social Data Integrity | v4.0 | 1/1 | Complete | 2026-03-19 |
+| 43. Transactional Outbox | v4.0 | 2/2 | Complete | 2026-03-19 |
+| 44. Real-time Activity Push | v4.0 | 2/2 | Complete | 2026-03-27 |
+| 45. Simulation Scripts | v4.0 | 2/2 | Complete | 2026-03-27 |
+| 46. UI Polish & Big Brother View | v4.0 | 2/2 | Complete | 2026-03-27 |
+| 47. DynamoDB GSIs | v4.0 | 1/1 | Complete | 2026-04-27 |
+| 48. Pipeline Webhook Forwarding | v5.0 | 0/1 | Pending | — |
+| 49. Pipeline Durability | v5.0 | 0/1 | Pending | — |
+| 50. Pipeline Error Visibility & Health | v5.0 | 0/1 | Pending | — |
+| 51. Pipeline Distributed Tracing | v5.0 | 0/1 | Pending | — |
+| 52. Pipeline Audit + Moderation | v5.0 | 0/1 | Pending | — |
+| 53. Rate Limits + Structured Logs | v5.0 | 0/1 | Pending | — |

@@ -160,6 +160,75 @@ describe('validatePipeline — advisory lints', () => {
       expect(hits[0].nodeId).toBe('llm1');
       expect(hits[0].severity).toBe('warning');
     });
+
+    test('exempts a fork-branch action whose success edge feeds a downstream Join', () => {
+      // trigger → fork → [a1, a2] → join → sink
+      // a1 and a2 are llm/action nodes downstream of a Fork AND upstream of
+      // a Join — wiring their error handles would suppress MockExecutor's
+      // failed-JoinArrival delivery and hang `mode: 'all'` joins. The lint
+      // exempts this exact topology.
+      const t = validTrigger('t1');
+      const fork = validFork('f1', 2);
+      const a1 = validAction('a1');
+      const a2 = validAction('a2');
+      const join = validJoin('j1');
+      const sink = validTransform('x1');
+      const edges = [
+        makeEdge('e0', 't1', 'f1'),
+        makeEdge('e1', 'f1', 'a1', 'branch-0'),
+        makeEdge('e2', 'f1', 'a2', 'branch-1'),
+        makeEdge('e3', 'a1', 'j1', 'out', 'in-0'),
+        makeEdge('e4', 'a2', 'j1', 'out', 'in-1'),
+        makeEdge('e5', 'j1', 'x1'),
+      ];
+      const result = validatePipeline(makePipeline([t, fork, a1, a2, join, sink], edges));
+      const hits = findByCode(result.warnings, 'NO_ERROR_HANDLER');
+      expect(hits).toHaveLength(0);
+    });
+
+    test('still warns for a fork-branch action whose success path does NOT reach a Join', () => {
+      // trigger → fork → [a1 → sink, a2 → sink]
+      // a1/a2 are downstream of a Fork but their success paths terminate at
+      // a transform sink, not a Join. There is no fork-failure handler to
+      // protect, so the missing error handler is a real defect.
+      const t = validTrigger('t1');
+      const fork = validFork('f1', 2);
+      const a1 = validAction('a1');
+      const a2 = validAction('a2');
+      const sink = validTransform('x1');
+      const edges = [
+        makeEdge('e0', 't1', 'f1'),
+        makeEdge('e1', 'f1', 'a1', 'branch-0'),
+        makeEdge('e2', 'f1', 'a2', 'branch-1'),
+        makeEdge('e3', 'a1', 'x1'),
+        makeEdge('e4', 'a2', 'x1'),
+      ];
+      const result = validatePipeline(makePipeline([t, fork, a1, a2, sink], edges));
+      const hits = findByCode(result.warnings, 'NO_ERROR_HANDLER');
+      expect(hits.map((h) => h.nodeId).sort()).toEqual(['a1', 'a2']);
+    });
+
+    test('still warns for an action that points at a Join but has no Fork ancestor', () => {
+      // trigger → [a1, a2] → join → sink (no Fork upstream)
+      // Without a Fork ancestor, the runtime never invokes the fork-failure
+      // path, so wiring an error edge here is the correct fix and the lint
+      // should fire.
+      const t = validTrigger('t1');
+      const a1 = validAction('a1');
+      const a2 = validAction('a2');
+      const join = validJoin('j1');
+      const sink = validTransform('x1');
+      const edges = [
+        makeEdge('e0', 't1', 'a1'),
+        makeEdge('e1', 't1', 'a2'),
+        makeEdge('e2', 'a1', 'j1', 'out', 'in-0'),
+        makeEdge('e3', 'a2', 'j1', 'out', 'in-1'),
+        makeEdge('e4', 'j1', 'x1'),
+      ];
+      const result = validatePipeline(makePipeline([t, a1, a2, join, sink], edges));
+      const hits = findByCode(result.warnings, 'NO_ERROR_HANDLER');
+      expect(hits.map((h) => h.nodeId).sort()).toEqual(['a1', 'a2']);
+    });
   });
 
   describe('LLM_NO_MAX_TOKENS', () => {

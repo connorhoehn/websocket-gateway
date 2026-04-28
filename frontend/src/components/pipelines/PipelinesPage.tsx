@@ -1444,20 +1444,21 @@ export default function PipelinesPage() {
       {/* ── Body ── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: hasAnyPipelines ? 24 : 0 }}>
         {!hasAnyPipelines ? (
-          <div style={{ position: 'relative', height: '100%' }}>
-            <EmptyState
-              icon="🔀"
-              title="No pipelines yet"
-              body="Design your first one — from scratch or pick a template later."
-              actionLabel="+ New Pipeline"
-              onAction={() => setNewModalOpen(true)}
-            />
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <EmptyState
+                icon="🔀"
+                title="No pipelines yet"
+                body="Design your first one — from scratch or pick a template later."
+                actionLabel="+ New Pipeline"
+                onAction={() => setNewModalOpen(true)}
+              />
+            </div>
             <div
               style={{
-                position: 'absolute', left: '50%', bottom: '40%',
-                transform: 'translate(-50%, 64px)',
-                display: 'flex', alignItems: 'center', gap: 10,
+                display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10,
                 fontSize: 13, color: colors.textTertiary,
+                padding: '0 24px 32px',
               }}
             >
               <button

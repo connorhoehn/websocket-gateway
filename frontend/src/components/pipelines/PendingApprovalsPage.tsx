@@ -287,7 +287,7 @@ export default function PendingApprovalsPage() {
       <div style={styles.body}>
         {error ? (
           <div data-testid="approvals-error" role="alert" style={styles.errorBanner}>
-            <span style={styles.errorText}>Couldn't load pending approvals: {error}</span>
+            <span style={styles.errorText}>Couldn't load pending approvals. Try again.</span>
             <button data-testid="approvals-retry" onClick={retry} style={styles.retryBtn}>Retry</button>
           </div>
         ) : null}

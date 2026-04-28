@@ -470,6 +470,13 @@ function GatewayDemo({
                 </ErrorBoundary>
               }>
                 <Route index element={<DashboardPage />} />
+                {/*
+                  Alias: `/observability/dashboard` is a common guess for the
+                  dashboard URL. Keep the canonical path at `/observability`
+                  (the index route) and redirect the alias there instead of
+                  letting the catch-all bounce users to `/previews`.
+                */}
+                <Route path="dashboard" element={<Navigate to="/observability" replace />} />
                 <Route path="nodes" element={<NodesPage />} />
                 <Route path="events" element={<EventsPage />} />
                 <Route path="metrics" element={<MetricsPage />} />

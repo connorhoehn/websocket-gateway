@@ -1,6 +1,12 @@
+// IMPORTANT: tracing.start() must run before any other imports so that
+// OpenTelemetry auto-instrumentation can monkey-patch http/express/etc.
+// before they are require()'d by the rest of the application.
+import { start as startTracing } from './tracing';
+const tracingShutdown = startTracing();
+
 import { createApp } from './app';
 import { createScheduleEvaluator } from './services/scheduleEvaluator';
-import { stubPipelineStore } from './routes/pipelineDefinitions';
+import { pipelineDefinitionsCache } from './pipeline/definitions-cache';
 import { setPipelineBridge } from './routes/pipelineTriggers';
 import { bootstrapPipeline } from './pipeline/bootstrap';
 import { createBridge } from './pipeline/createBridge';
@@ -37,6 +43,23 @@ bootstrapPipeline()
   });
 
 // ---------------------------------------------------------------------------
+// Pipeline definitions cache — Scan-backed, refreshed every 60s.
+//
+// Replaces the old write-through in-memory mirror. The schedule evaluator
+// (below) and the public webhook router both consume this cache
+// synchronously, so cold-start blindness after a process restart is bounded
+// by the first refresh's Scan latency (~tens of ms in-region) rather than
+// requiring every pipeline to be re-touched via PUT.
+//
+// We deliberately don't `await` the first refresh — if DynamoDB is slow or
+// the table doesn't exist yet, blocking startup would be worse than the
+// (at most) 60-second window of "scheduler/webhooks see no pipelines".
+// ---------------------------------------------------------------------------
+pipelineDefinitionsCache.start().catch((err: unknown) => {
+  console.error('[social-api] pipelineDefinitionsCache initial refresh failed (will retry on tick):', err);
+});
+
+// ---------------------------------------------------------------------------
 // Schedule evaluator — fires pipelines whose triggerBinding.event === 'schedule'
 // on their cron expression. Phase 1: logs only; Phase 4 will call the pipeline
 // resource to produce a run.
@@ -51,7 +74,11 @@ interface ScheduledPipelineShape {
 const scheduler = createScheduleEvaluator({
   listPipelines: () => {
     const out: Array<{ id: string; status: string; triggerBinding?: { event: string; schedule?: string } }> = [];
-    for (const raw of stubPipelineStore.allPipelines()) {
+    // Reads from the in-memory cache — `pipelineDefinitionsCache` refreshes
+    // every 60s from DynamoDB, so this loop never makes a network call. The
+    // only correctness invariant we care about here is "the cache is at most
+    // 60s stale", which is fine for cron-minute granularity.
+    for (const raw of pipelineDefinitionsCache.all()) {
       const p = raw as ScheduledPipelineShape;
       if (typeof p?.id !== 'string' || typeof p.status !== 'string') continue;
       const tb = p.triggerBinding;
@@ -76,10 +103,14 @@ scheduler.start();
 async function shutdown(signal: string): Promise<void> {
   console.log(`[social-api] received ${signal}, shutting down`);
   scheduler.stop();
+  pipelineDefinitionsCache.stop();
   if (pipelineShutdown) {
     try { await pipelineShutdown(); } catch (err) {
       console.error('[social-api] pipeline shutdown failed:', err);
     }
+  }
+  try { await tracingShutdown(); } catch (err) {
+    console.error('[social-api] tracing shutdown failed:', err);
   }
   server.close(() => process.exit(0));
 }

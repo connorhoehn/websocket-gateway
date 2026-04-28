@@ -45,19 +45,24 @@ const BASE_BACKOFF_MS = 1000;
 // ---------------------------------------------------------------------------
 
 /**
- * Build the WebSocket URL with required query params.
+ * Build the WebSocket URL.
  *
- * New connection:  wss://host?token=<JWT>
- * Reconnect:       wss://host?token=<JWT>&sessionToken=<token>
+ * The JWT now travels via Sec-WebSocket-Protocol (see WS_AUTH_SUBPROTOCOL),
+ * not the URL — the query string lands in server logs and proxy traces.
+ * Only the (non-sensitive) sessionToken stays in the URL for reconnects.
  */
 function buildUrl(config: GatewayConfig, sessionToken: string | null): string {
   const url = new URL(config.wsUrl);
-  url.searchParams.set('token', config.cognitoToken);
   if (sessionToken) {
     url.searchParams.set('sessionToken', sessionToken);
   }
   return url.toString();
 }
+
+// Marker subprotocol the server echoes back. The JWT follows it as the
+// second value in Sec-WebSocket-Protocol; the server reads it but does
+// not echo it.
+const WS_AUTH_SUBPROTOCOL = 'bearer-token-v1';
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -116,7 +121,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
     setConnectionState('connecting');
 
     const url = buildUrl(config, sessionTokenRef.current);
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, [WS_AUTH_SUBPROTOCOL, config.cognitoToken]);
     wsRef.current = ws;
 
     ws.onopen = () => {

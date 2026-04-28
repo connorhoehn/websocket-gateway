@@ -207,50 +207,55 @@ function MetricsPage() {
 
   const timeLabel = TIME_RANGES.find((t) => t.value === timeRange)?.label ?? '';
 
-  // Derived live series — only used when we've collected at least 2 samples,
-  // otherwise the seeded data wins and the chart looks lively from frame 1.
+  // Derived live series — only used when we've collected at least 2 samples
+  // AND the bridge is actually populating the relevant numeric fields. The
+  // hook now returns `null` for fields the bridge doesn't expose; we drop
+  // those points so charts don't render zeros that lie about the data.
   const liveSeries = useMemo(() => {
     if (metricsRing.length < 2) return null;
+    type Pt = { x: number; y: number };
+    const series = (key: keyof PipelineMetrics): Pt[] => {
+      const out: Pt[] = [];
+      metricsRing.forEach((m, i) => {
+        const v = m[key];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          out.push({ x: i, y: v });
+        }
+      });
+      return out;
+    };
+    const hasEnough = (pts: Pt[]) => pts.length >= 2;
+
+    const active = series('runsActive');
+    const tokensIn = series('llmTokensIn');
+    const tokensOut = series('llmTokensOut');
+    const cost = series('estimatedCostUsd');
+    const started = series('runsStarted');
+    const completed = series('runsCompleted');
+    const failed = series('runsFailed');
+
     return {
-      activeRuns: [
-        {
-          label: 'active',
-          data: metricsRing.map((m, i) => ({ x: i, y: m.runsActive })),
-        },
-      ] as LineSeries[],
-      llmTokens: [
-        {
-          label: 'input',
-          data: metricsRing.map((m, i) => ({ x: i, y: m.llmTokensIn })),
-        },
-        {
-          label: 'output',
-          data: metricsRing.map((m, i) => ({ x: i, y: m.llmTokensOut })),
-        },
-      ] as LineSeries[],
-      llmCost: [
-        {
-          label: 'USD',
-          data: metricsRing.map((m, i) => ({ x: i, y: m.estimatedCostUsd })),
-        },
-      ] as LineSeries[],
-      runsPerMinute: [
-        {
-          label: 'started',
-          color: colors.primary,
-          data: metricsRing.map((m, i) => ({ x: i, y: m.runsStarted })),
-        },
-        {
-          label: 'completed',
-          color: colors.state.completed,
-          data: metricsRing.map((m, i) => ({ x: i, y: m.runsCompleted })),
-        },
-        {
-          label: 'failed',
-          color: colors.state.failed,
-          data: metricsRing.map((m, i) => ({ x: i, y: m.runsFailed })),
-        },
-      ] as LineSeries[],
+      activeRuns: hasEnough(active)
+        ? ([{ label: 'active', data: active }] as LineSeries[])
+        : null,
+      llmTokens:
+        hasEnough(tokensIn) && hasEnough(tokensOut)
+          ? ([
+              { label: 'input', data: tokensIn },
+              { label: 'output', data: tokensOut },
+            ] as LineSeries[])
+          : null,
+      llmCost: hasEnough(cost)
+        ? ([{ label: 'USD', data: cost }] as LineSeries[])
+        : null,
+      runsPerMinute:
+        hasEnough(started) && hasEnough(completed) && hasEnough(failed)
+          ? ([
+              { label: 'started', color: colors.primary, data: started },
+              { label: 'completed', color: colors.state.completed, data: completed },
+              { label: 'failed', color: colors.state.failed, data: failed },
+            ] as LineSeries[])
+          : null,
     };
   }, [metricsRing]);
 

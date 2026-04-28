@@ -64,6 +64,14 @@ class PresenceService {
         // Configuration
         this.isDistributed = !!messageRouter; // If messageRouter exists, we're in distributed mode
 
+        // Wave 4c: track whether we've registered our ownership cleanup
+        // handler with the coordinator so registerOwnershipHandlers() is
+        // idempotent. Registration is opt-in via registerOwnershipHandlers()
+        // (called from server.js startup); when the ownership feature flag
+        // is off the coordinator's start() is a no-op so onLost never fires
+        // and behaviour is byte-identical to today.
+        this._ownershipHandlersRegistered = false;
+
         this.startPresenceHeartbeat();
 
         // Start cleanup interval for stale clients
@@ -487,6 +495,111 @@ class PresenceService {
         }
 
         this.logger.debug(`Client ${clientId} disconnected from presence service`);
+    }
+
+    // -----------------------------------------------------------------
+    // Wave 4c: ownership-cleanup integration
+    // -----------------------------------------------------------------
+    //
+    // When this node loses ownership of a room, the
+    // ownership-cleanup-coordinator dispatches `onLost(roomId)`. The
+    // presence service's local per-room state lives in the in-memory
+    // maps below (channelPresence, clientChannels, clientPresence's
+    // per-client `channels` array). The presence service does NOT
+    // directly populate Redis keys keyed by channel/room — Redis fan-out
+    // is handled via messageRouter pub/sub channels, which are
+    // subscription-based and not owned by this service. So the flush is
+    // purely an in-memory eviction.
+    //
+    // FOLLOW-UP: the original Wave 4c spec called out a (nodeId, roomId)
+    // keying scheme for presence Redis state. This dispatch deliberately
+    // does NOT change the existing keying — that refactor is too
+    // invasive for this slice and is deferred to a future agent. Today,
+    // because this service holds no node-scoped Redis keys of its own,
+    // the in-memory flush is sufficient and safe. If presence later
+    // adopts a Redis ZADD/HSET scheme, _flushRoomPresence must also
+    // issue DELETEs for keys this node populated.
+
+    /**
+     * Flush all local presence state for a room.
+     *
+     * Removes per-room entries from channelPresence (the room->client
+     * map), strips the room from each affected client's clientChannels
+     * reverse index, and updates the client's stored `channels` array.
+     * Does NOT delete clientPresence entries themselves — a client can
+     * be present in other rooms on this node and those subscriptions
+     * remain valid.
+     *
+     * @param {string} roomId
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _flushRoomPresence(roomId) {
+        if (!roomId) return;
+
+        let cleared = 0;
+
+        const channelMap = this.channelPresence.get(roomId);
+        if (channelMap) {
+            cleared = channelMap.size;
+            // Strip this room from each affected client's reverse index.
+            for (const clientId of channelMap.keys()) {
+                const set = this.clientChannels.get(clientId);
+                if (set) {
+                    set.delete(roomId);
+                    if (set.size === 0) {
+                        this.clientChannels.delete(clientId);
+                    }
+                }
+                // Update the client's presenceData.channels list so a
+                // subsequent broadcast doesn't re-target the lost room.
+                const presenceData = this.clientPresence.get(clientId);
+                if (presenceData && Array.isArray(presenceData.channels)) {
+                    presenceData.channels = presenceData.channels.filter((c) => c !== roomId);
+                }
+            }
+            this.channelPresence.delete(roomId);
+        }
+
+        this.logger.info(
+            `presence-service flushed roomId ${roomId} (${cleared} entries cleared)`
+        );
+    }
+
+    /**
+     * Register this service's ownership cleanup handler with the
+     * coordinator. Idempotent — safe to call more than once. Should be
+     * invoked once from server.js startup. When the ownership feature
+     * flag is off the coordinator's start() is a no-op so the handler
+     * we register here is never invoked, preserving byte-identical
+     * flag-off behaviour.
+     *
+     * The coordinator's registerCleanupHandler() uses Map.set() under
+     * the hood, so re-registration cleanly overrides the W2 stub
+     * handler installed at coordinator construction.
+     */
+    registerOwnershipHandlers() {
+        if (this._ownershipHandlersRegistered) return;
+
+        try {
+            // eslint-disable-next-line global-require
+            const { getOwnershipCleanupCoordinator } = require('./ownership-cleanup-coordinator');
+            const coordinator = getOwnershipCleanupCoordinator();
+            coordinator.registerCleanupHandler('presence', {
+                onLost: async (roomId) => this._flushRoomPresence(roomId),
+                onGained: async (_roomId) => {
+                    // Presence rehydrates from connected clients
+                    // naturally as their next heartbeat / set arrives.
+                    // Nothing to do here.
+                },
+            });
+            this._ownershipHandlersRegistered = true;
+            this.logger.debug('presence-service: registered ownership cleanup handlers');
+        } catch (err) {
+            this.logger.warn('presence-service: failed to register ownership cleanup handlers', {
+                error: err && err.message,
+            });
+        }
     }
 
     // Service lifecycle methods

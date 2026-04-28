@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router';
 import dashboardFixture from './fixtures/dashboardFixture';
 import { useDashboard } from './hooks/useDashboard';
 import { usePipelineMetrics } from './hooks/usePipelineMetrics';
+import type { PipelineMetricsSource } from './hooks/usePipelineMetrics';
 import { useObservability } from './context/ObservabilityContext';
 import type { RecentEvent } from './context/ObservabilityContext';
 import KPICard from './components/KPICard';
@@ -27,6 +28,30 @@ import ActiveRunsTable, { type ActiveRunRow } from './components/ActiveRunsTable
 import AlertsPanel, { type Alert } from './components/AlertsPanel';
 import EventRow from '../shared/EventRow';
 import { colors } from '../../constants/styles';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const EM_DASH = '\u2014';
+
+/**
+ * Format a millisecond value for the KPI card. Returns the em-dash for
+ * `null`/non-finite inputs (FE1 fix pattern) so the UI never shows a stale
+ * "0 ms" when the bridge hasn't supplied the field yet.
+ *
+ * Examples:
+ *   formatMs(null)   → "—"
+ *   formatMs(0)      → "0 ms"
+ *   formatMs(234)    → "234 ms"
+ *   formatMs(1234)   → "1.2s"
+ *   formatMs(12345)  → "12.3s"
+ */
+export function formatMs(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return EM_DASH;
+  if (value < 1000) return `${Math.round(value)} ms`;
+  return `${(value / 1000).toFixed(1)}s`;
+}
 
 // ---------------------------------------------------------------------------
 // Phase-1 synthesized data (from the dashboardFixture scaffolding)
@@ -73,6 +98,46 @@ const sectionTitleStyle: CSSProperties = {
   marginBottom: 8,
   fontFamily: 'inherit',
 };
+
+/**
+ * Tiny pill that surfaces where pipeline metrics came from on this poll.
+ * Rendering rules (Wave 2 / AUDIT-06):
+ *   - 'bridge' → no pill (intended steady state, avoid chrome).
+ *   - 'stub'   → amber "demo data" pill so operators don't mistake
+ *                synthesized numbers for live state.
+ *   - 'error'  → red "metrics error" badge.
+ *   - null     → no pill until the first poll resolves.
+ */
+function MetricsSourcePill({ source }: { source: PipelineMetricsSource | null }) {
+  if (source === null || source === 'bridge') return null;
+
+  const isError = source === 'error';
+  const background = isError ? '#fef2f2' : '#fffbeb';
+  const color = isError ? colors.state.failed : colors.state.awaiting;
+  const label = isError ? 'metrics error' : 'demo data';
+  const title = isError
+    ? '/api/pipelines/metrics returned an error — values are placeholders'
+    : 'No pipeline bridge wired — metrics are synthesized fixture data';
+
+  return (
+    <span
+      data-testid="pipeline-metrics-source-pill"
+      data-source={source}
+      title={title}
+      style={{
+        display: 'inline-block',
+        padding: '2px 8px',
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        background,
+        color,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 function LiveToggle({
   live,
@@ -237,24 +302,34 @@ export default function DashboardPage() {
   const dashboard = liveDashboard ?? dashboardFixture;
 
   // Pipeline metrics poller — drives the KPI row.
-  // Phase 4 will swap the backend stub for distributed-core's
-  // PipelineModule.getMetrics(); this hook's shape stays stable.
-  const { metrics: pipelineMetrics } = usePipelineMetrics();
+  // Phase 4 wires distributed-core's PipelineModule.getMetrics(); the bridge
+  // currently exposes only a subset of fields, so most numerics arrive as
+  // `null` and must render as "—" rather than zero.
+  const { metrics: pipelineMetrics, source: metricsSource } = usePipelineMetrics();
 
   const overview = dashboard?.overview ?? {};
   const nodes = useMemo(() => buildPhase1Nodes(overview), [overview]);
 
-  // KPI values: prefer live pipeline metrics, fall back while loading.
-  // `activeRunsCount` from the EventStream takes precedence — it's the most
-  // up-to-date "active now" since it updates on every dispatch, not on poll.
-  const runsToday = pipelineMetrics?.runsStarted ?? 0;
+  // KPI values: pass through nulls so KPICard can render the em-dash.
+  // `activeRunsCount` from the EventStream takes precedence when non-zero —
+  // it's the most up-to-date "active now" since it updates on every dispatch.
+  // When the EventStream count is 0 AND the bridge value is null, we fall
+  // back to the empty active-runs table count (also 0) — these are real
+  // zeroes, not "unknown" zeroes, so they're rendered as numbers.
+  const runsToday: number | string = pipelineMetrics?.runsStarted ?? EM_DASH;
   const runsSparkline = [0, 0, 0, 0, 0, 0, 0, 0];
-  const activeNow =
+  const activeNow: number | string =
     activeRunsCount > 0
       ? activeRunsCount
-      : pipelineMetrics?.runsActive ?? PHASE1_ACTIVE_RUNS.length;
-  const pendingApprovals = pipelineMetrics?.runsAwaitingApproval ?? 0;
-  const failed24h = pipelineMetrics?.runsFailed ?? 0;
+      : pipelineMetrics?.runsActive ?? EM_DASH;
+  const pendingApprovals: number | string =
+    pipelineMetrics?.runsAwaitingApproval ?? EM_DASH;
+  const failed24h: number | string = pipelineMetrics?.runsFailed ?? EM_DASH;
+  // First-token latency arrives from distributed-core v0.3.7+ via the bridge;
+  // older builds and the stub fixture leave it null → render em-dash, never
+  // "0 ms".
+  const avgFirstTokenLatencyMs = pipelineMetrics?.avgFirstTokenLatencyMs ?? null;
+  const avgFirstTokenLatency: string = formatMs(avgFirstTokenLatencyMs);
 
   const alerts: Alert[] = Array.isArray(dashboard?.alerts) ? dashboard.alerts : [];
 
@@ -329,16 +404,26 @@ export default function DashboardPage() {
           >
             {isLiveData ? 'live data' : 'fixture'}
           </span>
+          <MetricsSourcePill source={metricsSource} />
           <LiveToggle live={live} onChange={setLive} />
         </div>
       </div>
 
-      {/* KPI row */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+      {/* KPI row — responsive auto-fit grid (minmax 170px). 5 cards may wrap
+          to 4+1 or 5+0 depending on viewport; both layouts are intentional.
+          Deltas suppressed when the underlying KPI is null/em-dash so we
+          don't render a stale "▲ 12%" next to "—". */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+          gap: 16,
+        }}
+      >
         <KPICard
           title="Runs today"
           value={runsToday}
-          delta={{ value: 12, direction: 'up' }}
+          delta={typeof runsToday === 'number' ? { value: 12, direction: 'up' } : undefined}
           sparklineData={runsSparkline}
         />
         <KPICard
@@ -354,8 +439,12 @@ export default function DashboardPage() {
         <KPICard
           title="Failed (24h)"
           value={failed24h}
-          delta={{ value: 4, direction: 'down' }}
+          delta={typeof failed24h === 'number' ? { value: 4, direction: 'down' } : undefined}
           onClick={handleGoToFailedEvents}
+        />
+        <KPICard
+          title="Avg first-token latency"
+          value={avgFirstTokenLatency}
         />
       </div>
 

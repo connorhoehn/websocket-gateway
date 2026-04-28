@@ -251,23 +251,53 @@ describe('createBridge — getPendingApprovals()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// getMetrics() — projects to { runsAwaitingApproval } only
+// getMetrics() — full pass-through of dashboard fields
 // ---------------------------------------------------------------------------
 
 describe('createBridge — getMetrics()', () => {
-  test('extracts the runsAwaitingApproval count', async () => {
+  test('forwards every dashboard field the module exposes', async () => {
     const mod = makeMockModule();
     mod.getMetrics.mockResolvedValue({
       moduleId: 'pipeline-x',
+      runsStarted: 100,
+      runsCompleted: 80,
+      runsFailed: 5,
+      runsActive: 12,
       runsAwaitingApproval: 7,
-      activeRuns: 3, // dropped — bridge only re-exposes the awaiting count
+      avgDurationMs: 8200,
+      llmTokensIn: 250_000,
+      llmTokensOut: 90_000,
+      avgFirstTokenLatencyMs: 420,
+      asOf: '2026-04-28T12:00:00.000Z',
+      activeRuns: 3, // unrelated extra — fine to ignore (route projects fields)
     });
 
     const out = await bridge(mod).getMetrics!();
+    expect(out).toEqual({
+      runsStarted: 100,
+      runsCompleted: 80,
+      runsFailed: 5,
+      runsActive: 12,
+      runsAwaitingApproval: 7,
+      avgDurationMs: 8200,
+      llmTokensIn: 250_000,
+      llmTokensOut: 90_000,
+      avgFirstTokenLatencyMs: 420,
+      asOf: '2026-04-28T12:00:00.000Z',
+    });
+  });
+
+  test('omits fields the module does not expose (older versions)', async () => {
+    const mod = makeMockModule();
+    mod.getMetrics.mockResolvedValue({ runsAwaitingApproval: 7 });
+
+    const out = await bridge(mod).getMetrics!();
+    // Legacy contract: a module that only exposes runsAwaitingApproval still
+    // produces a usable bridge result. Other fields stay absent (route → null).
     expect(out).toEqual({ runsAwaitingApproval: 7 });
   });
 
-  test('coerces missing/non-numeric values to 0', async () => {
+  test('coerces missing runsAwaitingApproval to 0 (legacy callers depend on this)', async () => {
     const mod = makeMockModule();
     mod.getMetrics.mockResolvedValue({});
 
@@ -275,11 +305,17 @@ describe('createBridge — getMetrics()', () => {
     expect(out).toEqual({ runsAwaitingApproval: 0 });
   });
 
-  test('coerces a string to 0 (not parseInt)', async () => {
+  test('drops non-finite numerics rather than salvaging them', async () => {
     const mod = makeMockModule();
-    mod.getMetrics.mockResolvedValue({ runsAwaitingApproval: '5' });
+    mod.getMetrics.mockResolvedValue({
+      runsAwaitingApproval: '5', // string — not silently parsed
+      runsStarted: Number.NaN,
+      runsCompleted: Number.POSITIVE_INFINITY,
+      avgFirstTokenLatencyMs: 'fast', // garbage — dropped, not parsed
+    });
 
     const out = await bridge(mod).getMetrics!();
+    // String runsAwaitingApproval coerces to 0 (legacy), other garbage drops.
     expect(out).toEqual({ runsAwaitingApproval: 0 });
   });
 });

@@ -1,6 +1,7 @@
 // src/middleware/reconnection-handler.js
 const url = require('url');
 const crypto = require('crypto');
+const promMetrics = require('../observability/metrics');
 
 /**
  * Handle WebSocket reconnection with session token recovery
@@ -26,6 +27,7 @@ async function handleReconnection(ws, req, sessionService, messageRouter, logger
     // Record reconnection attempt
     if (metricsCollector) {
       try { metricsCollector.recordReconnectionAttempt(); } catch (e) { /* fail open */ }
+      try { promMetrics.recordReconnectionAttempt(); } catch (e) { /* fail open */ }
     }
 
     // Attempt session recovery
@@ -60,6 +62,7 @@ async function handleReconnection(ws, req, sessionService, messageRouter, logger
         // Record failed reconnection due to subscription restore failure
         if (metricsCollector) {
           try { metricsCollector.recordReconnectionFailure('subscription_restore_failed'); } catch (e) { /* fail open */ }
+          try { promMetrics.recordReconnectionFailure(); } catch (e) { /* fail open */ }
         }
 
         // Treat as new connection since restoration failed
@@ -80,6 +83,7 @@ async function handleReconnection(ws, req, sessionService, messageRouter, logger
         try {
           const sessionAgeMs = session.createdAt ? Date.now() - session.createdAt : 0;
           metricsCollector.recordReconnectionSuccess(sessionAgeMs);
+          try { promMetrics.recordReconnectionSuccess(); } catch (e) { /* fail open */ }
         } catch (e) { /* fail open */ }
       }
 
@@ -93,6 +97,7 @@ async function handleReconnection(ws, req, sessionService, messageRouter, logger
       // Record failed reconnection
       if (metricsCollector) {
         try { metricsCollector.recordReconnectionFailure('expired'); } catch (e) { /* fail open */ }
+        try { promMetrics.recordReconnectionFailure(); } catch (e) { /* fail open */ }
       }
       logger.warn('Invalid or expired session token, treating as new connection');
     }

@@ -237,6 +237,14 @@ export function usePendingApprovalsState(): PendingApprovalsState {
         setIsLoading(false);
       } catch (err) {
         if (cancelled) return;
+        // Keep the technical detail (status code + endpoint) in the console for
+        // debugging — the user-facing banner shows a sanitized message instead
+        // (see PendingApprovalsPage `approvals-error` banner).
+        // eslint-disable-next-line no-console
+        console.error(
+          '[usePendingApprovals] /api/observability/dashboard?include=pendingApprovals failed:',
+          err,
+        );
         setError((err as Error).message ?? 'Failed to load pending approvals');
         setIsLoading(false);
       }

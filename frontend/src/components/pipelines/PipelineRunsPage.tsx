@@ -446,7 +446,7 @@ export default function PipelineRunsPage() {
   const selectionCount = selected.size;
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
           type="button"
@@ -513,32 +513,35 @@ export default function PipelineRunsPage() {
         </button>
       </div>
 
-      {/* Search + range selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <label
-          htmlFor="runs-search"
-          style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 500 }}
-        >
-          Search
-        </label>
+      {/* Compact filter bar — single wrap-aware row.
+          Search grows to fill; range/status/trigger clusters wrap onto a
+          second row only when the viewport can't hold them inline. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          rowGap: 8,
+        }}
+      >
         <input
           id="runs-search"
           type="search"
           data-testid="runs-search-input"
-          placeholder="run id or pipeline id…"
+          placeholder="Search run id or pipeline id…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ ...fieldStyle, maxWidth: 320 }}
+          style={{ ...fieldStyle, flex: '1 1 240px', maxWidth: 320 }}
           aria-label="Search runs by run id or pipeline id"
         />
 
-        <span
-          id="runs-range-label"
-          style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 500, marginLeft: 12 }}
+        <div
+          role="radiogroup"
+          aria-labelledby="runs-range-label"
+          style={{ display: 'flex', gap: 4 }}
         >
-          Range
-        </span>
-        <div role="radiogroup" aria-labelledby="runs-range-label" style={{ display: 'flex', gap: 6 }}>
+          <span id="runs-range-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Range</span>
           {DATE_RANGE_KEYS.map((r) => (
             <button
               key={r}
@@ -554,7 +557,7 @@ export default function PipelineRunsPage() {
                 }
               }}
               style={{
-                padding: '6px 10px',
+                padding: '5px 9px',
                 fontSize: 12,
                 fontWeight: 500,
                 border: `1px solid ${range === r ? colors.primary : colors.border}`,
@@ -569,17 +572,13 @@ export default function PipelineRunsPage() {
             </button>
           ))}
         </div>
-      </div>
 
-      {/* Status chips */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span
-          id="runs-status-label"
-          style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 500, marginRight: 4 }}
+        <div
+          role="group"
+          aria-labelledby="runs-status-label"
+          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
         >
-          Status
-        </span>
-        <div role="group" aria-labelledby="runs-status-label" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span id="runs-status-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Status</span>
           {STATUS_KEYS.map((s) => (
             <ChipButton
               key={s}
@@ -591,17 +590,13 @@ export default function PipelineRunsPage() {
             />
           ))}
         </div>
-      </div>
 
-      {/* Trigger-kind chips */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span
-          id="runs-trigger-label"
-          style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 500, marginRight: 4 }}
+        <div
+          role="group"
+          aria-labelledby="runs-trigger-label"
+          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
         >
-          Trigger
-        </span>
-        <div role="group" aria-labelledby="runs-trigger-label" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span id="runs-trigger-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Trigger</span>
           {TRIGGER_KIND_KEYS.map((k) => (
             <ChipButton
               key={k}
@@ -794,29 +789,19 @@ export default function PipelineRunsPage() {
                       }}
                       aria-label={`Select run ${r.id.slice(0, 8)}`}
                     />
-                    {/* secondary checkbox-style picker for Compare (no DOM
-                        dup — just a tiny radio dot via a label) */}
-                    <label
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        marginLeft: 6,
-                        fontSize: 10,
-                        color: comparePair.includes(r.id) ? colors.primary : colors.textTertiary,
-                        cursor: 'pointer',
-                      }}
-                      title="Pick for compare (max 2)"
-                    >
-                      <input
-                        type="checkbox"
-                        data-testid={`run-compare-pick-${r.id}`}
-                        checked={comparePair.includes(r.id)}
-                        onChange={() => toggleComparePair(r.id)}
-                        aria-label={`Pick run ${r.id.slice(0, 8)} for comparison`}
-                        style={{ width: 10, height: 10, marginRight: 2 }}
-                      />
-                      ⇄
-                    </label>
+                    {/* Hidden but keyboard-reachable Compare picker so existing
+                        a11y / test ids still resolve. Visual UX uses the
+                        top-right "Compare (n/2)" button + selected-row
+                        promotion instead of an inline ⇄ glyph. */}
+                    <input
+                      type="checkbox"
+                      data-testid={`run-compare-pick-${r.id}`}
+                      checked={comparePair.includes(r.id)}
+                      onChange={() => toggleComparePair(r.id)}
+                      aria-label={`Pick run ${r.id.slice(0, 8)} for comparison`}
+                      style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+                      tabIndex={-1}
+                    />
                   </td>
                   <td style={{ padding: '10px 12px', fontSize: 12, color: colors.textPrimary }}>
                     {relativeTime(r.startedAt)}

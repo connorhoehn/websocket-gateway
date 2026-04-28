@@ -1,9 +1,16 @@
 // social-api/src/routes/pipelineDefinitions.ts
 //
-// Phase 1 stub: REST endpoints for pipeline definitions. Keeps localStorage
-// authoritative on the frontend for now; these endpoints exist purely to
-// lock the wire contract so Phase 4 can flip a feature flag and start
-// mirroring / flushing writes without touching the route shapes.
+// REST endpoints for pipeline definitions, backed by DynamoDB via the
+// `definitionsRepo` singleton (see `../pipeline/definitions-repository.ts`).
+//
+// Wave 3 of the persistence migration removed the synchronous in-memory
+// mirror that earlier waves kept around for cross-module consumers.
+// Those consumers (the schedule evaluator in `src/index.ts` and the
+// webhook lookups in `pipelineWebhooks.ts`) now read from
+// `pipelineDefinitionsCache`, a Scan-backed snapshot refreshed every
+// 60s. We poke the cache from the write paths below so the common "save
+// the pipeline then immediately test the webhook" UX doesn't have to
+// wait a minute for the cache to catch up.
 //
 // Endpoints (mounted at /api/pipelines/defs in routes/index.ts — see the
 // collision note below):
@@ -19,12 +26,6 @@
 // (see routes/index.ts). The metrics mount must come BEFORE the defs mount
 // anyway — Express resolves mounts in registration order.
 //
-// Phase 3/4: replace `stubStore` with distributed-core's `StateStore` via a
-// ResourceRouter-owned resource per pipeline. The shape-compat is
-// intentional — endpoint contracts don't change. Phase 4 also considers
-// wiring frontend's `pipelineStorage.ts` to write through to these endpoints
-// via an event-sourced strategy (local first, then flush to remote).
-//
 // Shape is deliberately compatible with the frontend's `PipelineDefinition`
 // type; this file keeps its own untyped view so the two repos can evolve
 // independently (standalone mirror — see TYPES_SYNC.md).
@@ -32,38 +33,26 @@
 import { Router, type Request, type Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler';
 import { generateWebhookSecret } from '../lib/webhookSignature';
+import { definitionsRepo } from '../pipeline/definitions-repository';
+import { pipelineDefinitionsCache } from '../pipeline/definitions-cache';
+import { withContext } from '../lib/logger';
 
-// In-memory by user; resets on server restart.
-const stubStore = new Map<string, Map<string, unknown>>(); // userId -> pipelineId -> def
-
-function bucketFor(userId: string): Map<string, unknown> {
-  let b = stubStore.get(userId);
-  if (!b) {
-    b = new Map();
-    stubStore.set(userId, b);
-  }
-  return b;
-}
+const log = withContext({ route: 'pipelineDefinitions' });
 
 /**
- * Phase 1 accessor for cross-module consumers (e.g. the schedule evaluator).
- * Iterates every pipeline definition across all users — order is not
- * stable. Phase 4 swap-out: replace this with a `StateStore` query that
- * scans the `pipeline:*` resource namespace.
+ * Best-effort cache poke after a write. Errors are swallowed because the
+ * cache will refresh again within `intervalMs` (default 60s) — losing one
+ * write-side refresh is strictly less bad than failing the response. We
+ * fire-and-forget so the HTTP latency is unaffected by the Scan.
  */
-export const stubPipelineStore = {
-  *allPipelines(): Generator<unknown> {
-    for (const bucket of stubStore.values()) {
-      for (const def of bucket.values()) {
-        yield def;
-      }
-    }
-  },
-  /** Test helper — wipe everything between cases. */
-  __resetForTests(): void {
-    stubStore.clear();
-  },
-};
+function pokeCacheAfterWrite(): void {
+  pipelineDefinitionsCache.refresh().catch((err) => {
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      'pipelineDefinitionsCache refresh-after-write failed',
+    );
+  });
+}
 
 export const pipelineDefinitionsRouter = Router();
 
@@ -72,8 +61,14 @@ pipelineDefinitionsRouter.get(
   '/',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
-    const items = Array.from(bucketFor(userId).values());
-    res.json({ pipelines: items });
+    try {
+      const items = await definitionsRepo.list(userId);
+      res.json({ pipelines: items });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ err: message, action: 'def.list' }, 'failed to list definitions');
+      res.status(500).json({ error: 'internal_error', detail: 'failed to list definitions' });
+    }
   }),
 );
 
@@ -82,12 +77,19 @@ pipelineDefinitionsRouter.get(
   '/:pipelineId',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
-    const def = bucketFor(userId).get(req.params.pipelineId);
-    if (!def) {
-      res.status(404).json({ error: 'not_found' });
-      return;
+    const pipelineId = req.params.pipelineId;
+    try {
+      const def = await definitionsRepo.get(userId, pipelineId);
+      if (!def) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      res.json(def);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ err: message, pipelineId, action: 'def.get' }, 'failed to get definition');
+      res.status(500).json({ error: 'internal_error', detail: 'failed to get definition' });
     }
-    res.json(def);
   }),
 );
 
@@ -96,6 +98,7 @@ pipelineDefinitionsRouter.put(
   '/:pipelineId',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
+    const pipelineId = req.params.pipelineId;
     const def = req.body as
       | {
           id?: unknown;
@@ -106,7 +109,7 @@ pipelineDefinitionsRouter.put(
           };
         }
       | undefined;
-    if (!def || typeof def !== 'object' || def.id !== req.params.pipelineId) {
+    if (!def || typeof def !== 'object' || def.id !== pipelineId) {
       res.status(400).json({ error: 'invalid_body' });
       return;
     }
@@ -126,7 +129,20 @@ pipelineDefinitionsRouter.put(
       tb.webhookSecret = generateWebhookSecret();
     }
 
-    bucketFor(userId).set(req.params.pipelineId, def);
+    try {
+      await definitionsRepo.put(userId, def as { id: string; [k: string]: unknown });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ err: message, pipelineId, action: 'def.put' }, 'failed to persist definition');
+      res.status(500).json({ error: 'internal_error', detail: 'failed to persist definition' });
+      return;
+    }
+
+    // Refresh the cross-user cache so the webhook router and the schedule
+    // evaluator see the new definition without waiting for the next tick.
+    pokeCacheAfterWrite();
+
+    log.info({ pipelineId, action: 'def.put' }, 'definition updated');
     res.json(def);
   }),
 );
@@ -136,7 +152,21 @@ pipelineDefinitionsRouter.delete(
   '/:pipelineId',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
-    bucketFor(userId).delete(req.params.pipelineId);
+    const pipelineId = req.params.pipelineId;
+    try {
+      await definitionsRepo.delete(userId, pipelineId);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ err: message, pipelineId, action: 'def.delete' }, 'failed to delete definition');
+      res.status(500).json({ error: 'internal_error', detail: 'failed to delete definition' });
+      return;
+    }
+
+    // Refresh the cross-user cache so removed definitions stop firing
+    // schedules / matching webhook paths immediately.
+    pokeCacheAfterWrite();
+
+    log.info({ pipelineId, action: 'def.delete' }, 'definition deleted');
     res.status(204).end();
   }),
 );
@@ -146,16 +176,57 @@ pipelineDefinitionsRouter.post(
   '/:pipelineId/publish',
   asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.sub;
-    const def = bucketFor(userId).get(req.params.pipelineId) as
-      | { status?: string; version?: number; publishedVersion?: number }
-      | undefined;
-    if (!def) {
+    const pipelineId = req.params.pipelineId;
+
+    let current: { id: string; [k: string]: unknown } | null;
+    try {
+      current = (await definitionsRepo.get(userId, pipelineId)) as
+        | { id: string; [k: string]: unknown }
+        | null;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error(
+        { err: message, pipelineId, action: 'def.publish.read' },
+        'failed to read definition for publish',
+      );
+      res.status(500).json({ error: 'internal_error', detail: 'failed to read definition' });
+      return;
+    }
+
+    if (!current) {
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    def.version = (def.version ?? 0) + 1;
-    def.status = 'published';
-    def.publishedVersion = def.version;
-    res.json(def);
+
+    const next = current as {
+      id: string;
+      status?: string;
+      version?: number;
+      publishedVersion?: number;
+      [k: string]: unknown;
+    };
+    next.version = (next.version ?? 0) + 1;
+    next.status = 'published';
+    next.publishedVersion = next.version;
+
+    try {
+      await definitionsRepo.put(userId, next);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error(
+        { err: message, pipelineId, action: 'def.publish.write' },
+        'failed to persist published definition',
+      );
+      res.status(500).json({ error: 'internal_error', detail: 'failed to persist publish' });
+      return;
+    }
+
+    pokeCacheAfterWrite();
+
+    log.info(
+      { pipelineId, version: next.version, action: 'def.publish' },
+      'definition published',
+    );
+    res.json(next);
   }),
 );

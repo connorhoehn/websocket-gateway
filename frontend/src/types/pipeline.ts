@@ -63,6 +63,8 @@ export interface TransformNodeData {
   expression: string;
   /** Where in context to write the result; defaults to merging into root. */
   outputKey?: string;
+  /** Marks this node as an intentional terminal/sink — silences DEAD_END lint. */
+  terminal?: boolean;
 }
 
 export interface ConditionNodeData {

@@ -1,5 +1,31 @@
 import '@testing-library/jest-dom';
 
+// Node >=22 ships an experimental built-in `localStorage` global (gated by
+// `--localstorage-file`). When vitest's jsdom environment populates the
+// global scope it does NOT override `localStorage` / `sessionStorage`, so
+// Node's broken stub leaks through and shadows the real jsdom Storage.
+// Symptom: `TypeError: localStorage.setItem is not a function`.
+//
+// Fix: pull the real Storage objects off the jsdom window vitest exposes
+// at `window.jsdom` and install them on globalThis. This restores a working
+// localStorage / sessionStorage for every test, isolated per worker.
+{
+  const jsdom = (globalThis as { jsdom?: { window: Window } }).jsdom
+    ?? (typeof window !== 'undefined' ? (window as unknown as { jsdom?: { window: Window } }).jsdom : undefined);
+  if (jsdom?.window) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: jsdom.window.localStorage,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: jsdom.window.sessionStorage,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
 // jsdom doesn't implement window.matchMedia; stub it so hooks like
 // usePrefersReducedMotion don't throw.
 if (typeof window !== 'undefined' && !window.matchMedia) {

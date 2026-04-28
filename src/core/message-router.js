@@ -309,6 +309,64 @@ class MessageRouter {
      * Send a message to a specific channel with intelligent routing
      */
     async sendToChannel(channel, message, excludeClientId = null) {
+        // ---- Wave 4c step 1: owner-aware routing scaffolding (flag-gated) ----
+        // The env-var pre-check below is the *only* code that runs on the
+        // hot path when WSG_ENABLE_OWNERSHIP_ROUTING is unset/false — so the
+        // flag-off behavior is byte-identical to today (no require, no
+        // singleton bootstrap, no logger calls, no allocations beyond the
+        // single string read).
+        //
+        // When the flag IS on, we lazy-require room-ownership-service inside
+        // the method (NEVER at the top of the file) so that tests which do
+        // not exercise the flag never transitively instantiate the gateway
+        // cluster singleton. We memoize the resolved service on `this` after
+        // the first successful resolution; the first hot-path call after
+        // flag-on simply kicks off bootstrap and falls through. Subsequent
+        // calls do an O(1) Map lookup via getOwner().
+        //
+        // For Wave 4c step 1 we LOG the forward intent and fall through to
+        // the existing Redis fan-out. The actual cluster.send() forwarding
+        // to the owning peer is BLOCKED on a distributed-core surface gap:
+        // the bootstrap API used by the gateway (createCluster → ClusterHandle
+        // → NodeHandle) does not expose a peer-addressed send method.
+        // PubSub is broadcast-only; Transport.send() reaches the peer but the
+        // peer's only transport listener is ClusterManager, which dispatches
+        // strictly on JOIN/GOSSIP and drops everything else. See
+        // .planning/DISTRIBUTED-CORE-INTEGRATION-SPEC.md → "DC-PIPELINE-7 —
+        // Peer-addressed send API" for the requested API shape, semantics, and
+        // the rejected alternatives. Until that lands, this branch stays
+        // log-only and the broadcast continues to Redis fan-out below.
+        const ownershipFlagRaw = process.env.WSG_ENABLE_OWNERSHIP_ROUTING;
+        if (ownershipFlagRaw && String(ownershipFlagRaw).trim().toLowerCase() === 'true') {
+            try {
+                const svc = this._roomOwnershipServiceCached;
+                if (svc && svc.isEnabled && svc.isEnabled()) {
+                    const ownership = svc.getOwner(channel);
+                    if (ownership && ownership.isLocal === false) {
+                        this.logger.info(
+                            `owner-aware route: would forward to ${ownership.ownerId}`,
+                            { channelId: channel }
+                        );
+                    }
+                } else if (svc === undefined) {
+                    // First flag-on call: kick off lazy resolution and cache
+                    // the resolved instance. We do not await — broadcasts
+                    // must not block on cluster bootstrap. Subsequent calls
+                    // see the cached instance.
+                    this._roomOwnershipServiceCached = null; // pending sentinel
+                    // eslint-disable-next-line global-require
+                    const { getRoomOwnershipService } = require('../services/room-ownership-service');
+                    Promise.resolve()
+                        .then(() => getRoomOwnershipService({ logger: this.logger }))
+                        .then((resolved) => { this._roomOwnershipServiceCached = resolved; })
+                        .catch(() => { this._roomOwnershipServiceCached = null; });
+                }
+            } catch (_e) {
+                // Never let scaffolding break the broadcast path.
+            }
+        }
+        // ---------------------------------------------------------------------
+
         if (!this.redisPublisher || !this.redisAvailable) {
             // Fallback to local broadcast when Redis is unavailable
             this.logger.debug(`Redis unavailable, broadcasting to local channel ${channel} only`);

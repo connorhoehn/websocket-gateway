@@ -31,11 +31,41 @@
 
 import { Router } from 'express';
 import { getPipelineBridge, type PipelineBridge } from './pipelineTriggers';
+import { recordPipelineError } from '../observability/metrics';
+import { withContext } from '../lib/logger';
+
+const log = withContext({ route: 'pipelineHealth' });
 
 export interface PipelineHealthTokenRate {
   perSec1s: number;
   perSec10s: number;
   perSec60s: number;
+}
+
+/**
+ * Result of a single bridge subsystem probe. Operators need to be able to
+ * distinguish "bridge said zero" from "bridge timed out" from "bridge threw" —
+ * collapsing all three to `0` (the previous behavior) made it impossible to
+ * tell whether the system was idle or wedged.
+ *
+ *  - `ok`      — the surface returned a usable value within the timeout.
+ *  - `timeout` — the surface didn't settle before {@link BRIDGE_PROBE_TIMEOUT_MS}.
+ *  - `error`   — the surface threw or returned a malformed value.
+ */
+export type PipelineHealthProbeResult<T> =
+  | { status: 'ok'; value: T }
+  | { status: 'timeout' }
+  | { status: 'error'; message: string };
+
+export interface PipelineHealthProbes {
+  /** `getPipelineBridge() !== null` — synchronous; always `ok` (never times out / errors). */
+  bridgeWired: PipelineHealthProbeResult<boolean>;
+  /** Length of `bridge.listActiveRuns()`. */
+  runsActive: PipelineHealthProbeResult<number>;
+  /** `bridge.getMetrics().runsAwaitingApproval`. */
+  runsAwaitingApproval: PipelineHealthProbeResult<number>;
+  /** Length of `bridge.getPendingApprovals()`. */
+  pendingApprovals: PipelineHealthProbeResult<number>;
 }
 
 export interface PipelineHealth {
@@ -55,6 +85,14 @@ export interface PipelineHealth {
   runsAwaitingApproval: number;
   /** Length of `bridge.getPendingApprovals()` (0 when bridge is null or surface missing). */
   pendingApprovals: number;
+  /**
+   * Structured per-subsystem probe results. Lets operators tell "bridge said
+   * zero" apart from "bridge hung" apart from "bridge threw". The flat
+   * `bridgeWired` / `runsActive` / `runsAwaitingApproval` / `pendingApprovals`
+   * fields above remain for backward compatibility (timeouts/errors collapse
+   * to the same default they always have).
+   */
+  probes: PipelineHealthProbes;
 }
 
 /**
@@ -81,42 +119,82 @@ export function hasLLMConfig(): boolean {
 const BRIDGE_PROBE_TIMEOUT_MS = 1000;
 
 /**
- * Race a possibly-async value against a timeout. Returns the resolved value,
- * or `fallback` if either the original promise rejects OR the timer wins.
- * Synchronous values (non-thenables) are returned immediately.
+ * Marker symbol the timeout branch of {@link runProbe} resolves with so we can
+ * distinguish "the surface returned `undefined`/`null`" from "the timer won".
+ * Using a symbol avoids any collision with values a bridge surface might
+ * legitimately produce.
  */
-async function safeRace<T>(
-  value: T | Promise<T>,
-  fallback: T,
+const PROBE_TIMEOUT = Symbol('pipelineHealth.probeTimeout');
+
+/**
+ * Run a single probe against a (possibly-async) thunk and classify the
+ * outcome. The classification is the whole point of this helper: operators
+ * need to be able to tell "the bridge said zero" from "the bridge hung" from
+ * "the bridge threw" — collapsing all three to `0` (the previous behavior)
+ * masked real outages as idleness.
+ *
+ * Synchronous thunks short-circuit the timer; only thenables race against it.
+ * Never throws — any thrown value (including non-Errors) becomes
+ * `{ status: 'error', message }`.
+ */
+async function runProbe<T>(
+  thunk: () => T | Promise<T>,
   timeoutMs: number = BRIDGE_PROBE_TIMEOUT_MS,
-): Promise<T> {
-  // Fast-path: not a thenable — return as-is, no timer.
-  if (value === null || value === undefined || typeof (value as { then?: unknown }).then !== 'function') {
-    return value as T;
+): Promise<PipelineHealthProbeResult<T>> {
+  let raw: T | Promise<T>;
+  try {
+    raw = thunk();
+  } catch (err) {
+    return { status: 'error', message: errMessage(err) };
   }
+
+  // Fast-path: synchronous result — no timer, no race.
+  if (raw === null || raw === undefined || typeof (raw as { then?: unknown }).then !== 'function') {
+    return { status: 'ok', value: raw as T };
+  }
+
   let timer: NodeJS.Timeout | undefined;
   try {
-    return await Promise.race<T>([
-      (value as Promise<T>).catch(() => fallback),
-      new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
+    const settled = await Promise.race<T | typeof PROBE_TIMEOUT>([
+      raw as Promise<T>,
+      new Promise<typeof PROBE_TIMEOUT>((resolve) => {
+        timer = setTimeout(() => resolve(PROBE_TIMEOUT), timeoutMs);
         // Don't keep the event loop alive solely for this timer.
         if (typeof (timer as { unref?: () => void }).unref === 'function') {
           (timer as { unref: () => void }).unref();
         }
       }),
     ]);
-  } catch {
-    return fallback;
+    if (settled === PROBE_TIMEOUT) {
+      return { status: 'timeout' };
+    }
+    return { status: 'ok', value: settled as T };
+  } catch (err) {
+    return { status: 'error', message: errMessage(err) };
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
   }
 }
 
 /**
  * Probe the live PipelineBridge (when wired) for the four counts surfaced
  * on the health endpoint. Each surface is independent: a throw / missing
- * method on one does not affect the others. Never throws.
+ * method / timeout on one does not affect the others. Never throws.
+ *
+ * Returns both the structured per-subsystem {@link PipelineHealthProbes}
+ * (for operators) and the legacy flat scalars (for backward-compatible
+ * response shape). Timeouts and errors collapse to the legacy default for
+ * each scalar field — the truth lives in `probes`.
  */
 export async function probeBridge(
   bridge: PipelineBridge | null,
@@ -125,51 +203,92 @@ export async function probeBridge(
   runsActive: number;
   runsAwaitingApproval: number;
   pendingApprovals: number;
+  probes: PipelineHealthProbes;
 }> {
+  // Synchronous: just records whether a bridge is wired. Always `ok`.
+  const bridgeWiredProbe: PipelineHealthProbeResult<boolean> = {
+    status: 'ok',
+    value: bridge !== null,
+  };
+
   if (!bridge) {
     return {
       bridgeWired: false,
       runsActive: 0,
       runsAwaitingApproval: 0,
       pendingApprovals: 0,
+      probes: {
+        bridgeWired: bridgeWiredProbe,
+        runsActive: { status: 'ok', value: 0 },
+        runsAwaitingApproval: { status: 'ok', value: 0 },
+        pendingApprovals: { status: 'ok', value: 0 },
+      },
     };
   }
 
-  let runsActive = 0;
+  // ---- runsActive ---------------------------------------------------------
+  let runsActiveProbe: PipelineHealthProbeResult<number>;
   if (typeof bridge.listActiveRuns === 'function') {
-    try {
-      const arr = await safeRace(bridge.listActiveRuns(), [] as unknown[]);
-      runsActive = Array.isArray(arr) ? arr.length : 0;
-    } catch {
-      runsActive = 0;
+    const r = await runProbe<unknown>(() => bridge.listActiveRuns!());
+    if (r.status === 'ok') {
+      runsActiveProbe = {
+        status: 'ok',
+        value: Array.isArray(r.value) ? r.value.length : 0,
+      };
+    } else {
+      runsActiveProbe = r;
     }
+  } else {
+    runsActiveProbe = { status: 'ok', value: 0 };
   }
 
-  let runsAwaitingApproval = 0;
+  // ---- runsAwaitingApproval (read out of getMetrics) ----------------------
+  let runsAwaitingApprovalProbe: PipelineHealthProbeResult<number>;
   if (typeof bridge.getMetrics === 'function') {
-    try {
-      const m = await safeRace(
-        bridge.getMetrics(),
-        { runsAwaitingApproval: 0 } as { runsAwaitingApproval: number },
-      );
-      const n = (m as { runsAwaitingApproval?: unknown }).runsAwaitingApproval;
-      runsAwaitingApproval = typeof n === 'number' && Number.isFinite(n) ? n : 0;
-    } catch {
-      runsAwaitingApproval = 0;
+    const r = await runProbe<unknown>(() => bridge.getMetrics!());
+    if (r.status === 'ok') {
+      const n = (r.value as { runsAwaitingApproval?: unknown } | null | undefined)
+        ?.runsAwaitingApproval;
+      runsAwaitingApprovalProbe = {
+        status: 'ok',
+        value: typeof n === 'number' && Number.isFinite(n) ? n : 0,
+      };
+    } else {
+      runsAwaitingApprovalProbe = r;
     }
+  } else {
+    runsAwaitingApprovalProbe = { status: 'ok', value: 0 };
   }
 
-  let pendingApprovals = 0;
+  // ---- pendingApprovals ---------------------------------------------------
+  let pendingApprovalsProbe: PipelineHealthProbeResult<number>;
   if (typeof bridge.getPendingApprovals === 'function') {
-    try {
-      const arr = await safeRace(bridge.getPendingApprovals(), [] as unknown[]);
-      pendingApprovals = Array.isArray(arr) ? arr.length : 0;
-    } catch {
-      pendingApprovals = 0;
+    const r = await runProbe<unknown>(() => bridge.getPendingApprovals!());
+    if (r.status === 'ok') {
+      pendingApprovalsProbe = {
+        status: 'ok',
+        value: Array.isArray(r.value) ? r.value.length : 0,
+      };
+    } else {
+      pendingApprovalsProbe = r;
     }
+  } else {
+    pendingApprovalsProbe = { status: 'ok', value: 0 };
   }
 
-  return { bridgeWired: true, runsActive, runsAwaitingApproval, pendingApprovals };
+  return {
+    bridgeWired: true,
+    runsActive: runsActiveProbe.status === 'ok' ? runsActiveProbe.value : 0,
+    runsAwaitingApproval:
+      runsAwaitingApprovalProbe.status === 'ok' ? runsAwaitingApprovalProbe.value : 0,
+    pendingApprovals: pendingApprovalsProbe.status === 'ok' ? pendingApprovalsProbe.value : 0,
+    probes: {
+      bridgeWired: bridgeWiredProbe,
+      runsActive: runsActiveProbe,
+      runsAwaitingApproval: runsAwaitingApprovalProbe,
+      pendingApprovals: pendingApprovalsProbe,
+    },
+  };
 }
 
 /**
@@ -192,6 +311,12 @@ export function getPipelineHealthStub(): PipelineHealth {
     runsActive: 0,
     runsAwaitingApproval: 0,
     pendingApprovals: 0,
+    probes: {
+      bridgeWired: { status: 'ok', value: false },
+      runsActive: { status: 'ok', value: 0 },
+      runsAwaitingApproval: { status: 'ok', value: 0 },
+      pendingApprovals: { status: 'ok', value: 0 },
+    },
   };
 }
 
@@ -200,24 +325,48 @@ export const pipelineHealthRouter = Router();
 pipelineHealthRouter.get('/', async (_req, res) => {
   const base = getPipelineHealthStub();
   // Probe is best-effort — any failure inside is caught and falls back to
-  // the stub defaults already on `base`.
-  let probe: {
-    bridgeWired: boolean;
-    runsActive: number;
-    runsAwaitingApproval: number;
-    pendingApprovals: number;
-  } = {
-    bridgeWired: false,
-    runsActive: 0,
-    runsAwaitingApproval: 0,
-    pendingApprovals: 0,
-  };
+  // the stub defaults already on `base`. Catastrophic failures (e.g. a bridge
+  // accessor that throws synchronously) are reported as a single 5xx; a
+  // probe that *individually* timed out or threw is still 200 with a
+  // truthful `probes.<subsystem>.status` so operators can tell the
+  // difference.
+  let probe: Awaited<ReturnType<typeof probeBridge>>;
   try {
     probe = await probeBridge(getPipelineBridge());
-  } catch {
-    // Defensive: probeBridge never throws, but if anything goes sideways
-    // (e.g. a bridge constructor that throws on access) we still respond.
+  } catch (err) {
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      'pipeline-health probe failed catastrophically',
+    );
+    res.status(500).json({
+      error: 'pipeline-health probe failed',
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return;
   }
+
+  // Per-probe observability: surface non-ok subsystems as a single
+  // `pipeline_errors_total` increment (rate, not count) and a structured log
+  // line so operators can distinguish "bridge said zero" from "bridge hung"
+  // from "bridge threw" without tailing logs.
+  for (const [name, result] of Object.entries(probe.probes) as Array<
+    [keyof PipelineHealthProbes, PipelineHealthProbeResult<unknown>]
+  >) {
+    if (result.status === 'ok') continue;
+    recordPipelineError();
+    if (result.status === 'timeout') {
+      log.warn(
+        { probe: name, status: 'timeout' },
+        'pipeline health probe timed out',
+      );
+    } else {
+      log.error(
+        { probe: name, status: 'error', err: result.message },
+        'pipeline health probe errored',
+      );
+    }
+  }
+
   const body: PipelineHealth = { ...base, ...probe };
   res.json(body satisfies PipelineHealth);
 });

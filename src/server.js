@@ -12,6 +12,7 @@ const NodeManager = require("./core/node-manager");
 const MessageRouter = require("./core/message-router");
 const Logger = require("./utils/logger");
 const MetricsCollector = require("./utils/metrics-collector");
+const promMetrics = require("./observability/metrics");
 const AuthMiddleware = require("./middleware/auth-middleware");
 const {
     KEEPALIVE_INTERVAL_MS,
@@ -337,6 +338,11 @@ class DistributedWebSocketServer {
                 this.handleStats(req, res);
             } else if (req.url === '/metrics' && req.method === 'GET') {
                 this.handleMetrics(req, res);
+            } else if (req.url === '/internal/metrics' && req.method === 'GET') {
+                // Prometheus scrape endpoint — distributed-core MetricsRegistry.
+                // Coexists with CloudWatch push from MetricsCollector.
+                res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
+                res.end(promMetrics.renderPrometheusText());
             } else if (req.method === 'POST' && urlPathOnly.startsWith('/hooks/pipeline/')) {
                 // Phase 4-forward: external webhook trigger for pipelines with
                 // triggerBinding.event === 'webhook'. Emits a bus event that the
@@ -414,7 +420,20 @@ class DistributedWebSocketServer {
     }
 
     setupWebSocketServer() {
-        this.wss = new WebSocket.Server({ noServer: true });
+        // The JWT travels via Sec-WebSocket-Protocol as the value following the
+        // 'bearer-token-v1' marker. Echo only the marker — never the token —
+        // back to the client. Old clients that authenticate via the deprecated
+        // ?token=... query param send no subprotocol, so handleProtocols isn't
+        // invoked and they still upgrade cleanly.
+        this.wss = new WebSocket.Server({
+            noServer: true,
+            handleProtocols: (protocols) => {
+                const has = typeof protocols.has === 'function'
+                    ? protocols.has('bearer-token-v1')
+                    : protocols.includes('bearer-token-v1');
+                return has ? 'bearer-token-v1' : false;
+            },
+        });
 
         // Handle HTTP upgrade for WebSocket connections
         this.httpServer.on('upgrade', async (request, socket, head) => {
@@ -454,6 +473,7 @@ class DistributedWebSocketServer {
             } catch (error) {
                 // Record connection failure metric for CloudWatch alarm
                 this.metricsCollector.recordMetric('ConnectionFailures', 1);
+                promMetrics.recordConnectionFailure();
 
                 this.logger.error('Connection authentication failed', {
                     ip: request.socket.remoteAddress,
@@ -486,6 +506,7 @@ class DistributedWebSocketServer {
 
                 // Record connection in metrics
                 this.metricsCollector.recordConnection(1);
+                promMetrics.recordConnection(1);
 
                 // Track peak connections
                 const currentCount = this.connections.size + 1;
@@ -566,6 +587,7 @@ class DistributedWebSocketServer {
                 ws.on("close", () => {
                     clearInterval(pingInterval);
                     this.metricsCollector.recordConnection(-1);
+                    promMetrics.recordConnection(-1);
                     this.logger.info('Client disconnected', { clientId, totalConnections: this.connections.size - 1 });
                     this.handleClientDisconnect(clientId, clientIP);
                 });
@@ -574,6 +596,7 @@ class DistributedWebSocketServer {
                 ws.on("error", (error) => {
                     clearInterval(pingInterval);
                     this.metricsCollector.recordConnection(-1);
+                    promMetrics.recordConnection(-1);
                     this.logger.error('WebSocket error', { clientId, error: error.message });
                     this.handleClientDisconnect(clientId, clientIP);
                 });
@@ -648,6 +671,7 @@ class DistributedWebSocketServer {
                 // Record successful message processing latency
                 const latency = Date.now() - startTime;
                 this.metricsCollector.recordMessage(latency);
+                promMetrics.recordMessage();
             } catch (error) {
                 this._metrics.messageErrors++;
                 correlatedLogger.error('Message routing failed', {

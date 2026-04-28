@@ -162,14 +162,130 @@ describe('getObservabilityMetricsStub', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /pipelines/metrics', () => {
-  test('200 with metrics shape', async () => {
+  test('200 with metrics shape (no bridge wired → source=stub)', async () => {
     const app = buildApp();
     const res = await run(app, 'GET', '/pipelines/metrics');
     expect(res.statusCode).toBe(200);
-    const body = res.body as ReturnType<typeof getPipelineMetricsStub>;
+    const body = res.body as ReturnType<typeof getPipelineMetricsStub> & { source: string };
+    // New contract: response carries `source` so the frontend can render
+    // a "demo data" banner when the bridge is unwired.
+    expect(body.source).toBe('stub');
+    // Backward-compat: original PipelineMetrics fields still present at top level.
     expect(body).toHaveProperty('runsStarted');
     expect(body).toHaveProperty('runsAwaitingApproval');
     expect(body).toHaveProperty('asOf');
+  });
+
+  test('200 with source=bridge when bridge returns full metrics — every field passes through', async () => {
+    const triggers = await import('../pipelineTriggers');
+    const fake = {
+      getMetrics: async () => ({
+        runsStarted: 100,
+        runsCompleted: 80,
+        runsFailed: 5,
+        runsActive: 12,
+        runsAwaitingApproval: 7,
+        avgDurationMs: 8200,
+        llmTokensIn: 250_000,
+        llmTokensOut: 90_000,
+        avgFirstTokenLatencyMs: 420,
+        asOf: '2026-04-28T12:00:00.000Z',
+      }),
+    } as unknown as Parameters<typeof triggers.setPipelineBridge>[0];
+    const prev = triggers.getPipelineBridge();
+    triggers.setPipelineBridge(fake);
+    try {
+      const app = buildApp();
+      const res = await run(app, 'GET', '/pipelines/metrics');
+      expect(res.statusCode).toBe(200);
+      const body = res.body as {
+        source: string;
+        runsStarted: number | null;
+        runsCompleted: number | null;
+        runsFailed: number | null;
+        runsActive: number | null;
+        runsAwaitingApproval: number | null;
+        avgDurationMs: number | null;
+        llmTokensIn: number | null;
+        llmTokensOut: number | null;
+        avgFirstTokenLatencyMs: number | null;
+        estimatedCostUsd: number | null;
+        asOf: string;
+      };
+      expect(body.source).toBe('bridge');
+      // Every field the bridge returned now flows through — no more hard-coded null.
+      expect(body.runsStarted).toBe(100);
+      expect(body.runsCompleted).toBe(80);
+      expect(body.runsFailed).toBe(5);
+      expect(body.runsActive).toBe(12);
+      expect(body.runsAwaitingApproval).toBe(7);
+      expect(body.avgDurationMs).toBe(8200);
+      expect(body.llmTokensIn).toBe(250_000);
+      expect(body.llmTokensOut).toBe(90_000);
+      // distributed-core v0.3.7+: avg first-token latency forwarded.
+      expect(body.avgFirstTokenLatencyMs).toBe(420);
+      // Genuinely not tracked by distributed-core yet — stays null.
+      expect(body.estimatedCostUsd).toBeNull();
+      // Bridge-supplied asOf preserved (not regenerated to "now").
+      expect(body.asOf).toBe('2026-04-28T12:00:00.000Z');
+    } finally {
+      triggers.setPipelineBridge(prev);
+    }
+  });
+
+  test('200 with source=bridge when only runsAwaitingApproval is returned — other fields null', async () => {
+    const triggers = await import('../pipelineTriggers');
+    // Older distributed-core (pre-v0.3.x) only exposed the approval count.
+    const fake = {
+      getMetrics: async () => ({ runsAwaitingApproval: 7 }),
+    } as unknown as Parameters<typeof triggers.setPipelineBridge>[0];
+    const prev = triggers.getPipelineBridge();
+    triggers.setPipelineBridge(fake);
+    try {
+      const app = buildApp();
+      const res = await run(app, 'GET', '/pipelines/metrics');
+      expect(res.statusCode).toBe(200);
+      const body = res.body as {
+        source: string;
+        runsAwaitingApproval: number | null;
+        runsStarted: number | null;
+        avgDurationMs: number | null;
+        avgFirstTokenLatencyMs: number | null;
+        estimatedCostUsd: number | null;
+        asOf: string;
+      };
+      expect(body.source).toBe('bridge');
+      expect(body.runsAwaitingApproval).toBe(7);
+      // Older bridge → unsupplied fields are null, never fabricated.
+      expect(body.runsStarted).toBeNull();
+      expect(body.avgDurationMs).toBeNull();
+      expect(body.avgFirstTokenLatencyMs).toBeNull();
+      expect(body.estimatedCostUsd).toBeNull();
+      expect(typeof body.asOf).toBe('string');
+    } finally {
+      triggers.setPipelineBridge(prev);
+    }
+  });
+
+  test('500 with source=error when bridge.getMetrics throws', async () => {
+    const triggers = await import('../pipelineTriggers');
+    const fake = {
+      getMetrics: async () => {
+        throw new Error('boom');
+      },
+    } as unknown as Parameters<typeof triggers.setPipelineBridge>[0];
+    const prev = triggers.getPipelineBridge();
+    triggers.setPipelineBridge(fake);
+    try {
+      const app = buildApp();
+      const res = await run(app, 'GET', '/pipelines/metrics');
+      expect(res.statusCode).toBe(500);
+      const body = res.body as { source: string; error: string };
+      expect(body.source).toBe('error');
+      expect(body.error).toBe('boom');
+    } finally {
+      triggers.setPipelineBridge(prev);
+    }
   });
 });
 

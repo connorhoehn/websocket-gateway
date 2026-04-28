@@ -357,14 +357,16 @@ function checkDeadEnds(
   for (const edge of edges) hasOutgoing.add(edge.source);
   for (const node of nodes) {
     // Trigger alone with no outgoing edges is covered by other issues; still warn.
-    if (!hasOutgoing.has(node.id)) {
-      warnings.push({
-        code: 'DEAD_END',
-        severity: 'warning',
-        message: 'Node has no outgoing edges.',
-        nodeId: node.id,
-      });
-    }
+    if (hasOutgoing.has(node.id)) continue;
+    // Opt-in marker: nodes whose data sets `terminal: true` are intentional
+    // sinks (e.g. the demo's `finalSink` transform) and skip this lint.
+    if ((node.data as { terminal?: boolean }).terminal === true) continue;
+    warnings.push({
+      code: 'DEAD_END',
+      severity: 'warning',
+      message: 'Node has no outgoing edges.',
+      nodeId: node.id,
+    });
   }
 }
 
@@ -458,21 +460,118 @@ function nodeLabel(node: PipelineNode): string {
   }
 }
 
+/**
+ * NO_ERROR_HANDLER warns when an llm/action node has no `error` outgoing edge.
+ *
+ * Structural exemption — fork-branch nodes feeding a downstream Join:
+ *   When a node sits on a path from a Fork to a Join (i.e. has a Fork ancestor
+ *   AND a Join descendant reached via its success path), wiring an `error` edge
+ *   would actively BREAK runtime semantics. MockExecutor's fork-failure handler
+ *   (see MockExecutor.executeFromNode → fork branch handling, and
+ *   PIPELINES_PLAN.md §17.1–17.2) walks downstream from a failed branch to the
+ *   nearest Join and delivers a `failed` JoinArrival so the Join can gate per
+ *   its mode (`all` requires every arrival; one missing arrival hangs the run).
+ *   If the node has an `error` edge wired, MockExecutor instead routes failures
+ *   to the error handler and never delivers the failed JoinArrival, so a Join
+ *   in `mode: 'all'` waits forever for a sibling that will never arrive.
+ *
+ *   The exemption predicate is intentionally narrow:
+ *     (1) the node has a Fork in its upstream ancestors (predecessor BFS), AND
+ *     (2) the node has a Join in its forward-success descendants (BFS via
+ *         non-error outgoing edges).
+ *   Both conditions must hold — neither alone is sufficient. A node downstream
+ *   of a Fork that does NOT reach a Join still warns (its failure would die
+ *   silently in the branch, so authors should wire an error handler). A node
+ *   that points at a Join but is not under a Fork still warns (the runtime
+ *   has no fork-failure path to deliver a failed arrival; the missing error
+ *   handler is a real defect).
+ */
 function lintNoErrorHandler(def: PipelineDefinition): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
+
+  // Build adjacency once for the structural exemption check.
+  const successorsByNonError = new Map<string, string[]>();
+  const predecessors = new Map<string, string[]>();
+  for (const node of def.nodes) {
+    successorsByNonError.set(node.id, []);
+    predecessors.set(node.id, []);
+  }
+  for (const edge of def.edges) {
+    // For the forward walk we follow only "success-path" edges — `error`
+    // edges deliberately route AWAY from the Join, so they should not count
+    // as a path that reaches one.
+    if (edge.sourceHandle !== 'error') {
+      successorsByNonError.get(edge.source)?.push(edge.target);
+    }
+    predecessors.get(edge.target)?.push(edge.source);
+  }
+  const nodeById = new Map<string, PipelineNode>();
+  for (const node of def.nodes) nodeById.set(node.id, node);
+
+  /** Forward (success-edges only) BFS from `start`; returns true iff a Join is reached. */
+  function reachesJoinForward(start: string): boolean {
+    const visited = new Set<string>([start]);
+    const queue: string[] = [];
+    for (const next of successorsByNonError.get(start) ?? []) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentNode = nodeById.get(current);
+      if (currentNode?.type === 'join') return true;
+      for (const succ of successorsByNonError.get(current) ?? []) {
+        if (visited.has(succ)) continue;
+        visited.add(succ);
+        queue.push(succ);
+      }
+    }
+    return false;
+  }
+
+  /** Backward BFS from `start`; returns true iff a Fork is in the ancestor set. */
+  function hasForkAncestor(start: string): boolean {
+    const visited = new Set<string>([start]);
+    const queue: string[] = [];
+    for (const prev of predecessors.get(start) ?? []) {
+      if (!visited.has(prev)) {
+        visited.add(prev);
+        queue.push(prev);
+      }
+    }
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentNode = nodeById.get(current);
+      if (currentNode?.type === 'fork') return true;
+      for (const prev of predecessors.get(current) ?? []) {
+        if (visited.has(prev)) continue;
+        visited.add(prev);
+        queue.push(prev);
+      }
+    }
+    return false;
+  }
+
   for (const node of def.nodes) {
     if (node.data.type !== 'llm' && node.data.type !== 'action') continue;
     const hasErrorEdge = def.edges.some(
       (e) => e.source === node.id && e.sourceHandle === 'error',
     );
-    if (!hasErrorEdge) {
-      issues.push({
-        code: 'NO_ERROR_HANDLER',
-        severity: 'warning',
-        message: `${node.data.type} node '${nodeLabel(node)}' has no error handler — failures will terminate the run.`,
-        nodeId: node.id,
-      });
-    }
+    if (hasErrorEdge) continue;
+
+    // Structural exemption: under a Fork AND feeding a Join. Wiring an error
+    // edge here would suppress MockExecutor's failed-JoinArrival delivery and
+    // hang `mode: 'all'` joins. See block comment above.
+    if (hasForkAncestor(node.id) && reachesJoinForward(node.id)) continue;
+
+    issues.push({
+      code: 'NO_ERROR_HANDLER',
+      severity: 'warning',
+      message: `${node.data.type} node '${nodeLabel(node)}' has no error handler — failures will terminate the run.`,
+      nodeId: node.id,
+    });
   }
   return issues;
 }

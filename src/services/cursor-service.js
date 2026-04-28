@@ -59,6 +59,86 @@ class CursorService {
                 optionalFields: ['tool', 'brush', 'layer']
             }
         };
+
+        // Wave 4c: track whether ownership cleanup handlers have been
+        // registered so registration is idempotent across calls.
+        this._ownershipHandlersRegistered = false;
+        this._registerOwnershipHandlers();
+    }
+
+    /**
+     * Discard cursor positions and the active cursor map for a room.
+     * Drops the channel's cursor map (channelCursors[roomId]) and the
+     * matching per-client cursor entries from clientCursors and from the
+     * throttle map for any clients whose only known channel was this room.
+     * Cursors are ephemeral — there is no persisted store to preserve.
+     *
+     * @param {string} roomId - channel id (rooms map 1:1 to channels here)
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _cleanupRoom(roomId) {
+        if (!roomId) return;
+
+        const channelCursorMap = this.channelCursors.get(roomId);
+        let cleared = 0;
+        if (channelCursorMap) {
+            cleared = channelCursorMap.size;
+            // Strip per-client entries that point at this room. Each client
+            // is tracked in clientCursors with a single `channel` field;
+            // only delete that entry if it matches this room.
+            for (const clientId of channelCursorMap.keys()) {
+                const c = this.clientCursors.get(clientId);
+                if (c && c.channel === roomId) {
+                    this.clientCursors.delete(clientId);
+                    this.cursorUpdateThrottle.delete(clientId);
+                }
+            }
+            this.channelCursors.delete(roomId);
+        }
+
+        this.logger.info(
+            `cursor-service flushed cursor state for roomId ${roomId} (${cleared} cursor(s) cleared)`
+        );
+    }
+
+    /**
+     * Register cleanup handlers with the ownership-cleanup-coordinator.
+     * Idempotent. When the ownership feature flag is off, the coordinator's
+     * start() is a no-op so the handler is never invoked and behavior is
+     * byte-identical to today.
+     *
+     * The coordinator pre-registers a stub handler for 'cursors' at
+     * construction time; registerCleanupHandler() uses Map.set() so
+     * re-registering cleanly overrides the stub. We still wrap in
+     * try/catch defensively — a registration failure must NOT crash the
+     * cursor service.
+     *
+     * @private
+     */
+    _registerOwnershipHandlers() {
+        if (this._ownershipHandlersRegistered) return;
+
+        try {
+            // eslint-disable-next-line global-require
+            const { getOwnershipCleanupCoordinator } = require('./ownership-cleanup-coordinator');
+            const coordinator = getOwnershipCleanupCoordinator();
+            coordinator.registerCleanupHandler('cursors', {
+                onLost: async (roomId) => this._cleanupRoom(roomId),
+                onGained: async (roomId) => {
+                    // Cursors are ephemeral — no hydrate semantics.
+                    this.logger.debug(
+                        `cursor-service ownership gained for roomId ${roomId} (no-op; cursors don't hydrate)`
+                    );
+                },
+            });
+            this._ownershipHandlersRegistered = true;
+            this.logger.debug('cursor-service: registered ownership cleanup handlers');
+        } catch (err) {
+            this.logger.warn('cursor-service: failed to register ownership cleanup handlers', {
+                error: err && err.message,
+            });
+        }
     }
 
     async handleAction(clientId, action, data) {

@@ -10,7 +10,12 @@
 //   1. getRun        → PipelineModule.getRun
 //   2. getHistory    → PipelineModule.getHistory
 //   3. listActiveRuns→ PipelineModule.listActiveRuns (mapped to PipelineRunSnapshot)
-//   4. getMetrics    → PipelineModule.getMetrics().runsAwaitingApproval (count only)
+//   4. getMetrics    → PipelineModule.getMetrics() — full pass-through of the
+//                       dashboard fields the module exposes (runsStarted/-
+//                       Completed/-Failed/-Active, runsAwaitingApproval,
+//                       avgDurationMs, llmTokensIn/Out, avgFirstTokenLatencyMs
+//                       on v0.3.7+, asOf). Missing fields stay missing so the
+//                       route can map them to `null`.
 //   5. getPendingApprovals → PipelineModule.getPendingApprovals
 //   6. cancelRun     → PipelineModule.cancelRun
 // + trigger          → PipelineModule.createResource (for pipelineTriggers POST)
@@ -24,9 +29,17 @@ import type { PipelineModule } from 'distributed-core';
 import type {
   BusEvent,
   PipelineBridge,
+  PipelineBridgeMetrics,
   PipelineRunSnapshot,
   PendingApprovalRow,
 } from '../routes/pipelineTriggers';
+
+/** Coerce a value to a finite number, or return `undefined` (so the route
+ *  surfaces it as `null`). Strings/NaN/Infinity are NOT silently parsed — the
+ *  bridge's job is pass-through, not numeric salvage. */
+function asFiniteNumber(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+}
 
 // PipelineModule.getRun returns a `PipelineRun` shape from distributed-core's
 // types. The fields we care about for `PipelineRunSnapshot` (runId, pipelineId,
@@ -96,10 +109,39 @@ export function createBridge(module: PipelineModule): PipelineBridge {
       return module.getPendingApprovals() as unknown as PendingApprovalRow[];
     },
 
-    async getMetrics(): Promise<{ runsAwaitingApproval: number }> {
-      const m = await module.getMetrics();
-      const count = (m as { runsAwaitingApproval?: unknown }).runsAwaitingApproval;
-      return { runsAwaitingApproval: typeof count === 'number' ? count : 0 };
+    async getMetrics(): Promise<PipelineBridgeMetrics> {
+      const m = (await module.getMetrics()) as unknown as Record<string, unknown>;
+      // Forward every dashboard-relevant field the module emits. Each numeric
+      // field is coerced to a finite number; if the module doesn't track it,
+      // the field is omitted (route maps absent → `null`). `runsAwaitingApproval`
+      // keeps its legacy "default to 0" behavior so callers (pipelineHealth)
+      // that read it as a plain count don't regress.
+      const runsAwaitingApprovalRaw = asFiniteNumber(m['runsAwaitingApproval']);
+      const out: PipelineBridgeMetrics = {
+        runsAwaitingApproval: runsAwaitingApprovalRaw ?? 0,
+      };
+      const runsStarted = asFiniteNumber(m['runsStarted']);
+      if (runsStarted !== undefined) out.runsStarted = runsStarted;
+      const runsCompleted = asFiniteNumber(m['runsCompleted']);
+      if (runsCompleted !== undefined) out.runsCompleted = runsCompleted;
+      const runsFailed = asFiniteNumber(m['runsFailed']);
+      if (runsFailed !== undefined) out.runsFailed = runsFailed;
+      const runsActive = asFiniteNumber(m['runsActive']);
+      if (runsActive !== undefined) out.runsActive = runsActive;
+      const avgDurationMs = asFiniteNumber(m['avgDurationMs']);
+      if (avgDurationMs !== undefined) out.avgDurationMs = avgDurationMs;
+      const llmTokensIn = asFiniteNumber(m['llmTokensIn']);
+      if (llmTokensIn !== undefined) out.llmTokensIn = llmTokensIn;
+      const llmTokensOut = asFiniteNumber(m['llmTokensOut']);
+      if (llmTokensOut !== undefined) out.llmTokensOut = llmTokensOut;
+      // distributed-core v0.3.7+: average first-token latency across LLM steps.
+      const avgFirstTokenLatencyMs = asFiniteNumber(m['avgFirstTokenLatencyMs']);
+      if (avgFirstTokenLatencyMs !== undefined) {
+        out.avgFirstTokenLatencyMs = avgFirstTokenLatencyMs;
+      }
+      const asOf = m['asOf'];
+      if (typeof asOf === 'string') out.asOf = asOf;
+      return out;
     },
   };
 }

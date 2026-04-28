@@ -33,6 +33,7 @@ export interface CollapsibleSidebarProps {
   connectionState: ConnectionState;
   onDisconnect: () => void;
   onReconnect: () => void;
+  onCollapse?: () => void;
 
   // Channels / presence
   presenceUsers: PresenceUser[];
@@ -242,6 +243,7 @@ export function CollapsibleSidebar({
   connectionState,
   onDisconnect,
   onReconnect,
+  onCollapse,
   presenceUsers,
   currentClientId,
   currentChannel,
@@ -317,6 +319,28 @@ export function CollapsibleSidebar({
             >
               Reconnect
             </button>
+          )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              style={{
+                width: 22,
+                height: 22,
+                border: 'none',
+                background: 'transparent',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: 14,
+                lineHeight: 1,
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 4,
+              }}
+            >{'\u2715'}</button>
           )}
         </div>
       </div>

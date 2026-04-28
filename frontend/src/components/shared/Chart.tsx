@@ -162,7 +162,7 @@ export function LineChart({
           tick={AXIS_TICK_STYLE}
           stroke={colors.border}
           tickFormatter={yFormat}
-          width={40}
+          width={yFormat ? 56 : 40}
         />
         <Tooltip
           contentStyle={TOOLTIP_CONTENT_STYLE}
@@ -273,12 +273,14 @@ export function BarChart({
   xKey,
   yKey,
   color,
+  yFormat,
 }: {
   data: Array<Record<string, unknown>>;
   height?: number;
   xKey: string;
   yKey: string;
   color?: string;
+  yFormat?: (v: number) => string;
 }): JSX.Element {
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -294,11 +296,21 @@ export function BarChart({
           stroke={colors.border}
           minTickGap={16}
         />
-        <YAxis tick={AXIS_TICK_STYLE} stroke={colors.border} width={40} />
+        <YAxis
+          tick={AXIS_TICK_STYLE}
+          stroke={colors.border}
+          tickFormatter={yFormat}
+          width={yFormat ? 56 : 40}
+        />
         <Tooltip
           contentStyle={TOOLTIP_CONTENT_STYLE}
           labelStyle={TOOLTIP_LABEL_STYLE}
           itemStyle={TOOLTIP_ITEM_STYLE}
+          formatter={((value: unknown) => {
+            const num = typeof value === 'number' ? value : Number(value);
+            return yFormat && Number.isFinite(num) ? yFormat(num) : String(value);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any}
         />
         <Legend
           verticalAlign="top"

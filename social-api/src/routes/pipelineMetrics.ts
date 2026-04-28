@@ -3,9 +3,13 @@
 // Two routers in one file (kept colocated for owner-bookkeeping reasons):
 //
 //   1. `pipelineMetricsRouter` — GET /api/pipelines/metrics
-//      Returns runtime metrics for the pipeline subsystem. Phase 4 will
-//      replace `getPipelineMetricsStub()` with `await pipelineModule.getMetrics()`
-//      once the embedded distributed-core cluster is wired.
+//      Returns runtime metrics for the pipeline subsystem. When a live
+//      `PipelineBridge` is wired (Phase 4), the handler reads from
+//      `bridge.getMetrics()` and tags the response `source: 'bridge'`.
+//      When no bridge is wired, it falls back to `getPipelineMetricsStub()`
+//      and tags `source: 'stub'` so the frontend can render a
+//      "demo data" banner. Errors thrown by the bridge surface as
+//      500 with `source: 'error'`.
 //
 //   2. `observabilityRouter` — mounted at /api/observability:
 //        GET /api/observability/dashboard → cluster dashboard snapshot
@@ -15,8 +19,25 @@
 //
 // Both stubs are deterministic-ish (bucketed by minute/hour) so the dashboard
 // shows lifelike change without flickering wildly between polls.
+//
+// Bridge contract (post AUDIT-05 / distributed-core v0.3.7): `bridge.getMetrics()`
+// now forwards every dashboard field the underlying `PipelineModule` exposes
+// — `runsStarted`, `runsCompleted`, `runsFailed`, `runsActive`,
+// `runsAwaitingApproval`, `avgDurationMs`, `llmTokensIn`, `llmTokensOut`,
+// `avgFirstTokenLatencyMs` (v0.3.7+), and `asOf`. Whichever fields the
+// module omits are passed through as absent, and this route maps them to
+// `null` rather than fabricating values.
+//
+// `estimatedCostUsd` is the only field still genuinely missing — distributed-core
+// does not track LLM pricing yet — so it stays `null` for `source: 'bridge'`
+// responses. The frontend renders "—" / "n/a" for null fields.
 
 import { Router } from 'express';
+import { getPipelineBridge } from './pipelineTriggers';
+import { withContext } from '../lib/logger';
+import { recordPipelineError } from '../observability/metrics';
+
+const log = withContext({ route: 'pipelineMetrics' });
 
 // ---------------------------------------------------------------------------
 // Pipeline metrics
@@ -69,10 +90,100 @@ export function getPipelineMetricsStub(): PipelineMetrics {
   };
 }
 
+/**
+ * Discriminator the frontend uses to tell live data from synthetic data.
+ *
+ *  - `bridge` — values came from the live `PipelineBridge.getMetrics()`.
+ *              Fields not yet exposed by the bridge are `null` (never
+ *              fabricated). The frontend should render real numbers and
+ *              show "—" / "n/a" for null fields.
+ *  - `stub`   — no bridge is wired; values are synthetic. The frontend
+ *              SHOULD render a "demo data" banner so operators don't
+ *              mistake the dashboard for live state.
+ *  - `error`  — the bridge was wired but `getMetrics()` threw. The
+ *              response is a 500; body carries `error: <message>`.
+ */
+export type PipelineMetricsSource = 'bridge' | 'stub' | 'error';
+
+/**
+ * Successful response shape for `GET /api/pipelines/metrics`.
+ *
+ * Backward-compat: the original keys of `PipelineMetrics` are preserved at
+ * the top level (clients that ignore `source` still parse correctly).
+ * Bridge-sourced responses set unsupported fields to `null` rather than
+ * dropping them — keep `T | null` on every numeric field.
+ */
+export type PipelineMetricsResponse =
+  | ({ source: 'stub' } & PipelineMetrics & { avgFirstTokenLatencyMs: number | null })
+  | ({ source: 'bridge' } & {
+      runsStarted: number | null;
+      runsCompleted: number | null;
+      runsFailed: number | null;
+      runsActive: number | null;
+      runsAwaitingApproval: number | null;
+      avgDurationMs: number | null;
+      llmTokensIn: number | null;
+      llmTokensOut: number | null;
+      /** Avg first-token latency across LLM steps (distributed-core v0.3.7+).
+       *  `null` when the bridge / module on the other side is older. */
+      avgFirstTokenLatencyMs: number | null;
+      /** Genuinely not tracked yet — always `null` from the bridge until
+       *  distributed-core ships a pricing surface. */
+      estimatedCostUsd: number | null;
+      asOf: string;
+    });
+
 export const pipelineMetricsRouter = Router();
 
-pipelineMetricsRouter.get('/', (_req, res) => {
-  res.json(getPipelineMetricsStub());
+/** Pull a finite number off an unknown record, or return `null`. Strings/NaN/-
+ *  Infinity all collapse to `null` — the route never fabricates a numeric. */
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+pipelineMetricsRouter.get('/', async (_req, res) => {
+  const bridge = getPipelineBridge();
+  if (bridge && typeof bridge.getMetrics === 'function') {
+    try {
+      const real = (await bridge.getMetrics()) as Record<string, unknown>;
+      // Pass through every dashboard field the bridge actually returned.
+      // Missing/non-finite fields surface as `null` so the frontend renders
+      // "—" / "n/a" instead of fake numbers. `estimatedCostUsd` is genuinely
+      // not tracked by distributed-core yet — always `null` here.
+      const asOfRaw = real['asOf'];
+      const body: PipelineMetricsResponse = {
+        source: 'bridge',
+        runsStarted: numOrNull(real['runsStarted']),
+        runsCompleted: numOrNull(real['runsCompleted']),
+        runsFailed: numOrNull(real['runsFailed']),
+        runsActive: numOrNull(real['runsActive']),
+        runsAwaitingApproval: numOrNull(real['runsAwaitingApproval']),
+        avgDurationMs: numOrNull(real['avgDurationMs']),
+        llmTokensIn: numOrNull(real['llmTokensIn']),
+        llmTokensOut: numOrNull(real['llmTokensOut']),
+        avgFirstTokenLatencyMs: numOrNull(real['avgFirstTokenLatencyMs']),
+        estimatedCostUsd: null,
+        asOf: typeof asOfRaw === 'string' ? asOfRaw : new Date().toISOString(),
+      };
+      res.json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error({ err: message }, 'bridge.getMetrics threw');
+      recordPipelineError();
+      res.status(500).json({ source: 'error' as const, error: message });
+    }
+  } else {
+    log.warn({}, 'bridge unavailable; serving stub metrics');
+    // Stub path also carries `avgFirstTokenLatencyMs` so the response shape is
+    // identical regardless of source. The stub uses `null` for it (we don't
+    // synthesize a fake latency that isn't trivially derivable).
+    const body: PipelineMetricsResponse = {
+      source: 'stub',
+      ...getPipelineMetricsStub(),
+      avgFirstTokenLatencyMs: null,
+    };
+    res.json(body);
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -19,8 +19,6 @@ import {
   aggregateCost,
   costByNode,
   dailyCostTrend,
-  formatUsd,
-  type CostBreakdown,
   type NodeCostRow,
 } from './cost/llmPricing';
 import EmptyState from '../shared/EmptyState';
@@ -95,21 +93,15 @@ function formatMoney(v: number): string {
 }
 
 /**
- * Tooltip / axis helper that delegates to {@link formatUsd} so the entire page
- * shares one USD formatting rule. Synthesizes a minimal {@link CostBreakdown}
- * from a raw amount.
+ * Compact USD formatter for chart Y-axes — produces `$0`, `$0.0018`, `$0.5`,
+ * `$1`, `$10`. Up to 4 decimals; trailing zeros (and the trailing dot) are
+ * trimmed so ticks stay short. Recharts' default tick generator strips the
+ * leading `$` on small numbers, so we apply this via `tickFormatter`.
  */
-function formatUsdAmount(v: number): string {
-  const cb: CostBreakdown = {
-    inputTokens: 0,
-    outputTokens: 0,
-    inputCostUsd: 0,
-    outputCostUsd: 0,
-    totalCostUsd: v,
-    model: 'aggregate',
-    modelFound: true,
-  };
-  return formatUsd(cb);
+function formatUsdAxis(v: number): string {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return '$0';
+  return `$${n.toFixed(4).replace(/\.?0+$/, '')}`;
 }
 
 function shortRunId(id: string): string {
@@ -547,6 +539,7 @@ export default function PipelineStatsPage() {
                   yKey="cost"
                   height={200}
                   color={colors.primary}
+                  yFormat={formatUsdAxis}
                 />
               )}
             </div>
@@ -562,7 +555,7 @@ export default function PipelineStatsPage() {
                     day: 'numeric',
                   })
                 }
-                yFormat={(v) => formatUsdAmount(v)}
+                yFormat={formatUsdAxis}
               />
             </div>
           </div>

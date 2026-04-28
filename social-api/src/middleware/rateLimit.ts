@@ -260,3 +260,38 @@ export function createRateLimiter(opts: RateLimitOptions): RequestHandler {
     next();
   };
 }
+
+// ---------------------------------------------------------------------------
+// Preconfigured limiter for pipeline READ endpoints (GET /api/pipelines/*).
+//
+// Policy: 60 req / min / user, bursting up to 60. Keyed by Cognito sub with
+// IP fallback for the unauthed edge cases (shouldn't happen behind
+// `requireAuth`, but defensive). Scope `pipeline:read` namespaces the bucket
+// independently from the trigger / cancel / approval limiters so a heavy
+// dashboard doesn't starve write traffic.
+//
+// Wired in `app.ts` as a method-aware mount on `/api/pipelines` so it ONLY
+// rate-limits GETs — POST/PUT/DELETE/PATCH bypass it. The webhook path
+// `/hooks/pipeline/*` is mounted before `requireAuth` and is NOT covered by
+// this limiter (it has its own auth + budget concerns).
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a rate limiter middleware tuned for pipeline READ endpoints.
+ *
+ * @param storeOverride Optional store injection — tests pass a fake to avoid
+ *                      cross-test bleed via the in-memory fallback.
+ */
+export function pipelineReadRateLimit(
+  storeOverride?: RateLimitStore | null,
+): RequestHandler {
+  return createRateLimiter({
+    // 60 / min, full burst allowed (capacity == per-minute budget).
+    capacity: 60,
+    refillRate: 60,
+    refillIntervalMs: 60_000,
+    scope: 'pipeline:read',
+    key: (req) => req.user?.sub ?? req.ip ?? 'anon',
+    store: storeOverride ?? null,
+  });
+}

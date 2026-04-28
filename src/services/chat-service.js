@@ -69,6 +69,71 @@ class ChatService {
             }
         }, CHAT_CACHE_CLEANUP_INTERVAL_MS);
         if (this._cleanupInterval.unref) this._cleanupInterval.unref();
+
+        // Wave 4c: track whether ownership cleanup handlers have been
+        // registered so registration is idempotent across calls.
+        this._ownershipHandlersRegistered = false;
+        this._registerOwnershipHandlers();
+    }
+
+    /**
+     * Drop the in-flight (in-memory) chat buffer for a given room/channel.
+     * IMPORTANT: this only evicts the local LRU cache for the channel —
+     * persisted messages in DynamoDB are untouched. The next handleGetHistory
+     * for this channel will fall back to DynamoDB and rehydrate the cache.
+     *
+     * @param {string} roomId - channel id (rooms map 1:1 to channels here)
+     * @returns {Promise<void>}
+     * @private
+     */
+    async _cleanupRoom(roomId) {
+        if (!roomId) return;
+        const hadCache = this.channelCaches.delete(roomId);
+        this.logger.info(
+            `chat-service flushed in-memory buffer for roomId ${roomId}` +
+                (hadCache ? '' : ' (no buffer present)')
+        );
+    }
+
+    /**
+     * Register cleanup handlers with the ownership-cleanup-coordinator.
+     * Idempotent. When the ownership feature flag is off, the coordinator's
+     * start() is a no-op so the handler is never invoked and behavior is
+     * byte-identical to today.
+     *
+     * The coordinator pre-registers a stub handler for 'chat' at construction
+     * time; registerCleanupHandler() uses Map.set() so re-registering cleanly
+     * overrides the stub. We still wrap in try/catch defensively in case a
+     * future coordinator revision rejects duplicate handlers — a registration
+     * failure must NOT crash the chat service.
+     *
+     * @private
+     */
+    _registerOwnershipHandlers() {
+        if (this._ownershipHandlersRegistered) return;
+
+        try {
+            // eslint-disable-next-line global-require
+            const { getOwnershipCleanupCoordinator } = require('./ownership-cleanup-coordinator');
+            const coordinator = getOwnershipCleanupCoordinator();
+            coordinator.registerCleanupHandler('chat', {
+                onLost: async (roomId) => this._cleanupRoom(roomId),
+                onGained: async (roomId) => {
+                    // Chat does not hydrate on ownership gain — the LRU
+                    // cache lazily backfills from DynamoDB on the next
+                    // handleGetHistory call. Just log for observability.
+                    this.logger.debug(
+                        `chat-service ownership gained for roomId ${roomId} (no-op; cache lazily rehydrates from DynamoDB)`
+                    );
+                },
+            });
+            this._ownershipHandlersRegistered = true;
+            this.logger.debug('chat-service: registered ownership cleanup handlers');
+        } catch (err) {
+            this.logger.warn('chat-service: failed to register ownership cleanup handlers', {
+                error: err && err.message,
+            });
+        }
     }
 
     async handleAction(clientId, action, data) {

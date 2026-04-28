@@ -20,6 +20,7 @@ class MockWebSocket {
 
   readyState: number = MockWebSocket.CONNECTING;
   url: string;
+  protocols: string | string[] | undefined;
 
   onopen: ((evt: Event) => void) | null = null;
   onmessage: ((evt: MessageEvent) => void) | null = null;
@@ -29,8 +30,9 @@ class MockWebSocket {
   static instances: MockWebSocket[] = [];
   static sentMessages: string[] = [];
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
 
@@ -106,10 +108,11 @@ describe('useWebSocket', () => {
       expect(MockWebSocket.instances).toHaveLength(1);
     });
 
-    it('builds the URL with ?token= query param from cognitoToken', () => {
+    it('sends the JWT via Sec-WebSocket-Protocol, not the URL', () => {
       renderHook(() => useWebSocket({ config: makeConfig() }));
       const ws = MockWebSocket.instances[0];
-      expect(ws.url).toContain('?token=test-jwt-token');
+      expect(ws.protocols).toEqual(['bearer-token-v1', 'test-jwt-token']);
+      expect(ws.url).not.toContain('token=');
     });
 
     it('transitions to connected when WebSocket opens', async () => {

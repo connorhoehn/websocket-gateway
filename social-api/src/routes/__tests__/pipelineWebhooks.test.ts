@@ -9,16 +9,141 @@
 
 import express, { type NextFunction, type Request, type Response } from 'express';
 
+// Mock the structured logger so the route's `log.info` / `log.error` calls
+// land on jest.fn-backed methods rather than going through pino (which
+// writes to process.stdout, defeating both noise-suppression and the
+// `expect(...).toHaveBeenCalled()` assertions further down).
+//
+// Singleton stub: every `withContext(...)` call returns the SAME object so
+// the test-side handles below stay valid across the module-load `withContext`
+// invocation in pipelineWebhooks.ts. The factory can't reference outer
+// variables (jest hoists `jest.mock` above all imports), so we hang the
+// stub off `globalThis` and re-grab it after the import settles.
+jest.mock('../../lib/logger', () => {
+  // Self-referential pino-shaped stub: every contextual helper (`child`,
+  // `withContext`) returns the SAME object so call-site chains route
+  // through the same jest.fn instances we assert on. We hang `withContext`
+  // off the default export too, matching the in-flight call pattern in
+  // pipelineDefinitions.ts (`logger.withContext(...)`) — without it, the
+  // import chain pipelineWebhooks → pipelineDefinitions throws on load.
+  const stub: Record<string, jest.Mock> = {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    child: jest.fn(),
+    withContext: jest.fn(),
+  };
+  stub.child.mockReturnValue(stub);
+  stub.withContext.mockReturnValue(stub);
+  (globalThis as unknown as { __mockLog: typeof stub }).__mockLog = stub;
+  return {
+    __esModule: true,
+    default: stub,
+    withContext: jest.fn(() => stub),
+  };
+});
+
+// Mock the audit repository so the route's fire-and-forget `auditRepo.record`
+// resolves immediately without touching DynamoDB. Individual tests can
+// override the resolved value or inspect call args via `mockedAuditRecord`.
+jest.mock('../../pipeline/audit-repository', () => ({
+  auditRepo: {
+    record: jest.fn(() => Promise.resolve()),
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Mock `definitionsRepo` so the PUT route doesn't reach for real DynamoDB.
+//
+// Wave-3 of the pipeline-definitions persistence migration removed the
+// synchronous in-memory mirror. The webhook router now reads from
+// `pipelineDefinitionsCache`, a Scan-backed snapshot fed by
+// `definitionsRepo.listAll()`. The signature tests below drive a real PUT
+// through `pipelineDefinitionsRouter` (see `seedViaPut`) — the route's
+// `pokeCacheAfterWrite()` hook then refreshes the cache, which calls
+// `listAll()` on this mock, and the webhook handler picks up the secret.
+// Without this mock every PUT in this suite would attempt a DynamoDB
+// roundtrip during the unit run.
+//
+// Per-suite in-memory Map keyed by `userId|pipelineId` — preserves the
+// original write-then-read-back semantics. Stashed on globalThis (jest
+// hoists `jest.mock` above imports, so the factory can't close over outer
+// locals); the test body re-grabs the handle below to reset between cases.
+// ---------------------------------------------------------------------------
+jest.mock('../../pipeline/definitions-repository', () => {
+  const store = new Map<string, unknown>();
+  const k = (userId: string, pipelineId: string): string =>
+    `${userId}|${pipelineId}`;
+  const repo = {
+    get: jest.fn(async (userId: string, pipelineId: string) => {
+      return store.get(k(userId, pipelineId)) ?? null;
+    }),
+    list: jest.fn(async (userId: string) => {
+      const out: unknown[] = [];
+      for (const [key, value] of store.entries()) {
+        if (key.startsWith(`${userId}|`)) out.push(value);
+      }
+      return out;
+    }),
+    listAll: jest.fn(async () => {
+      // Cross-user enumeration powering the Scan-backed cache.
+      return Array.from(store.values());
+    }),
+    put: jest.fn(async (userId: string, def: { id: string }) => {
+      store.set(k(userId, def.id), def);
+    }),
+    delete: jest.fn(async (userId: string, pipelineId: string) => {
+      store.delete(k(userId, pipelineId));
+    }),
+    __resetForTests: () => store.clear(),
+  };
+  (
+    globalThis as unknown as { __mockDefinitionsRepo: typeof repo }
+  ).__mockDefinitionsRepo = repo;
+  return { definitionsRepo: repo };
+});
+
 import { pipelineWebhooksRouter, pickSafeHeaders } from '../pipelineWebhooks';
+import { pipelineDefinitionsRouter } from '../pipelineDefinitions';
+import { pipelineDefinitionsCache } from '../../pipeline/definitions-cache';
 import {
-  pipelineDefinitionsRouter,
-  stubPipelineStore,
-} from '../pipelineDefinitions';
+  setPipelineBridge,
+  type PipelineBridge,
+} from '../pipelineTriggers';
 import {
   computeSignature,
   generateWebhookSecret,
   SIGNATURE_HEADER,
 } from '../../lib/webhookSignature';
+import { auditRepo } from '../../pipeline/audit-repository';
+
+const mockLog = (globalThis as unknown as {
+  __mockLog: {
+    info: jest.Mock;
+    warn: jest.Mock;
+    error: jest.Mock;
+    debug: jest.Mock;
+    child: jest.Mock;
+  };
+}).__mockLog;
+const mockedAuditRecord = auditRepo.record as jest.Mock;
+
+// Phase-4 fix: the webhook handler now forwards into the PipelineModule
+// bridge instead of silently 202'ing. Tests that exercise the happy path
+// install a minimal stub bridge whose `trigger` returns a deterministic
+// runId; tests that exercise the "subsystem unavailable" branch leave the
+// bridge unset (or null it out explicitly).
+function makeStubBridge(
+  trigger: PipelineBridge['trigger'] = async () => ({ runId: 'stub-run-id' }),
+): PipelineBridge {
+  return {
+    trigger,
+    getRun: () => null,
+    getHistory: () => [],
+    resolveApproval: () => undefined,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Test rig (mirrors pipelineTriggers.test.ts) — hand-rolled mock req/res so we
@@ -125,13 +250,24 @@ function buildApp(): express.Express {
   return app;
 }
 
-// Silence the structured `[pipeline-webhook] received` log line during tests.
-let logSpy: jest.SpyInstance;
+// Reset logger + audit mocks between tests so per-test assertions don't
+// see leftover calls from earlier cases. The structured logger replaces
+// the old `console.log` noise — it's silenced by virtue of being a
+// jest.fn (no real I/O), so the assertions below just check call counts.
 beforeEach(() => {
-  logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+  mockLog.info.mockClear();
+  mockLog.warn.mockClear();
+  mockLog.error.mockClear();
+  mockLog.debug.mockClear();
+  mockedAuditRecord.mockClear();
+  mockedAuditRecord.mockImplementation(() => Promise.resolve());
+  // Install a stub bridge so the handler's new "must forward" path resolves
+  // a runId. Individual tests that need to exercise the 503/null-bridge
+  // branch override this with `setPipelineBridge(null)` directly.
+  setPipelineBridge(makeStubBridge());
 });
 afterEach(() => {
-  logSpy.mockRestore();
+  setPipelineBridge(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -139,7 +275,12 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('POST /hooks/pipeline/:path', () => {
-  test('202 with shape { accepted, webhookPath, at } on valid path', async () => {
+  test('202 with shape { accepted, runId, webhookPath, at } on valid path', async () => {
+    // Install a bridge whose trigger returns a known runId so we can assert
+    // the new forward-and-respond contract end-to-end.
+    setPipelineBridge(
+      makeStubBridge(async () => ({ runId: 'run-weekly-digest-1' })),
+    );
     const app = buildApp();
     const res = await run(app, 'POST', '/hooks/pipeline/weekly-digest', {
       body: { ping: 'pong' },
@@ -147,14 +288,89 @@ describe('POST /hooks/pipeline/:path', () => {
     expect(res.statusCode).toBe(202);
     const body = res.body as {
       accepted: boolean;
+      runId: string;
       webhookPath: string;
       at: string;
     };
     expect(body.accepted).toBe(true);
+    expect(body.runId).toBe('run-weekly-digest-1');
     expect(body.webhookPath).toBe('weekly-digest');
     expect(typeof body.at).toBe('string');
     // ISO 8601 date string (cheap shape check).
     expect(body.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test('503 when pipeline bridge is unavailable (no silent 202)', async () => {
+    // Wave-2 audit: external systems lying about success is worse than
+    // failing loud. With no bridge wired, the route MUST surface 503.
+    setPipelineBridge(null);
+    const app = buildApp();
+    const res = await run(app, 'POST', '/hooks/pipeline/no-bridge', {
+      body: { hello: 'world' },
+    });
+    expect(res.statusCode).toBe(503);
+    const body = res.body as { accepted: boolean; error: string };
+    expect(body.accepted).toBe(false);
+    expect(body.error).toMatch(/unavailable/i);
+  });
+
+  test('500 when bridge.trigger throws — does not silently 202', async () => {
+    setPipelineBridge(
+      makeStubBridge(async () => {
+        throw new Error('downstream pipeline-module exploded');
+      }),
+    );
+    // The route logs the failure via the structured logger; the mocked
+    // `log.error` jest.fn captures the call without writing to stdout.
+    const app = buildApp();
+    const res = await run(app, 'POST', '/hooks/pipeline/throws', {
+      body: { x: 1 },
+    });
+    expect(res.statusCode).toBe(500);
+    const body = res.body as { accepted: boolean; error: string };
+    expect(body.accepted).toBe(false);
+    expect(body.error).toMatch(/exploded/);
+    expect(mockLog.error).toHaveBeenCalled();
+  });
+
+  test('forwards parsed body + headers + path to bridge.trigger as triggerPayload', async () => {
+    const calls: Array<Parameters<NonNullable<PipelineBridge['trigger']>>[0]> =
+      [];
+    setPipelineBridge(
+      makeStubBridge(async (args) => {
+        calls.push(args);
+        return { runId: 'forwarded-run' };
+      }),
+    );
+
+    const app = buildApp();
+    // Pass body as a Buffer so the handler's `Buffer.isBuffer(req.body)`
+    // branch runs (mirrors the signature tests — `express.raw` is bypassed
+    // by the test rig but the handler tolerates either shape).
+    const rawBody = Buffer.from(JSON.stringify({ hello: 'world' }), 'utf8');
+    const res = await run(app, 'POST', '/hooks/pipeline/forwarded', {
+      body: rawBody,
+      headers: { 'X-Custom': 'yes' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(calls).toHaveLength(1);
+    const args = calls[0];
+    // pipelineId falls back to the webhook path when no definition is
+    // bound (we didn't seed a pipeline def for this path).
+    expect(args.pipelineId).toBe('forwarded');
+    expect(args.triggeredBy.userId).toBe('webhook:forwarded');
+    const tp = args.triggerPayload as {
+      webhookPath: string;
+      body: { hello: string };
+      headers: Record<string, string>;
+    };
+    expect(tp.webhookPath).toBe('forwarded');
+    expect(tp.body).toEqual({ hello: 'world' });
+    // The test rig lowercases header names on inbound (mirrors how Node's
+    // http parser presents them); pickSafeHeaders preserves whatever case
+    // it received.
+    expect(tp.headers['x-custom']).toBe('yes');
   });
 
   test('accepts alphanumeric, underscore, hyphen', async () => {
@@ -230,7 +446,9 @@ describe('POST /hooks/pipeline/:path', () => {
     });
     expect(res.statusCode).toBe(202);
     expect((res.body as { webhookPath: string }).webhookPath).toBe('h1');
-    expect(logSpy).toHaveBeenCalled();
+    // Structured `pipeline-webhook received` log line landed on the
+    // mocked logger.
+    expect(mockLog.info).toHaveBeenCalled();
   });
 
   test('tolerates an empty body and still returns 202', async () => {
@@ -246,7 +464,7 @@ describe('POST /hooks/pipeline/:path', () => {
 // ---------------------------------------------------------------------------
 // HMAC-SHA256 signature verification (X-Pipeline-Signature-256)
 //
-// We seed the stubPipelineStore with a webhook trigger binding that carries
+// We seed the pipelineDefinitionsCache with a webhook trigger binding that carries
 // a `webhookSecret`. The route reads the secret out of the store and rejects
 // any POST whose signature header doesn't match HMAC-SHA256(secret, body).
 // Pipelines without a configured secret keep the Phase-1 unsigned-OK
@@ -296,18 +514,25 @@ async function seedViaPut(opts: {
   };
 
   await run(app, 'PUT', `/defs/${pipelineId}`, { body: def });
+  // The PUT handler's `pokeCacheAfterWrite()` is fire-and-forget, so
+  // `await` an explicit refresh here to make the test deterministic —
+  // the webhook handler that runs next reads from this cache.
+  await pipelineDefinitionsCache.refresh();
   return { secret };
 }
 
 describe('POST /hooks/pipeline/:path — HMAC-SHA256 signature', () => {
-  let errorSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    stubPipelineStore.__resetForTests();
-    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  });
-  afterEach(() => {
-    errorSpy.mockRestore();
+  beforeEach(async () => {
+    // Wave-3: clear the mocked `definitionsRepo`'s in-memory backing store
+    // and reset the cache snapshot so each test starts from a clean slate.
+    (
+      globalThis as unknown as {
+        __mockDefinitionsRepo: { __resetForTests: () => void };
+      }
+    ).__mockDefinitionsRepo.__resetForTests();
+    pipelineDefinitionsCache.__setSnapshotForTests([]);
+    // Top-level beforeEach already clears mockLog/mockedAuditRecord; the
+    // signature suite reuses those mocks rather than re-spying on console.
   });
 
   test('valid signature → 202', async () => {
@@ -351,7 +576,7 @@ describe('POST /hooks/pipeline/:path — HMAC-SHA256 signature', () => {
     expect(body.status).toBe(401);
     expect(body.detail).toMatch(/did not match/i);
     // Structured error log so observability can alert on it.
-    expect(errorSpy).toHaveBeenCalled();
+    expect(mockLog.error).toHaveBeenCalled();
   });
 
   test('missing signature header but secret configured → 401', async () => {
@@ -367,7 +592,7 @@ describe('POST /hooks/pipeline/:path — HMAC-SHA256 signature', () => {
     expect(res.statusCode).toBe(401);
     const body = res.body as { detail: string };
     expect(body.detail).toMatch(/required/i);
-    expect(errorSpy).toHaveBeenCalled();
+    expect(mockLog.error).toHaveBeenCalled();
   });
 
   test('no secret configured on def → 202 (legacy unsigned mode)', async () => {
@@ -382,7 +607,7 @@ describe('POST /hooks/pipeline/:path — HMAC-SHA256 signature', () => {
 
     expect(res.statusCode).toBe(202);
     expect((res.body as { accepted: boolean }).accepted).toBe(true);
-    expect(errorSpy).not.toHaveBeenCalled();
+    expect(mockLog.error).not.toHaveBeenCalled();
   });
 
   test('upsert mints a webhookSecret server-side when none is provided', async () => {

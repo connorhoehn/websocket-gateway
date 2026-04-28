@@ -29,6 +29,7 @@ import {
   usePipelineRuns,
 } from './context/PipelineRunsContext';
 import { EventStreamProvider } from './context/EventStreamContext';
+import { usePipelineRunChannelSubscription } from './context/WebSocketEventAdapter';
 import PipelineCanvas from './canvas/PipelineCanvas';
 import ConfigPanel from './canvas/ConfigPanel';
 import { loadPipeline, duplicatePipeline } from './persistence/pipelineStorage';
@@ -37,6 +38,7 @@ import { useReplayKeyboard } from './replay/useReplayKeyboard';
 import Scrubber from './replay/Scrubber';
 import { useRunCost } from './cost/useRunCost';
 import { formatUsd } from './cost/llmPricing';
+import { getPipelineSource } from './hooks/usePipelineSource';
 import { colors } from '../../constants/styles';
 import type { PipelineRun, RunStatus } from '../../types/pipeline';
 
@@ -251,6 +253,17 @@ function ReplayFrame({ pipelineId, runId }: ReplayFrameProps) {
   const { definition, selectedNodeId } = editor;
 
   const run: PipelineRun | undefined = runs.runs[runId];
+
+  // ── Per-run gateway channel subscription ─────────────────────────────
+  // Distributed-core emits some lifecycle events (run:orphaned,
+  // run:reassigned, join:waiting, join:fired) on `pipeline:run:{runId}` in
+  // addition to the firehose. The global `usePipelineSource` only subscribes
+  // to `pipeline:all`, so this hook subscribes the user's currently-viewed
+  // run channel for the lifetime of the replay page. No-op when the source
+  // mode is `'mock'` (in-browser executor handles its own dispatch).
+  usePipelineRunChannelSubscription(runId, {
+    enabled: getPipelineSource() === 'websocket',
+  });
 
   // ── Replay driver ────────────────────────────────────────────────────
   // The Phase-1 scrubber drives the canvas by deriving a best-effort wire-

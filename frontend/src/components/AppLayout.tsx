@@ -667,22 +667,11 @@ function AppLayoutInner({
             boxSizing: 'border-box',
           }}
         >
-          {/* Collapse button */}
-          <button
-            onClick={() => setSidebarOpen(false)}
-            style={{
-              position: 'absolute', top: 8, right: 8,
-              width: 22, height: 22, borderRadius: 4,
-              border: 'none', background: 'transparent',
-              cursor: 'pointer', fontSize: 14, color: '#94a3b8',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            title="Collapse sidebar"
-          >{'\u2715'}</button>
           <CollapsibleSidebar
             connectionState={connectionState}
             onDisconnect={onDisconnect}
             onReconnect={onReconnect}
+            onCollapse={() => setSidebarOpen(false)}
             presenceUsers={presenceUsers}
             currentClientId={currentClientId ?? ''}
             currentChannel={currentChannel}

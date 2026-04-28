@@ -20,7 +20,15 @@ awslocal dynamodb create-table --table-name social-profiles \
 awslocal dynamodb create-table --table-name social-relationships \
   --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S \
   --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST || true
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes '[{
+    "IndexName":"followeeId-followerId-index",
+    "KeySchema":[
+      {"AttributeName":"followeeId","KeyType":"HASH"},
+      {"AttributeName":"followerId","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  }]' || true
 
 awslocal dynamodb create-table --table-name social-groups \
   --attribute-definitions AttributeName=groupId,AttributeType=S \
@@ -40,12 +48,28 @@ awslocal dynamodb create-table --table-name social-rooms \
 awslocal dynamodb create-table --table-name social-room-members \
   --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S \
   --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST || true
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes '[{
+    "IndexName":"userId-roomId-index",
+    "KeySchema":[
+      {"AttributeName":"userId","KeyType":"HASH"},
+      {"AttributeName":"roomId","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  }]' || true
 
 awslocal dynamodb create-table --table-name social-posts \
-  --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S \
+  --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S AttributeName=authorId,AttributeType=S \
   --key-schema AttributeName=roomId,KeyType=HASH AttributeName=postId,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST || true
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes '[{
+    "IndexName":"authorId-postId-index",
+    "KeySchema":[
+      {"AttributeName":"authorId","KeyType":"HASH"},
+      {"AttributeName":"postId","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  }]' || true
 
 awslocal dynamodb create-table --table-name social-comments \
   --attribute-definitions AttributeName=postId,AttributeType=S AttributeName=commentId,AttributeType=S \
@@ -56,6 +80,40 @@ awslocal dynamodb create-table --table-name social-likes \
   --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S \
   --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
+
+# ---- Pipeline definitions table (replaces in-memory stubStore) ----
+awslocal dynamodb create-table --table-name pipeline-definitions \
+  --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=pipelineId,AttributeType=S \
+  --key-schema AttributeName=userId,KeyType=HASH AttributeName=pipelineId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+# ---- pipeline-audit table (append-only audit log for pipeline operations) ----
+# PK: auditId (S, caller-supplied ULID)
+# GSI actor-time-index: actorUserId (S) HASH, timestamp (S, ISO 8601) RANGE
+# GSI pipeline-time-index: pipelineId (S) HASH, timestamp (S, ISO 8601) RANGE
+awslocal dynamodb create-table --table-name pipeline-audit \
+  --attribute-definitions \
+    AttributeName=auditId,AttributeType=S \
+    AttributeName=actorUserId,AttributeType=S \
+    AttributeName=pipelineId,AttributeType=S \
+    AttributeName=timestamp,AttributeType=S \
+  --key-schema AttributeName=auditId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --global-secondary-indexes '[{
+    "IndexName":"actor-time-index",
+    "KeySchema":[
+      {"AttributeName":"actorUserId","KeyType":"HASH"},
+      {"AttributeName":"timestamp","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  },{
+    "IndexName":"pipeline-time-index",
+    "KeySchema":[
+      {"AttributeName":"pipelineId","KeyType":"HASH"},
+      {"AttributeName":"timestamp","KeyType":"RANGE"}
+    ],
+    "Projection":{"ProjectionType":"ALL"}
+  }]' || true
 
 # ---- New v3.0 table (Phase 37 Activity Log) ----
 awslocal dynamodb create-table --table-name user-activity \

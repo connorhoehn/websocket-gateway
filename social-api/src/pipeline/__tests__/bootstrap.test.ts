@@ -5,7 +5,13 @@
 // Anthropic key needed), verifies the module is RUNNING, and confirms
 // shutdown() cleanly stops cluster + module.
 
-import { FixtureLLMClient } from 'distributed-core';
+// `distributed-core/testing` is a real subpath export (v0.3.0) — Jest resolves
+// it correctly. tsc with our current `module: commonjs` (classic resolver)
+// doesn't honor package `exports` fields. Suppressing here rather than flipping
+// the project to `moduleResolution: nodenext`, which would require explicit
+// `.js` extensions across the codebase. Tracked as a follow-up.
+// @ts-expect-error TS2307: module resolution doesn't see subpath exports
+import { FixtureLLMClient } from 'distributed-core/testing';
 import { bootstrapPipeline } from '../bootstrap';
 
 // The cluster's gossip + transport timers are slow enough that 5s default
@@ -74,5 +80,38 @@ describe('bootstrapPipeline — lifecycle', () => {
     expect(typeof module.getEventBus).toBe('function');
 
     await shutdown();
+  });
+
+  test('identityFile produces the SAME nodeId across two sequential bootstraps (DC-1.3)', async () => {
+    // Closes gap DC-1.3: stable cluster identity across restarts.
+    //
+    // Use a per-test path under /tmp so concurrent test runs cannot collide,
+    // and clean up after both bootstraps so we don't leave litter in /tmp.
+    // Note: the bootstrap defaults to ephemeral id under jest (NODE_ENV=test
+    // or JEST_WORKER_ID set) — explicitly passing `identityFile` opts back
+    // into persistent identity, which is what we want to verify here.
+    const fs = await import('fs');
+    const identityFile = `/tmp/test-identity-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    try {
+      const fixture = new FixtureLLMClient(['ok']);
+
+      // First boot: file does not exist; loadOrCreateNodeId mints + persists.
+      const a = await bootstrapPipeline({ llmClient: fixture, identityFile });
+      const firstId = a.nodeId;
+      await a.shutdown();
+
+      // Second boot: file exists; loadOrCreateNodeId reads + reuses.
+      const b = await bootstrapPipeline({ llmClient: fixture, identityFile });
+      const secondId = b.nodeId;
+      await b.shutdown();
+
+      expect(firstId).toBe(secondId);
+      // Sanity: distributed-core's createId() is non-trivial — guard against a
+      // false pass where both ids were the empty string.
+      expect(firstId.length).toBeGreaterThan(0);
+    } finally {
+      try { fs.unlinkSync(identityFile); } catch { /* ok */ }
+    }
   });
 });

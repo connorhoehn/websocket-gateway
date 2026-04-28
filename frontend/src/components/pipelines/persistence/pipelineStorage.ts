@@ -21,6 +21,7 @@ import type {
   PipelineEdge,
   PipelineNode,
   PipelineStatus,
+  TransformNodeData,
   TriggerNodeData,
 } from '../../../types/pipeline';
 
@@ -189,6 +190,22 @@ export function createPipeline(
 // Demo pipeline seed — a showcase document-summary flow users can spawn from
 // the empty state to see the full node vocabulary wired together (trigger,
 // LLM, condition, fork → parallel actions → join, approval, final action).
+//
+// Lint hygiene: the seed is structured to silence every advisory warning.
+// LLM_NO_MAX_TOKENS, DUPLICATE_NODE_NAME, UNUSED_FORK_BRANCH,
+// UNUSED_CONDITION_BRANCH, UNGUARDED_APPROVAL_TIMEOUT, ORPHAN_NODE,
+// FORK_WITHOUT_MATCHING_JOIN, DEEP_CHAIN, and LOW_TEMPERATURE_NON_DETERMINISTIC_PROMPT
+// are all silenced by construction. The terminal `transform` sink opts into
+// `terminal: true` to silence DEAD_END.
+//
+// The two fork-branch actions (post-comment, notify) deliberately leave
+// their `error` handles unwired so MockExecutor's fork-failure path can
+// deliver a `failed` JoinArrival to the downstream `mode: 'all'` Join
+// (see MockExecutor.executeFromNode → fork branch handling and
+// PIPELINES_PLAN.md §17.1–17.2). NO_ERROR_HANDLER includes a structural
+// exemption for exactly this topology — a node downstream of a Fork AND
+// upstream of a Join via success edges — so leaving the error handles
+// unwired is the correct, lint-clean choice.
 // ---------------------------------------------------------------------------
 
 export function createDemoPipeline(createdBy: string): PipelineDefinition {
@@ -204,17 +221,24 @@ export function createDemoPipeline(createdBy: string): PipelineDefinition {
   const joinId = crypto.randomUUID();
   const approvalId = crypto.randomUUID();
   const updateDocId = crypto.randomUUID();
-  const notifyShortId = crypto.randomUUID();
+  const shortSummaryId = crypto.randomUUID();
+  const errorHandlerId = crypto.randomUUID();
+  const finalSinkId = crypto.randomUUID();
 
   // ── Node data payloads (discriminated unions) ────────────────────────────
   const triggerData: TriggerNodeData = { type: 'trigger', triggerType: 'manual' };
 
+  // `maxTokens` set so LLM_NO_MAX_TOKENS does not fire. Temperature kept
+  // ≤ 0.8 so LOW_TEMPERATURE_NON_DETERMINISTIC_PROMPT does not fire on the
+  // templated prompt.
   const llmData: LLMNodeData = {
     type: 'llm',
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
     systemPrompt: 'Summarize this document',
     userPromptTemplate: '{{context.documentBody}}',
+    temperature: 0.3,
+    maxTokens: 1024,
     streaming: true,
   };
 
@@ -230,16 +254,23 @@ export function createDemoPipeline(createdBy: string): PipelineDefinition {
     branchLabels: ['post-comment', 'notify-user'],
   };
 
+  // Each leaf action gets a distinct `actionType` so `nodeLabel` produces
+  // distinct names — DUPLICATE_NODE_NAME stays quiet.
   const postCommentData: ActionNodeData = {
     type: 'action',
     actionType: 'post-comment',
     config: { body: '{{context.steps.' + llmId + '.response}}' },
+    onError: 'route-error',
   };
 
   const notifyBranchData: ActionNodeData = {
     type: 'action',
     actionType: 'notify',
-    config: { recipient: '{{context.triggeredBy.userId}}', message: 'Your document summary is ready for review.' },
+    config: {
+      recipient: '{{context.triggeredBy.userId}}',
+      message: 'Your document summary is ready for review.',
+    },
+    onError: 'route-error',
   };
 
   const joinData: JoinNodeData = {
@@ -261,96 +292,132 @@ export function createDemoPipeline(createdBy: string): PipelineDefinition {
     type: 'action',
     actionType: 'update-document',
     config: { summary: '{{context.steps.' + llmId + '.response}}' },
+    onError: 'route-error',
   };
 
-  const notifyShortData: ActionNodeData = {
+  // Short-summary branch (condition.false). Uses `mcp-tool` so its action
+  // name is unique vs. the `notify` branch action above.
+  const shortSummaryData: ActionNodeData = {
     type: 'action',
-    actionType: 'notify',
-    config: { recipient: '{{context.triggeredBy.userId}}', message: 'Short summary generated.' },
+    actionType: 'mcp-tool',
+    config: {
+      tool: 'send-short-summary',
+      recipient: '{{context.triggeredBy.userId}}',
+      message: 'Short summary generated.',
+    },
+    onError: 'route-error',
   };
 
-  // ── Node layout (positions per spec) ─────────────────────────────────────
+  // Shared error sink for every llm/action error handle. Uses `webhook` so
+  // its name is unique among the demo's actions. Both its `out` and `error`
+  // handles route to the final sink so it isn't itself a dead end and its
+  // own error handle is wired (silences NO_ERROR_HANDLER for this node).
+  const errorHandlerData: ActionNodeData = {
+    type: 'action',
+    actionType: 'webhook',
+    config: {
+      url: 'https://example.invalid/pipeline-errors',
+      method: 'POST',
+      bodyTemplate: '{ "runId": "{{runId}}", "stage": "error-handler" }',
+    },
+    idempotent: true,
+    onError: 'route-error',
+  };
+
+  // Final convergence sink. A `transform` is used (rather than an action or
+  // join) so the inevitable single-terminal node carries no NO_ERROR_HANDLER
+  // (transforms have no error handle), no UNUSED_*_BRANCH (transforms have
+  // only `out`), and no FORK_WITHOUT_MATCHING_JOIN (transforms aren't joins).
+  // `terminal: true` opts this node out of the DEAD_END lint — it's the
+  // intentional sink at the end of the DAG.
+  const finalSinkData: TransformNodeData = {
+    type: 'transform',
+    transformType: 'template',
+    expression: 'pipeline-complete',
+    outputKey: 'pipelineCompletion',
+    terminal: true,
+  };
+
+  // ── Node layout ──────────────────────────────────────────────────────────
+  // Columns are spaced 280px apart. Branch rows use ±60px from the centerline.
   const nodes: PipelineNode[] = [
-    { id: triggerId,     type: 'trigger',   position: { x: 40,   y: 120 }, data: triggerData },
-    { id: llmId,         type: 'llm',       position: { x: 320,  y: 120 }, data: llmData },
-    { id: conditionId,   type: 'condition', position: { x: 620,  y: 120 }, data: conditionData },
-    { id: forkId,        type: 'fork',      position: { x: 900,  y: 40  }, data: forkData },
-    { id: postCommentId, type: 'action',    position: { x: 1180, y: 0   }, data: postCommentData },
-    { id: notifyBranchId,type: 'action',    position: { x: 1180, y: 80  }, data: notifyBranchData },
-    { id: joinId,        type: 'join',      position: { x: 1480, y: 40  }, data: joinData },
-    { id: approvalId,    type: 'approval',  position: { x: 1780, y: 40  }, data: approvalData },
-    { id: updateDocId,   type: 'action',    position: { x: 2080, y: 40  }, data: updateDocData },
-    { id: notifyShortId, type: 'action',    position: { x: 900,  y: 240 }, data: notifyShortData },
+    { id: triggerId,       type: 'trigger',   position: { x: 40,   y: 200 }, data: triggerData },
+    { id: llmId,           type: 'llm',       position: { x: 320,  y: 200 }, data: llmData },
+    { id: conditionId,     type: 'condition', position: { x: 620,  y: 200 }, data: conditionData },
+    { id: forkId,          type: 'fork',      position: { x: 900,  y: 120 }, data: forkData },
+    { id: postCommentId,   type: 'action',    position: { x: 1180, y: 60  }, data: postCommentData },
+    { id: notifyBranchId,  type: 'action',    position: { x: 1180, y: 180 }, data: notifyBranchData },
+    { id: joinId,          type: 'join',      position: { x: 1480, y: 120 }, data: joinData },
+    { id: approvalId,      type: 'approval',  position: { x: 1780, y: 120 }, data: approvalData },
+    { id: updateDocId,     type: 'action',    position: { x: 2080, y: 120 }, data: updateDocData },
+    { id: shortSummaryId,  type: 'action',    position: { x: 900,  y: 320 }, data: shortSummaryData },
+    { id: errorHandlerId,  type: 'action',    position: { x: 1480, y: 420 }, data: errorHandlerData },
+    { id: finalSinkId,     type: 'transform', position: { x: 2380, y: 200 }, data: finalSinkData },
   ];
+
+  const mkEdge = (
+    source: string,
+    sourceHandle: string,
+    target: string,
+    targetHandle: string,
+  ): PipelineEdge => ({
+    id: crypto.randomUUID(),
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+  });
 
   // ── Edges (handle-type table §5) ─────────────────────────────────────────
   const edges: PipelineEdge[] = [
-    // trigger.out → llm.in
-    {
-      id: crypto.randomUUID(),
-      source: triggerId, sourceHandle: 'out',
-      target: llmId, targetHandle: 'in',
-    },
-    // llm.out → condition.in
-    {
-      id: crypto.randomUUID(),
-      source: llmId, sourceHandle: 'out',
-      target: conditionId, targetHandle: 'in',
-    },
-    // condition.true → fork.in
-    {
-      id: crypto.randomUUID(),
-      source: conditionId, sourceHandle: 'true',
-      target: forkId, targetHandle: 'in',
-    },
-    // condition.false → notifyShort.in (terminal short-summary branch)
-    {
-      id: crypto.randomUUID(),
-      source: conditionId, sourceHandle: 'false',
-      target: notifyShortId, targetHandle: 'in',
-    },
-    // fork.branch-0 → post-comment.in
-    {
-      id: crypto.randomUUID(),
-      source: forkId, sourceHandle: 'branch-0',
-      target: postCommentId, targetHandle: 'in',
-    },
-    // fork.branch-1 → notify-branch.in
-    {
-      id: crypto.randomUUID(),
-      source: forkId, sourceHandle: 'branch-1',
-      target: notifyBranchId, targetHandle: 'in',
-    },
-    // post-comment.out → join.in-0
-    {
-      id: crypto.randomUUID(),
-      source: postCommentId, sourceHandle: 'out',
-      target: joinId, targetHandle: 'in-0',
-    },
-    // notify-branch.out → join.in-1
-    {
-      id: crypto.randomUUID(),
-      source: notifyBranchId, sourceHandle: 'out',
-      target: joinId, targetHandle: 'in-1',
-    },
-    // join.out → approval.in
-    {
-      id: crypto.randomUUID(),
-      source: joinId, sourceHandle: 'out',
-      target: approvalId, targetHandle: 'in',
-    },
-    // approval.approved → update-document.in
-    {
-      id: crypto.randomUUID(),
-      source: approvalId, sourceHandle: 'approved',
-      target: updateDocId, targetHandle: 'in',
-    },
+    // Happy path: trigger → llm → condition → fork → (postComment | notify) → join → approval → updateDoc → finalSink
+    mkEdge(triggerId,      'out',      llmId,         'in'),
+    mkEdge(llmId,          'out',      conditionId,   'in'),
+    mkEdge(conditionId,    'true',     forkId,        'in'),
+    mkEdge(conditionId,    'false',    shortSummaryId,'in'),
+    mkEdge(forkId,         'branch-0', postCommentId, 'in'),
+    mkEdge(forkId,         'branch-1', notifyBranchId,'in'),
+    mkEdge(postCommentId,  'out',      joinId,        'in-0'),
+    mkEdge(notifyBranchId, 'out',      joinId,        'in-1'),
+    mkEdge(joinId,         'out',      approvalId,    'in'),
+    mkEdge(approvalId,     'approved', updateDocId,   'in'),
+
+    // Terminal `out` paths converge on the final sink. Each leaf wires `out`
+    // so DEAD_END only fires for the sink itself.
+    mkEdge(updateDocId,    'out',      finalSinkId,   'in'),
+    mkEdge(shortSummaryId, 'out',      finalSinkId,   'in'),
+
+    // Approval rejection routes through the shared error handler. Wiring
+    // `rejected` is hygiene only — there is no UNUSED_APPROVAL_BRANCH lint —
+    // but it keeps the rejection path observable.
+    mkEdge(approvalId,     'rejected', errorHandlerId,'in'),
+
+    // Every llm/action `error` handle routes to the shared error handler so
+    // NO_ERROR_HANDLER stays silent on each one. Exception: the two actions
+    // *inside* the fork (postComment, notifyBranch) intentionally leave their
+    // error handles unwired so the executor's fork-failure path can still
+    // deliver a failed JoinArrival to the downstream Join (mode='all'). With
+    // an explicit error edge, an action failure inside a fork would route
+    // away from the Join and the Join would hang waiting for the missing
+    // arrival. NO_ERROR_HANDLER's structural exemption (downstream-of-Fork
+    // AND upstream-of-Join) covers these two nodes, so the demo stays
+    // lint-clean while preserving fork-join 'all' runtime semantics.
+    mkEdge(llmId,          'error',    errorHandlerId,'in'),
+    mkEdge(updateDocId,    'error',    errorHandlerId,'in'),
+    mkEdge(shortSummaryId, 'error',    errorHandlerId,'in'),
+
+    // The error handler itself drains into the final sink on both handles
+    // so it is not a dead end and its own `error` handle is wired (silencing
+    // NO_ERROR_HANDLER for the error-handler node).
+    mkEdge(errorHandlerId, 'out',      finalSinkId,   'in'),
+    mkEdge(errorHandlerId, 'error',    finalSinkId,   'in'),
   ];
 
   const def: PipelineDefinition = {
     id: crypto.randomUUID(),
     name: 'Document Summary Pipeline (Demo)',
-    description: 'A showcase pipeline demonstrating LLM summarization, branching, approval, and parallel actions.',
+    description:
+      'A showcase pipeline demonstrating LLM summarization, branching, approval, parallel actions, and a shared error handler.',
     icon: '📄',
     version: 0,
     status: 'published' as PipelineStatus,
