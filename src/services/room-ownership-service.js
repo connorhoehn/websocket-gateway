@@ -42,6 +42,14 @@ const ROOM_RESOURCE_TYPE = 'room';
 class RoomOwnershipService extends EventEmitter {
     /**
      * @param {object} deps
+     * @param {object} [deps.scope] - distributed-core v0.6.7+ ClusterScope
+     *   instance (`cluster.scope('rooms')`). When provided, this is the
+     *   primary surface for claim/release/getEntity/isLocal and for
+     *   `ownership:*` / `entity:*` event subscriptions. The scope auto-
+     *   strips the namespace prefix from resourceId / entityId fields, so
+     *   handlers see bare `roomId`s. The legacy raw deps below remain
+     *   accepted as a fallback path so existing callers (and existing
+     *   tests that mock raw primitives) keep working byte-identically.
      * @param {object} [deps.rebalanceManager]
      * @param {object} [deps.registry]
      * @param {object} [deps.router]
@@ -52,8 +60,18 @@ class RoomOwnershipService extends EventEmitter {
      *   non-local owner instead of falling back to Redis pub/sub.
      * @param {object} [deps.logger]
      */
-    constructor({ rebalanceManager, registry, router, nodeId, peerMessaging, presenceRegistry, logger } = {}) {
+    constructor({
+        scope,
+        rebalanceManager,
+        registry,
+        router,
+        nodeId,
+        peerMessaging,
+        presenceRegistry,
+        logger,
+    } = {}) {
         super();
+        this.scope = scope || null;
         this.rebalanceManager = rebalanceManager || null;
         this.registry = registry || null;
         this.router = router || null;
@@ -73,7 +91,12 @@ class RoomOwnershipService extends EventEmitter {
         this.ownedRooms = new Set();
 
         this._listenersAttached = false;
-        this._enabled = Boolean(this.rebalanceManager && this.router && this.registry);
+        // Prefer the scope path when available — it fully covers claim,
+        // release, getEntity, isLocal, and event subscriptions. Otherwise
+        // fall back to the raw deps (legacy path).
+        this._useScope = Boolean(this.scope);
+        this._enabled = this._useScope
+            || Boolean(this.rebalanceManager && this.router && this.registry);
 
         if (this._enabled) {
             this._attachListeners();
@@ -97,7 +120,11 @@ class RoomOwnershipService extends EventEmitter {
         if (this._listenersAttached) return;
         this._listenersAttached = true;
 
-        // RebalanceManager → public events (normalized payload).
+        // Ownership events — payload shape is the same on both paths.
+        // Under the scope path the `resourceId` is already prefix-stripped
+        // (ClusterScope rewrites it back to the bare id before invoking
+        // our handler), so downstream consumers continue to see plain
+        // `roomId`s without us having to do any unwrapping here.
         this._onGained = (payload) => {
             const { resourceId, newOwnerId, previousOwnerId } = payload || {};
             if (!resourceId) return;
@@ -130,13 +157,12 @@ class RoomOwnershipService extends EventEmitter {
             this.emit('ownership:lost', out);
         };
 
-        this.rebalanceManager.on('ownership:gained', this._onGained);
-        this.rebalanceManager.on('ownership:lost', this._onLost);
-
         // Registry events keep lastKnownOwnerMap fresh for *remote* resources
         // (workaround for DC-PIPELINE-6: previousOwnerId null in router-only
         // setups). We don't emit public events from these — only the local
-        // RebalanceManager events do that.
+        // RebalanceManager (or scope) ownership events do that. Under the
+        // scope path the record's `entityId` is also prefix-stripped before
+        // it reaches us.
         const updateFromRecord = (record) => {
             if (!record || !record.entityId) return;
             this.lastKnownOwnerMap.set(record.entityId, record.ownerNodeId);
@@ -149,6 +175,42 @@ class RoomOwnershipService extends EventEmitter {
             this.lastKnownOwnerMap.delete(record.entityId);
             this.ownedRooms.delete(record.entityId);
         };
+
+        if (this._useScope) {
+            // Scope path — single attach surface for all 6 subscriptions.
+            // ClusterScope.on() throws if rebalanceManager is not wired on
+            // the underlying cluster when subscribing to ownership:* — which
+            // is what we want (loud failure at wiring time, not silent
+            // event-delivery loss). On gateway bootstrap the cluster always
+            // has a RebalanceManager attached before this constructor runs.
+            try {
+                this.scope.on('ownership:gained', this._onGained);
+                this.scope.on('ownership:lost', this._onLost);
+            } catch (err) {
+                this.logger.warn && this.logger.warn(
+                    'Failed to subscribe to scope ownership events',
+                    { error: err && err.message },
+                );
+            }
+            try {
+                this.scope.on('entity:created', this._onEntityCreated);
+                this.scope.on('entity:transferred', this._onEntityTransferred);
+                this.scope.on('entity:updated', this._onEntityUpdated);
+                this.scope.on('entity:deleted', this._onEntityDeleted);
+            } catch (err) {
+                this.logger.warn && this.logger.warn(
+                    'Failed to subscribe to scope registry events',
+                    { error: err && err.message },
+                );
+            }
+            return;
+        }
+
+        // Legacy raw-deps path — wires directly against rebalanceManager
+        // and registry. Preserved verbatim so existing tests that mock raw
+        // primitives keep passing without modification.
+        this.rebalanceManager.on('ownership:gained', this._onGained);
+        this.rebalanceManager.on('ownership:lost', this._onLost);
 
         try {
             this.registry.on('entity:created', this._onEntityCreated);
@@ -170,9 +232,15 @@ class RoomOwnershipService extends EventEmitter {
     async claim(roomId) {
         if (!this._enabled) return null;
         if (!roomId) throw new Error('claim() requires a roomId');
-        const handle = await this.router.claim(roomId, {
-            metadata: { resourceType: ROOM_RESOURCE_TYPE },
-        });
+        // ClusterScope.claim() takes the bare id and prefixes internally;
+        // raw router.claim() takes the bare id with explicit metadata.
+        const handle = this._useScope
+            ? await this.scope.claim(roomId, {
+                metadata: { resourceType: ROOM_RESOURCE_TYPE },
+            })
+            : await this.router.claim(roomId, {
+                metadata: { resourceType: ROOM_RESOURCE_TYPE },
+            });
         // Locally we know we are the owner immediately — prime the cache so
         // getOwner() is correct before any event loop turn.
         this.lastKnownOwnerMap.set(roomId, this.nodeId);
@@ -190,7 +258,11 @@ class RoomOwnershipService extends EventEmitter {
         if (!this._enabled) return;
         if (!roomId) return;
         try {
-            await this.router.release(roomId);
+            if (this._useScope) {
+                await this.scope.release(roomId);
+            } else {
+                await this.router.release(roomId);
+            }
         } finally {
             this.ownedRooms.delete(roomId);
             // Do NOT clear lastKnownOwnerMap here — release just hands off;
@@ -207,8 +279,15 @@ class RoomOwnershipService extends EventEmitter {
         if (!this._enabled || !roomId) return null;
 
         // 1. Trust the registry first — it's the source of truth.
+        //    Under the scope path, scope.getEntity() prefixes the id and
+        //    strips the prefix back off the returned record's entityId.
         try {
-            const entity = this.registry.getEntity && this.registry.getEntity(roomId);
+            let entity = null;
+            if (this._useScope) {
+                entity = this.scope.getEntity(roomId);
+            } else if (this.registry && this.registry.getEntity) {
+                entity = this.registry.getEntity(roomId);
+            }
             if (entity && entity.ownerNodeId) {
                 this.lastKnownOwnerMap.set(roomId, entity.ownerNodeId);
                 return {
@@ -226,7 +305,11 @@ class RoomOwnershipService extends EventEmitter {
 
         // 3. Local ownership flag — the router may know it without a cached entry.
         try {
-            if (this.router && this.router.isLocal && this.router.isLocal(roomId)) {
+            if (this._useScope) {
+                if (this.scope.isLocal && this.scope.isLocal(roomId)) {
+                    return { ownerId: this.nodeId, isLocal: true };
+                }
+            } else if (this.router && this.router.isLocal && this.router.isLocal(roomId)) {
                 return { ownerId: this.nodeId, isLocal: true };
             }
         } catch (_err) { /* noop */ }
@@ -255,6 +338,19 @@ class RoomOwnershipService extends EventEmitter {
      */
     detach() {
         if (!this._enabled || !this._listenersAttached) return;
+        if (this._useScope) {
+            // Symmetric scope.off() — the same handler-function references
+            // we passed to scope.on() are required for ClusterScope to
+            // locate the wrapper it installed and unsubscribe cleanly.
+            try { this.scope.off('ownership:gained', this._onGained); } catch (_e) { /* noop */ }
+            try { this.scope.off('ownership:lost', this._onLost); } catch (_e) { /* noop */ }
+            try { this.scope.off('entity:created', this._onEntityCreated); } catch (_e) { /* noop */ }
+            try { this.scope.off('entity:transferred', this._onEntityTransferred); } catch (_e) { /* noop */ }
+            try { this.scope.off('entity:updated', this._onEntityUpdated); } catch (_e) { /* noop */ }
+            try { this.scope.off('entity:deleted', this._onEntityDeleted); } catch (_e) { /* noop */ }
+            this._listenersAttached = false;
+            return;
+        }
         try { this.rebalanceManager.off('ownership:gained', this._onGained); } catch (_e) { /* noop */ }
         try { this.rebalanceManager.off('ownership:lost', this._onLost); } catch (_e) { /* noop */ }
         try { this.registry.off && this.registry.off('entity:created', this._onEntityCreated); } catch (_e) { /* noop */ }
@@ -328,7 +424,27 @@ async function getRoomOwnershipService(opts = {}) {
             return _singleton;
         }
 
+        // DC-FR-3: prefer `cluster.scope('rooms')` as the primary surface
+        // when the bootstrap exposes a Cluster facade (size === 1 path,
+        // Phase 3+). The size > 1 createCluster path still returns a null
+        // `cluster` field, in which case we fall through to the raw deps.
+        // We always pass the raw deps too so the fallback path stays warm
+        // until the scope path proves itself in production.
+        let scope = null;
+        if (bootstrap.cluster && typeof bootstrap.cluster.scope === 'function') {
+            try {
+                scope = bootstrap.cluster.scope('rooms');
+            } catch (err) {
+                logger.warn && logger.warn(
+                    'cluster.scope("rooms") failed; falling back to raw deps',
+                    { error: err && err.message },
+                );
+                scope = null;
+            }
+        }
+
         _singleton = new RoomOwnershipService({
+            scope,
             rebalanceManager: bootstrap.rebalanceManager,
             registry: bootstrap.registry,
             router: bootstrap.router,

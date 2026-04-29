@@ -400,6 +400,23 @@ async function bootstrapViaFacade({
         ...(metrics ? { metrics } : {}),
     });
 
+    // DC-FR-3: attach our externally-owned RebalanceManager to the Cluster
+    // facade so `cluster.scope('rooms').on('ownership:gained' | 'ownership:lost')`
+    // can locate it (the scope subscriptions throw at wiring time if the
+    // cluster's rebalanceManager is null). The facade itself never owns a
+    // RebalanceManager — see the header comment on this file. attach is
+    // idempotent across identical instances and cheap.
+    if (typeof cluster.attachRebalanceManager === 'function') {
+        try {
+            cluster.attachRebalanceManager(rebalanceManager);
+        } catch (err) {
+            logger.warn && logger.warn(
+                'cluster.attachRebalanceManager failed; scope ownership events will be unavailable',
+                { error: err && err.message },
+            );
+        }
+    }
+
     // -----------------------------------------------------------------
     // 4. PeerMessaging — external; the v0.6.7 facade only auto-constructs
     //    PeerMessaging for Raft-mode registries (we use CRDT). We use it
