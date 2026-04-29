@@ -58,6 +58,24 @@ const peerRoutedFailed = registry.counter(
     'Owner-aware peer-addressed deliveries from message-router (per-outcome).',
 );
 
+// Receive-side counterpart of gateway_message_peer_routed_count. Increments
+// when an inbound `wsg.channel.<channel>` envelope from another node is
+// successfully fanned out to this node's local subscribers (or when the
+// fan-out callback throws).
+//   - ok:            envelope dispatched to broadcastToLocalChannel without error.
+//   - handler_error: fan-out threw (logger + metric only — PeerMessaging
+//                    auto-acks regardless so the sender does not retry).
+const peerReceivedOk = registry.counter(
+    'gateway_message_peer_received_count',
+    { ...BASE_LABELS, outcome: 'ok' },
+    'Inbound peer-addressed channel deliveries fanned out locally (per-outcome).',
+);
+const peerReceivedHandlerError = registry.counter(
+    'gateway_message_peer_received_count',
+    { ...BASE_LABELS, outcome: 'handler_error' },
+    'Inbound peer-addressed channel deliveries fanned out locally (per-outcome).',
+);
+
 function recordConnection(delta) {
     if (delta > 0) activeConnections.inc(delta);
     else if (delta < 0) activeConnections.dec(-delta);
@@ -107,6 +125,14 @@ function recordPeerRoutedFallback() {
     peerRoutedFailed.inc();
 }
 
+function recordPeerReceivedOk() {
+    peerReceivedOk.inc();
+}
+
+function recordPeerReceivedHandlerError() {
+    peerReceivedHandlerError.inc();
+}
+
 // Renders the registry snapshot as Prometheus 0.0.4 text format.
 // Suitable for `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
 function renderPrometheusText() {
@@ -133,6 +159,8 @@ module.exports = {
     recordPipelineError,
     recordPeerRoutedOk,
     recordPeerRoutedFallback,
+    recordPeerReceivedOk,
+    recordPeerReceivedHandlerError,
     renderPrometheusText,
     getRegistry,
 };

@@ -65,10 +65,6 @@ import {
   createCluster,
   loadOrCreateNodeId,
   PipelineModule,
-  // ApplicationModuleContext is the 6-field shape PipelineModule.initialize()
-  // requires. Field 5 (configuration.pubsub) is the load-bearing one.
-  type ApplicationModuleContext,
-  type ClusterManager,
   // Real registries — replace the previous no-op stubs (gaps DC-4.x closed
   // in distributed-core v0.3.0 made these classes / their accessors part of
   // the public surface). NodeHandle does not yet expose accessor methods for
@@ -84,6 +80,60 @@ import {
 
 import { createLLMClient } from './createLLMClient';
 import { getRegistry as getMetricsRegistry } from '../observability/metrics';
+
+// ---------------------------------------------------------------------------
+// Test-mode helpers (DC v0.6.3 fast-timer + log-suppression API)
+// ---------------------------------------------------------------------------
+//
+// distributed-core v0.6.3 (commit 82f4782) introduced two helpers explicitly
+// for cutting jest noise + cluster-startup latency in tests:
+//   - `IS_TEST_ENV` (auto-detected from NODE_ENV=test or JEST_WORKER_ID) makes
+//     the FrameworkLogger and transport adapters silent by default.
+//   - `nodeDefaults: { gossipInterval, joinTimeout, failureDetector, lifecycle,
+//     logging }` on createCluster() forwards through to Node ctor, swapping
+//     the prod 1s/5s/6s timers for FixtureCluster-style 50ms/500ms/600ms.
+//
+// We mirror DC's detection here and only activate when:
+//   - We're running under jest (NODE_ENV=test or JEST_WORKER_ID set), AND
+//   - The operator has not opted out via PIPELINE_TEST_FAST_MODE=false.
+//
+// Production paths are unaffected: `isPipelineTestEnv()` returns false outside
+// of jest, so `pipelineFastTimerNodeDefaults()` is never threaded into
+// createCluster() in real deploys.
+function isPipelineTestEnv(): boolean {
+  return process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
+}
+
+function isPipelineFastTestModeEnabled(): boolean {
+  if (!isPipelineTestEnv()) return false;
+  const raw = process.env.PIPELINE_TEST_FAST_MODE;
+  if (raw == null) return true;
+  return raw.trim().toLowerCase() !== 'false';
+}
+
+/**
+ * Fast-timer overrides matching `FixtureCluster`'s defaults from DC v0.6.3.
+ * Threaded into `createCluster({ nodeDefaults })` — Node ctor reads the
+ * fields directly, and `logging: false` propagates suppression to per-node
+ * FrameworkLogger and Transport adapters.
+ */
+function pipelineFastTimerNodeDefaults(): Record<string, unknown> {
+  return {
+    logging: false,
+    gossipInterval: 50,
+    joinTimeout: 500,
+    failureDetector: {
+      heartbeatInterval: 100,
+      failureTimeout: 300,
+      deadTimeout: 600,
+      pingTimeout: 200,
+    },
+    lifecycle: {
+      enableGracefulShutdown: true,
+      maxShutdownWait: 50,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -375,24 +425,37 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // gossip membership is stable across restarts. When size > 1 only node 0
   // gets the persistent id; the rest fall back to ephemeral ids since the
   // identity file is per-process, not per-node.
+  // Fast-timer overrides — only when running under jest (and the operator
+  // hasn't disabled them via PIPELINE_TEST_FAST_MODE=false). Threading via
+  // `nodeDefaults` is the v0.6.3 API; Node ctor reads gossipInterval /
+  // joinTimeout / failureDetector / lifecycle directly, and `logging: false`
+  // propagates suppression to per-node FrameworkLogger + transport adapters.
+  // Production paths get DC's own 1s/5s/6s defaults — `isPipelineTestEnv()`
+  // is false outside of jest.
+  const fastTimers = isPipelineFastTestModeEnabled();
+  const nodeDefaults = fastTimers ? pipelineFastTimerNodeDefaults() : undefined;
+
   const clusterHandle = await createCluster({
     size,
     transport,
     basePort,
     autoStart: true,
     ...(persistentNodeId ? { nodes: [{ id: persistentNodeId }] } : {}),
-  });
+    ...(nodeDefaults ? { nodeDefaults } : {}),
+  } as Parameters<typeof createCluster>[0]);
 
   // Wait for the membership table to settle. With size=1 this is effectively
   // instant; we keep the call so the contract matches the multi-node case.
-  await clusterHandle.waitForConvergence(5000);
+  // In fast mode, joinTimeout is 500ms so a 1s convergence ceiling is plenty.
+  await clusterHandle.waitForConvergence(fastTimers ? 1000 : 5000);
 
   const handle = clusterHandle.getNode(0);
   const clusterMgr = handle.getCluster();
   const pubsub = handle.getPubSub();
   const nodeId = handle.id;
 
-  // Step 2 — assemble the 6-field ApplicationModuleContext.
+  // Step 2 — assemble the registries that ApplicationRegistry will auto-wire
+  // into the module context.
   //
   // distributed-core v0.3.0 closed gaps DC-4.x and made ResourceRegistry,
   // ResourceTopologyManager, and ApplicationRegistry first-class public
@@ -455,21 +518,29 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   );
 
   // ApplicationRegistry tracks lifecycle of all modules registered against
-  // this node. PipelineModule does not call any of its methods during
-  // initialize(), but we hand it a real instance so that a future caller
-  // (or a multi-module deploy) gets correct dependency-aware behaviour
-  // for free instead of silently no-op-ing against the stub.
+  // this node. As of distributed-core v0.5.7 it also offers a `register()`
+  // helper that auto-wires the 6-field ApplicationModuleContext from its
+  // own internal state (clusterManager, resourceRegistry, topologyManager,
+  // moduleRegistry, configuration, logger) — replacing what used to be
+  // ~40 lines of manual context construction in this bootstrap.
   const moduleRegistry = new ApplicationRegistry(
     clusterMgr,
     resourceRegistry,
     topologyManager,
   );
+  await moduleRegistry.start();
 
+  // Under jest (with fast mode active — same env-var guard as the timer
+  // overrides), suppress info-level chatter from this bootstrap. warn/error
+  // still flow through so real failures surface. Set
+  // PIPELINE_TEST_FAST_MODE=false to restore full chatter when debugging.
+  const quietInfo = fastTimers;
   const logger = {
-    info:  (msg: string, meta?: unknown) => console.log(`[pipeline:${nodeId}] ${msg}`, meta ?? ''),
+    info:  quietInfo
+      ? (_msg: string, _meta?: unknown) => { /* suppressed in test mode */ }
+      : (msg: string, meta?: unknown) => console.log(`[pipeline:${nodeId}] ${msg}`, meta ?? ''),
     warn:  (msg: string, meta?: unknown) => console.warn(`[pipeline:${nodeId}] WARN ${msg}`, meta ?? ''),
     error: (msg: string, meta?: unknown) => console.error(`[pipeline:${nodeId}] ERROR ${msg}`, meta ?? ''),
-    debug: (_msg: string) => { /* suppressed at this layer */ },
   };
 
   // Log the identity decision now that we have a logger and a final nodeId.
@@ -492,30 +563,17 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // up if/when its config grows that field.
   const metricsRegistry = getMetricsRegistry();
 
-  const context: ApplicationModuleContext = {
-    clusterManager:  clusterMgr as unknown as ClusterManager,
-    resourceRegistry,
-    topologyManager,
-    moduleRegistry,
-    configuration: {
-      // CRITICAL: PipelineModule.onInitialize() reads
-      // context.configuration.pubsub to construct its internal EventBus.
-      pubsub,
-      // Optional MetricsRegistry — `configuration` is `Record<string, any>`
-      // so this is always shape-compatible. PipelineModule reads it lazily
-      // in versions of distributed-core that opted into the v0.4.4+ metrics
-      // threading; older versions ignore the field harmlessly.
-      metrics: metricsRegistry,
-    },
-    logger,
-  };
-
   // Step 3 — pick the LLM client. Tests pass an explicit override (typically
   // FixtureLLMClient); production reads PIPELINE_LLM_PROVIDER + the matching
   // SDK credentials.
   const llmClient = opts.llmClient ?? createLLMClient();
 
-  // Step 4 — instantiate + initialize + start the module.
+  // Step 4 — construct the module and let ApplicationRegistry.register()
+  // auto-wire the context, then call module.initialize() + module.start()
+  // for us. We pass `pubsub` and `metrics` as `configuration` overrides —
+  // PipelineModule.onInitialize() reads `context.configuration.pubsub` to
+  // construct its EventBus (load-bearing) and `context.configuration.metrics`
+  // for the v0.4.4+ metrics threading.
   if (walFilePath) {
     logger.info(`WAL enabled at ${walFilePath} — pipeline state will survive restart`);
   } else if (walExplicitlyDisabled) {
@@ -543,23 +601,83 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     ...(walFilePath ? { walFilePath } : {}),
   });
 
-  await module.initialize(context);
-  await module.start();
+  // Wiring choice depends on whether we're in fast/test mode:
+  //
+  // Production path → `moduleRegistry.register(module, …)`. The registry
+  // auto-wires the 6-field ApplicationModuleContext from its own internal
+  // state (clusterManager, resourceRegistry, topologyManager, moduleRegistry,
+  // configuration, logger). It also tracks module state in its dependency
+  // graph and emits `registry:module-registered` for any observers.
+  //
+  // Test path → bypass the registry and call `module.initialize(context)` +
+  // `module.start()` directly with a quiet context. This is the only way to
+  // suppress DC's hardcoded `console.log('[INFO] [moduleId] …')` chatter
+  // from `ApplicationRegistry.createModuleContext` (v0.6.3 added IS_TEST_ENV
+  // for FrameworkLogger / transport adapters but did NOT thread it into
+  // that inline logger). We give up registry-side state tracking, but no
+  // bootstrap consumer depends on it — `shutdown()` knows to stop the module
+  // directly when it's not registry-managed.
+  if (fastTimers) {
+    const quietModuleLogger = {
+      info:  (_message: string, _meta?: unknown) => { /* suppressed */ },
+      warn:  (message: string, meta?: unknown) =>
+        console.warn(`[WARN] [${module.moduleId}] ${message}`, meta || ''),
+      error: (message: string, meta?: unknown) =>
+        console.error(`[ERROR] [${module.moduleId}] ${message}`, meta || ''),
+      debug: (_message: string, _meta?: unknown) => { /* suppressed */ },
+    };
+    const quietContext = {
+      clusterManager: clusterMgr,
+      resourceRegistry,
+      topologyManager,
+      moduleRegistry,
+      configuration: {
+        // CRITICAL: PipelineModule.onInitialize() reads
+        // context.configuration.pubsub to construct its internal EventBus.
+        pubsub,
+        metrics: metricsRegistry,
+      },
+      logger: quietModuleLogger,
+    };
+    await module.initialize(quietContext as Parameters<typeof module.initialize>[0]);
+    await module.start();
+  } else {
+    await moduleRegistry.register(module, {
+      configuration: {
+        // CRITICAL: PipelineModule.onInitialize() reads
+        // context.configuration.pubsub to construct its internal EventBus.
+        pubsub,
+        // Optional MetricsRegistry — `configuration` is `Record<string, any>`
+        // so this is always shape-compatible. PipelineModule reads it lazily
+        // in versions of distributed-core that opted into the v0.4.4+ metrics
+        // threading; older versions ignore the field harmlessly.
+        metrics: metricsRegistry,
+      },
+    });
+  }
 
   // Step 5 — coordinated shutdown.
   //
   // Order matters:
-  //   1. module.stop()         — cancels in-flight runs, drains EventBus.
+  //   1a. (prod) moduleRegistry.stop()   — stops every registered module in
+  //                                        reverse dependency order.
+  //   1b. (test) module.stop()           — registry isn't tracking us when
+  //                                        fastTimers is on, so we stop the
+  //                                        module directly.
   //   2. resourceRegistry.stop() — closes the underlying entity registry.
-  //   3. clusterHandle.stop()  — stops gossip + transport.
+  //   3. clusterHandle.stop()    — stops gossip + transport.
   // Any throw is logged but does not abort the rest of the chain — operators
   // need every subsystem torn down even if one stage misbehaves.
   const shutdown = async (): Promise<void> => {
     clearInterval(keepAlive);
     try {
-      await module.stop();
+      if (fastTimers) {
+        await module.stop();
+      } else {
+        await moduleRegistry.stop();
+      }
     } catch (err) {
-      console.error('[pipeline] module.stop() failed', err);
+      console.error('[pipeline] module/registry stop() failed', err);
     }
     try {
       await resourceRegistry.stop();

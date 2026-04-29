@@ -1,0 +1,114 @@
+name: WAL Recovery Smoke
+
+# Runs scripts/wal-recovery-smoke.sh against the social-api bootstrap to
+# guarantee that BOTH WAL surfaces — the EventBus WAL (PIPELINE_WAL_PATH)
+# and the ResourceRegistry entity WAL (PIPELINE_REGISTRY_WAL_PATH, switched
+# on in social-api/src/pipeline/bootstrap.ts) — wire up cleanly and survive
+# an unclean kill-9 + restart.
+#
+# Triggered only when something that could plausibly affect the bootstrap
+# changed: the bootstrap itself, the smoke script, the workflow file, or
+# the social-api package manifests / lockfile (which pin the
+# distributed-core version that owns the WAL replay path).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'social-api/src/pipeline/**'
+      - 'social-api/src/index.ts'
+      - 'social-api/package.json'
+      - 'social-api/package-lock.json'
+      - 'scripts/wal-recovery-smoke.sh'
+      - '.github/workflows/wal-recovery-smoke.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'social-api/src/pipeline/**'
+      - 'social-api/src/index.ts'
+      - 'social-api/package.json'
+      - 'social-api/package-lock.json'
+      - 'scripts/wal-recovery-smoke.sh'
+      - '.github/workflows/wal-recovery-smoke.yml'
+
+# Workflow-level timeout; the script's STARTUP_TIMEOUT covers each boot,
+# but if something hangs outside the wait_for_log loop we still want the
+# job to fail fast rather than burn the GHA 6-hour default.
+concurrency:
+  group: wal-recovery-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # 5 minutes covers two ts-node-dev cold boots (~30-60s each) plus the
+    # stabilization window with comfortable headroom. The script itself caps
+    # each boot at STARTUP_TIMEOUT=60s.
+    timeout-minutes: 5
+    steps:
+      # social-api/package.json declares `distributed-core` as a path-dep
+      # (`file:../../distributed-core`), so the sibling repo MUST be checked
+      # out alongside this one for `npm ci` to succeed. We mirror the
+      # on-disk layout the dev workflow expects: parent/{websocket-gateway,
+      # distributed-core}.
+      - name: Checkout websocket-gateway
+        uses: actions/checkout@v4
+        with:
+          path: websocket-gateway
+
+      - name: Checkout distributed-core (path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/distributed-core
+          path: distributed-core
+          # The path-dep in social-api consumes the prebuilt `dist/`
+          # output. Pinning to main is fine for a smoke test — if the
+          # smoke breaks because distributed-core's main moved, the
+          # signal we want IS exactly that.
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: websocket-gateway/social-api/package-lock.json
+
+      # distributed-core ships `dist/` in-repo (consumers consume the
+      # compiled output, not the TS sources). If a future consumer change
+      # ever lands that requires a build, this is where we'd run it.
+      # Today: no-op, kept here as a placeholder for visibility.
+      - name: Verify distributed-core dist is present
+        working-directory: distributed-core
+        run: |
+          if [ ! -d dist ]; then
+            echo "::error::distributed-core/dist/ missing — smoke can't run"
+            exit 1
+          fi
+          test -f dist/index.js || (echo "::error::dist/index.js missing" && exit 1)
+
+      - name: Install social-api deps
+        working-directory: websocket-gateway/social-api
+        run: npm ci
+
+      - name: Make smoke script executable
+        working-directory: websocket-gateway
+        run: chmod +x scripts/wal-recovery-smoke.sh
+
+      # The script writes its own "FAIL: <what was expected vs what was
+      # found>" lines to stderr, plus a tail of the failing boot's log,
+      # so a failed run shows actionable detail in the GHA log without
+      # any extra plumbing here.
+      - name: Run WAL recovery smoke
+        working-directory: websocket-gateway
+        env:
+          # Pin a generous startup timeout for ts-node-dev cold compile in
+          # CI (the default 60s in the script is already conservative; this
+          # tightens or relaxes it without editing the script). 90s here
+          # gives a clear error window before the workflow-level 5-min cap.
+          STARTUP_TIMEOUT: '90'
+          # Explicit tmp paths just for clarity in the GHA log; the script
+          # mktemp's its own dir if these aren't set, but pinning them under
+          # $RUNNER_TEMP keeps GHA's auto-cleanup happy and avoids
+          # /var/lib/social-api/ on the runner.
+          TMPDIR: ${{ runner.temp }}
+        run: ./scripts/wal-recovery-smoke.sh

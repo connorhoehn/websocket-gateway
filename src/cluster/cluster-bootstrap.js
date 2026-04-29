@@ -83,6 +83,59 @@ function resolveSize(opts = {}) {
 }
 
 /**
+ * Returns true iff the current process is a jest/test runner. Mirrors the
+ * detection used by distributed-core's `IS_TEST_ENV` (v0.6.3) so the two
+ * stay in lock-step.
+ */
+function isTestEnv() {
+    return process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
+}
+
+/**
+ * Returns true iff the gateway should activate "fast test mode" — fast-timer
+ * defaults from distributed-core v0.6.3 (sub-second gossip / heartbeat / dead
+ * timeouts) and per-node logging suppression. Active by default whenever
+ * `isTestEnv()` is true; operators can disable with `WSG_TEST_FAST_MODE=false`
+ * (case-insensitive) to keep the prod-shaped 1s/5s timers and DC chatter for
+ * debugging a flaky test. Production is unaffected because `isTestEnv()` is
+ * false there.
+ */
+function isFastTestModeEnabled() {
+    if (!isTestEnv()) return false;
+    const raw = process.env.WSG_TEST_FAST_MODE;
+    if (raw == null) return true;
+    return String(raw).trim().toLowerCase() !== 'false';
+}
+
+/**
+ * Distributed-core fast-timer overrides for use in tests. These match
+ * `FixtureCluster`'s test defaults from DC v0.6.3 (commit 82f4782) so the
+ * gateway's bootstrap behaves identically to DC's own fixtures under jest.
+ *
+ * Returned object is shaped for `createCluster({ nodeDefaults })` —
+ * distributed-core's Node ctor reads gossipInterval / joinTimeout /
+ * failureDetector / lifecycle directly, and `logging: false` propagates the
+ * suppression flag to per-node FrameworkLogger / Transport components.
+ */
+function fastTimerNodeDefaults() {
+    return {
+        logging: false,
+        gossipInterval: 50,
+        joinTimeout: 500,
+        failureDetector: {
+            heartbeatInterval: 100,
+            failureTimeout: 300,
+            deadTimeout: 600,
+            pingTimeout: 200,
+        },
+        lifecycle: {
+            enableGracefulShutdown: true,
+            maxShutdownWait: 50,
+        },
+    };
+}
+
+/**
  * Lazily resolves the gateway's shared MetricsRegistry singleton from
  * src/observability/metrics.js. Threaded into distributed-core's ResourceRouter
  * and RebalanceManager so their internal counters
@@ -143,7 +196,23 @@ function delay(ms) {
  * }>}
  */
 async function bootstrapGatewayCluster(opts = {}) {
-    const logger = opts.logger || new Logger('cluster-bootstrap');
+    const baseLogger = opts.logger || new Logger('cluster-bootstrap');
+
+    // In jest, suppress info-level chatter from this bootstrap (cluster
+    // shutdown phases, "bootstrap complete", etc.) — error/warn still flow
+    // through so real failures surface. Operators can re-enable everything
+    // by setting WSG_TEST_FAST_MODE=false (which also keeps prod-shaped
+    // timers — same flag governs both for parity with DC's IS_TEST_ENV).
+    const quietInfoInTest = isFastTestModeEnabled();
+    const logger = quietInfoInTest
+        ? {
+            ...baseLogger,
+            info: () => {},
+            debug: () => {},
+            warn: baseLogger.warn ? baseLogger.warn.bind(baseLogger) : () => {},
+            error: baseLogger.error ? baseLogger.error.bind(baseLogger) : () => {},
+        }
+        : baseLogger;
 
     if (!isOwnershipRoutingEnabled(opts)) {
         logger.debug && logger.debug('Ownership routing disabled (WSG_ENABLE_OWNERSHIP_ROUTING != "true")');
@@ -205,16 +274,29 @@ async function bootstrapGatewayCluster(opts = {}) {
         for (let i = 1; i < size; i++) nodes.push({});
     }
 
+    // Fast-timer overrides: only when running under jest (and the operator
+    // hasn't opted out via WSG_TEST_FAST_MODE=false). Production paths get
+    // distributed-core's own defaults (1s gossip / 5s join / 6s deadTimeout).
+    // Threading via `nodeDefaults` is the v0.6.3 API — DC's Node ctor reads
+    // gossipInterval / joinTimeout / failureDetector / lifecycle and
+    // `logging: false` quiets per-node FrameworkLogger + transport adapters.
+    const fastTimers = isFastTestModeEnabled();
+    const nodeDefaults = fastTimers ? fastTimerNodeDefaults() : undefined;
+
     const clusterHandle = await createCluster({
         size,
         transport,
         autoStart: true,
         nodes,
+        ...(nodeDefaults ? { nodeDefaults } : {}),
     });
 
-    const converged = await clusterHandle.waitForConvergence(5000);
+    // Convergence wait scales with the join timeout — in fast mode we can
+    // afford a much shorter ceiling because join itself is bounded at 500ms.
+    const convergenceTimeoutMs = fastTimers ? 1000 : 5000;
+    const converged = await clusterHandle.waitForConvergence(convergenceTimeoutMs);
     if (!converged) {
-        logger.warn('Cluster did not fully converge within 5000ms; continuing best-effort');
+        logger.warn(`Cluster did not fully converge within ${convergenceTimeoutMs}ms; continuing best-effort`);
     }
 
     // -----------------------------------------------------------------
@@ -346,5 +428,8 @@ module.exports = {
         resolveTeardownDelay,
         resolveTransport,
         resolveSize,
+        isTestEnv,
+        isFastTestModeEnabled,
+        fastTimerNodeDefaults,
     },
 };

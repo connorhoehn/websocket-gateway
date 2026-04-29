@@ -37,6 +37,17 @@ class MessageRouter {
         // Map of callback functions keyed by a label: (channel, message, fromNode) => void
         this.channelMessageInterceptors = new Map();
 
+        // ---- DC-PIPELINE-7 receive side ----------------------------------
+        // PeerMessaging instance (attached post-bootstrap via attachPeerMessaging).
+        // When wired, every locally-subscribed channel also gets an exact-match
+        // `wsg.channel.<channel>` handler so peer-addressed envelopes from
+        // other nodes fan out locally instead of being silently auto-acked.
+        // PeerMessaging.onPeerMessage is exact-match only (no wildcards), so
+        // handlers are registered per-channel as channels are subscribed.
+        this.peerMessaging = null;
+        // channel -> Unsubscribe fn returned by peerMessaging.onPeerMessage
+        this._peerMessageUnsubs = new Map();
+
         this.setupRedisHealthMonitoring();
         this.setupNodeMessageHandlers();
     }
@@ -613,6 +624,11 @@ class MessageRouter {
      * Subscribe to a Redis channel for routing messages
      */
     async subscribeToRedisChannel(channel) {
+        // DC-PIPELINE-7: register the peer-receive handler regardless of
+        // Redis state — peer delivery operates over the cluster transport
+        // and is independent of Redis availability.
+        this._registerPeerChannelHandler(channel);
+
         if (!this.redisSubscriber || this.subscribedChannels.has(channel)) return;
 
         // Track subscription attempt even if Redis is unavailable
@@ -640,6 +656,10 @@ class MessageRouter {
      * Unsubscribe from a Redis channel
      */
     async unsubscribeFromRedisChannel(channel) {
+        // DC-PIPELINE-7: drop the peer-receive handler regardless of Redis
+        // state so we don't accumulate stale registrations.
+        this._unregisterPeerChannelHandler(channel);
+
         if (!this.redisSubscriber || !this.subscribedChannels.has(channel)) return;
 
         try {
@@ -651,6 +671,186 @@ class MessageRouter {
             this.logger.debug(`Unsubscribed from Redis channel: ${redisChannel}`);
         } catch (error) {
             this.logger.error(`Failed to unsubscribe from Redis channel ${channel}:`, error);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // DC-PIPELINE-7: peer-addressed receive-side fan-out.
+    //
+    // Sender side (this same module above) calls
+    //   peerMessaging.sendToPeer(ownerId, `wsg.channel.${channel}`, payload, …)
+    // when room ownership resolves to a remote node. PeerMessaging's
+    // `onPeerMessage(topic, handler)` is exact-match (no prefix/wildcard), so
+    // we register one handler per locally-subscribed channel — driven by the
+    // existing subscribeToRedisChannel / unsubscribeFromRedisChannel flow.
+    //
+    // PeerMessaging auto-acks at-least-once envelopes regardless of handler
+    // outcome, so we MUST log + meter handler errors locally; the sender
+    // will not retry. We still call broadcastToLocalChannel synchronously
+    // and reuse the same `(channel, message, excludeClientId)` shape the
+    // Redis route handler uses (handleChannelMessage above) so subscribers
+    // see byte-identical payloads from either path.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Wire a distributed-core PeerMessaging instance into this router.
+     * Idempotent: a second call with the SAME instance is a no-op; a call
+     * with a different instance detaches old handlers first.
+     *
+     * Should be called at gateway startup once `bootstrapGatewayCluster()`
+     * resolves (see server.js initialize()). Safe to call when no channels
+     * have been subscribed yet — handlers register lazily as channels join.
+     *
+     * @param {object} peerMessaging - distributed-core PeerMessaging instance
+     */
+    attachPeerMessaging(peerMessaging) {
+        if (!peerMessaging || typeof peerMessaging.onPeerMessage !== 'function') {
+            this.logger.debug && this.logger.debug(
+                'attachPeerMessaging: instance missing or onPeerMessage unavailable; skipping',
+            );
+            return;
+        }
+        if (this.peerMessaging === peerMessaging) {
+            // Already attached to this same instance — nothing to do.
+            return;
+        }
+        if (this.peerMessaging) {
+            // Replace: detach old handlers cleanly first.
+            this.detachPeerMessaging();
+        }
+        this.peerMessaging = peerMessaging;
+
+        // Backfill: for any channels already locally subscribed, register
+        // their peer handler now so a hot-attach (e.g. tests, or the
+        // bootstrap resolving after the first client subscribes) doesn't
+        // miss messages.
+        for (const channel of this.subscribedChannels) {
+            this._registerPeerChannelHandler(channel);
+        }
+
+        this.logger.info && this.logger.info(
+            'PeerMessaging attached for channel receive-side fan-out',
+            { backfilled: this.subscribedChannels.size },
+        );
+    }
+
+    /**
+     * Drop all per-channel peer handlers and forget the PeerMessaging
+     * instance. Safe to call when not attached.
+     */
+    detachPeerMessaging() {
+        for (const [, unsub] of this._peerMessageUnsubs) {
+            try { if (typeof unsub === 'function') unsub(); } catch (_e) { /* noop */ }
+        }
+        this._peerMessageUnsubs.clear();
+        this.peerMessaging = null;
+    }
+
+    /**
+     * Register a `wsg.channel.<channel>` handler with the attached
+     * PeerMessaging. Idempotent per channel. No-op when no PeerMessaging
+     * is attached yet (attachPeerMessaging will backfill).
+     */
+    _registerPeerChannelHandler(channel) {
+        if (!this.peerMessaging || typeof this.peerMessaging.onPeerMessage !== 'function') return;
+        if (this._peerMessageUnsubs.has(channel)) return; // already registered
+
+        const topic = `wsg.channel.${channel}`;
+        try {
+            const unsub = this.peerMessaging.onPeerMessage(topic, (ctx) => {
+                this._handlePeerChannelMessage(channel, ctx);
+            });
+            this._peerMessageUnsubs.set(channel, unsub);
+            this.logger.debug && this.logger.debug(
+                `peer-receive: registered handler for topic ${topic}`,
+            );
+        } catch (err) {
+            this.logger.warn && this.logger.warn(
+                `peer-receive: onPeerMessage(${topic}) failed`,
+                { error: err && err.message },
+            );
+        }
+    }
+
+    /**
+     * Drop the handler for a channel (called from unsubscribeFromRedisChannel).
+     * Idempotent. No-op when not registered.
+     */
+    _unregisterPeerChannelHandler(channel) {
+        const unsub = this._peerMessageUnsubs.get(channel);
+        if (!unsub) return;
+        try {
+            if (typeof unsub === 'function') unsub();
+        } catch (_e) { /* noop */ }
+        this._peerMessageUnsubs.delete(channel);
+    }
+
+    /**
+     * Inbound `wsg.channel.<channel>` envelope dispatcher.
+     *
+     * The sender wraps a CHANNEL_MESSAGE payload that mirrors the Redis
+     * fan-out shape: { type, channel, message, excludeClientId, fromNode,
+     * seq, timestamp }. We attach the same `_meta` block the Redis path
+     * uses so client-side gap detection sees identical sequencing
+     * regardless of which transport carried the frame.
+     *
+     * Handler errors are caught + metered (handler_error). PeerMessaging
+     * auto-acks at-least-once envelopes regardless, so a throw here does
+     * NOT trigger a sender retry — emit the metric so we can alert on
+     * silent fan-out drops.
+     */
+    _handlePeerChannelMessage(channel, ctx) {
+        try {
+            const payload = (ctx && ctx.payload) || {};
+            const fromNode = payload.fromNode || (ctx && ctx.from) || null;
+
+            // Skip self-loops: a node should never receive its own broadcast.
+            // (PeerMessaging supports loopback — be defensive.)
+            if (fromNode && fromNode === this.nodeManager.nodeId) {
+                return;
+            }
+
+            const inner = (payload.message !== undefined) ? payload.message : payload;
+            const messageWithMeta = (typeof inner === 'object' && inner !== null)
+                ? { ...inner, _meta: { seq: payload.seq, nodeId: fromNode, timestamp: payload.timestamp } }
+                : { data: inner, _meta: { seq: payload.seq, nodeId: fromNode, timestamp: payload.timestamp } };
+
+            this.broadcastToLocalChannel(channel, messageWithMeta, payload.excludeClientId || null);
+
+            // Notify interceptors (e.g. CRDT service applies remote updates
+            // to local Y.Doc) — mirror the Redis path's behavior.
+            for (const [, callback] of this.channelMessageInterceptors) {
+                try {
+                    callback(channel, payload.message, fromNode);
+                } catch (interceptorErr) {
+                    this.logger.error('Channel message interceptor error (peer path):', interceptorErr);
+                }
+            }
+
+            this.logger.debug && this.logger.debug(
+                `peer-receive: fanned out channel ${channel} from ${fromNode}`,
+                { seq: payload.seq },
+            );
+
+            try {
+                // eslint-disable-next-line global-require
+                const m = require('../observability/metrics');
+                if (m && typeof m.recordPeerReceivedOk === 'function') {
+                    m.recordPeerReceivedOk();
+                }
+            } catch (_metricsErr) { /* metrics optional */ }
+        } catch (err) {
+            this.logger.error && this.logger.error(
+                `peer-receive: handler error on channel ${channel}`,
+                { error: err && err.message, stack: err && err.stack },
+            );
+            try {
+                // eslint-disable-next-line global-require
+                const m = require('../observability/metrics');
+                if (m && typeof m.recordPeerReceivedHandlerError === 'function') {
+                    m.recordPeerReceivedHandlerError();
+                }
+            } catch (_metricsErr) { /* metrics optional */ }
         }
     }
 
@@ -903,6 +1103,10 @@ class MessageRouter {
                 }
             }
         }
+
+        // DC-PIPELINE-7: drop peer-receive handlers so we don't leak
+        // listeners or fire callbacks against a torn-down router.
+        this.detachPeerMessaging();
 
         this.localClients.clear();
         this.subscribedChannels.clear();

@@ -143,6 +143,16 @@ class DistributedWebSocketServer {
 
         this.logger.info('✅ Session service initialized');
 
+        // DC-PIPELINE-7 receive side: when ownership routing is enabled, the
+        // RoomOwnershipService singleton lazy-bootstraps the cluster and
+        // surfaces a PeerMessaging instance. We attach it to message-router
+        // so peer-addressed `wsg.channel.<channel>` envelopes from other
+        // nodes fan out to local subscribers (instead of being silently
+        // auto-acked by PeerMessaging). The bootstrap is fire-and-forget;
+        // attach is idempotent so a hot-reload or repeated init won't double
+        // register handlers.
+        this._attachPeerMessagingWhenReady();
+
         // Initialize services
         await this.initializeServices();
         
@@ -944,6 +954,55 @@ class DistributedWebSocketServer {
                 res.end(JSON.stringify({ error: 'request aborted' }));
             } catch (_) { /* connection already closed */ }
         });
+    }
+
+    /**
+     * Resolve the RoomOwnershipService singleton (which lazy-bootstraps
+     * the gateway cluster when WSG_ENABLE_OWNERSHIP_ROUTING=true) and
+     * attach its PeerMessaging instance to message-router for receive-side
+     * channel fan-out (DC-PIPELINE-7).
+     *
+     * Fire-and-forget: bootstrap can take seconds (waitForConvergence) and
+     * we must not block server initialize(). When the flag is off, the
+     * singleton is the NullRoomOwnershipService whose getPeerMessaging()
+     * returns null — we log + skip.
+     *
+     * MessageRouter.attachPeerMessaging() is idempotent and backfills
+     * handlers for channels already locally subscribed at attach time, so
+     * any client subscribing during the bootstrap window is covered.
+     */
+    _attachPeerMessagingWhenReady() {
+        // eslint-disable-next-line global-require
+        const { getRoomOwnershipService } = require('./services/room-ownership-service');
+        Promise.resolve()
+            .then(() => getRoomOwnershipService({ logger: this.logger }))
+            .then((svc) => {
+                const peerMessaging = svc && typeof svc.getPeerMessaging === 'function'
+                    ? svc.getPeerMessaging()
+                    : null;
+                if (!peerMessaging) {
+                    this.logger.debug && this.logger.debug(
+                        'PeerMessaging unavailable (ownership routing disabled or older distributed-core); peer receive-side fan-out skipped',
+                    );
+                    return;
+                }
+                if (!this.messageRouter || typeof this.messageRouter.attachPeerMessaging !== 'function') {
+                    this.logger.warn && this.logger.warn(
+                        'message-router missing attachPeerMessaging(); peer receive-side fan-out skipped',
+                    );
+                    return;
+                }
+                this.messageRouter.attachPeerMessaging(peerMessaging);
+                this.logger.info(
+                    '✅ Peer-addressed channel receive-side fan-out wired (DC-PIPELINE-7)',
+                );
+            })
+            .catch((err) => {
+                this.logger.warn && this.logger.warn(
+                    'Failed to attach PeerMessaging for receive-side fan-out',
+                    { error: err && err.message },
+                );
+            });
     }
 
     async cleanup() {

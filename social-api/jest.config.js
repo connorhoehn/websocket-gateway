@@ -16,6 +16,11 @@ module.exports = {
     '<rootDir>/src/**/*.test.ts',
   ],
   testEnvironment: 'node',
+  // Per-worker setup. Sets the env vars that distributed-core v0.6.3's
+  // IS_TEST_ENV check + our PIPELINE_TEST_FAST_MODE flag read at
+  // bootstrap time so the cluster comes up with fast timers + log
+  // suppression by default.
+  setupFiles: ['<rootDir>/jest.setup.js'],
   transform: {
     '^.+\\.tsx?$': [
       // ts-jest is hoisted to the workspace root.
