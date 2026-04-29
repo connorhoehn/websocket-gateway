@@ -690,6 +690,21 @@ export class MockExecutor {
     };
     this.cancelHooks.add(cancelStream);
 
+    // DC-14 parity: emit `stream.opened` before the first token so the LLM
+    // node lights up with the "stream open — waiting…" indicator. The mock's
+    // `perToken` jitter mirrors the open-but-no-tokens window the real
+    // distributed-core executor surfaces.
+    this.emit('pipeline.llm.stream.opened', {
+      runId: this.runId,
+      stepId,
+      model: data.model,
+      openedAt: nowISO(),
+    });
+    // Small delay so the indicator is visible at all (otherwise the first
+    // token frequently lands within the same microtask and the visual flips
+    // straight to "streaming…"). Capped to perToken so streams don't slow.
+    await this.sleep(Math.min(perToken * 2, 250));
+
     const streamStart = Date.now();
     for (const token of tokens) {
       if (streamCancelled || this.cancelled) break;

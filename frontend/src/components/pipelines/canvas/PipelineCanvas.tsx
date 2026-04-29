@@ -46,6 +46,7 @@ import { colors } from '../../../constants/styles';
 import AnimatedEdge from './edges/AnimatedEdge';
 import QuickInsertPopover from './QuickInsertPopover';
 import { autoArrange } from './autoArrange';
+import { PALETTE_ITEMS } from './NodePalette';
 
 // ---------------------------------------------------------------------------
 // Keyboard helpers (lifted from `useReplayKeyboard.ts` so the canvas honours
@@ -478,15 +479,62 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
   );
 
   // Toggle MiniMap / Controls via the [M] and [C] keys per §18.4.3.
+  // Also wires the 1-8 palette shortcut (matches the visible kbd badges
+  // on each NodePalette item; PALETTE_ITEMS owns the order).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isEditableTarget(e.target)) return;
-      if (e.key === 'm' || e.key === 'M') setShowMiniMap((x) => !x);
-      if (e.key === 'c' || e.key === 'C') setShowControls((x) => !x);
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'm' || e.key === 'M') {
+        setShowMiniMap((x) => !x);
+        return;
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        setShowControls((x) => !x);
+        return;
+      }
+      // 1-8 palette shortcut — insert at canvas center.
+      if (/^[1-8]$/.test(e.key)) {
+        const idx = Number(e.key) - 1;
+        const entry = PALETTE_ITEMS[idx];
+        if (!entry) return;
+        // Single-instance types (today: only `trigger`) are skipped when
+        // already placed.
+        if (
+          entry.type === 'trigger' &&
+          definition?.nodes.some((n) => n.type === 'trigger')
+        ) {
+          return;
+        }
+        // Insert at the visible canvas center, then settle a few px to the
+        // right of any existing node at the same position so consecutive
+        // shortcuts don't pile up.
+        const container = containerRef.current;
+        const rect = container?.getBoundingClientRect();
+        const center = rect
+          ? screenToFlowPosition({
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+            })
+          : { x: 0, y: 0 };
+        // Stagger by 24px down/right for each existing node within ~16px of
+        // the center so back-to-back inserts don't visually overlap.
+        let { x, y } = center;
+        if (definition) {
+          for (const n of definition.nodes) {
+            if (Math.abs(n.position.x - x) < 16 && Math.abs(n.position.y - y) < 16) {
+              x += 24;
+              y += 24;
+            }
+          }
+        }
+        addNode(entry.type, { x, y });
+        e.preventDefault();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [addNode, definition, screenToFlowPosition]);
 
   // ── Canvas keyboard navigation (a11y) ─────────────────────────────────
   //

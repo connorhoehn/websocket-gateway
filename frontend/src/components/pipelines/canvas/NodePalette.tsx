@@ -70,6 +70,14 @@ const CATEGORIES: PaletteCategory[] = [
   },
 ];
 
+/**
+ * Flat ordered list of palette items in the same order they appear in the
+ * sidebar. The 1-8 keyboard shortcut maps `digit (key - 1)` → this array.
+ * Exported so PipelineCanvas can import it without re-flattening categories.
+ */
+export const PALETTE_ITEMS: ReadonlyArray<{ type: NodeType; name: string }> =
+  CATEGORIES.flatMap((c) => c.items.map((i) => ({ type: i.type, name: i.name })));
+
 const containerStyle: CSSProperties = {
   width: 220,
   flexShrink: 0,
@@ -204,6 +212,10 @@ export default function NodePalette({ disabledTypes = [] }: NodePaletteProps) {
               {cat.items.map((item) => {
                 const isDisabled = disabledSet.has(item.type);
                 const isHovered = hoveredType === item.type && !isDisabled;
+                // Map back to the flat ordered list to compute the 1-8 shortcut
+                // digit so the visible number always matches the keyboard.
+                const flatIdx = PALETTE_ITEMS.findIndex((p) => p.type === item.type);
+                const shortcutDigit = flatIdx >= 0 && flatIdx < 9 ? flatIdx + 1 : null;
                 const style: CSSProperties = {
                   ...cardBaseStyle,
                   cursor: isDisabled ? 'not-allowed' : 'grab',
@@ -218,7 +230,13 @@ export default function NodePalette({ disabledTypes = [] }: NodePaletteProps) {
                     onMouseEnter={() => setHoveredType(item.type)}
                     onMouseLeave={() => setHoveredType(null)}
                     style={style}
-                    title={isDisabled ? `${item.name} is already placed` : item.description}
+                    title={
+                      isDisabled
+                        ? `${item.name} is already placed`
+                        : shortcutDigit
+                          ? `${item.description} — press ${shortcutDigit}`
+                          : item.description
+                    }
                     data-node-type={item.type}
                     data-disabled={isDisabled || undefined}
                   >
@@ -241,9 +259,33 @@ export default function NodePalette({ disabledTypes = [] }: NodePaletteProps) {
                           fontWeight: 600,
                           color: '#0f172a',
                           textDecoration: isDisabled ? 'line-through' : 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
                         }}
                       >
-                        {item.name}
+                        <span>{item.name}</span>
+                        {shortcutDigit !== null && (
+                          <kbd
+                            data-testid={`palette-shortcut-${item.type}`}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                              color: '#64748b',
+                              background: '#f1f5f9',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: 4,
+                              padding: '0 5px',
+                              lineHeight: '14px',
+                              minWidth: 14,
+                              textAlign: 'center',
+                              opacity: isDisabled ? 0.5 : 1,
+                            }}
+                          >
+                            {shortcutDigit}
+                          </kbd>
+                        )}
                       </div>
                       <div
                         style={{

@@ -1350,7 +1350,7 @@ export default function PipelinesPage() {
           <div
             role="group"
             aria-labelledby="pipelines-status-label"
-            style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}
+            style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', flexShrink: 0 }}
           >
             {STATUS_KEYS.map((s) => {
               const active = statusExplicit

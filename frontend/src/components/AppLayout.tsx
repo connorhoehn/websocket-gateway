@@ -16,6 +16,7 @@ import { usePresenceContext } from '../contexts/PresenceContext';
 
 import { ConnectionStatus } from './ConnectionStatus';
 import { CollapsibleSidebar } from './CollapsibleSidebar';
+import { CollapsedIconStrip } from './CollapsedIconStrip';
 import { ReactionsOverlay } from './ReactionsOverlay';
 import { ErrorDisplay } from './ErrorDisplay';
 import { ErrorPanel } from './ErrorPanel';
@@ -217,9 +218,13 @@ function AppLayoutInner({
   const [showShortcuts, setShowShortcuts] = useState(false);
   // Video call docked to sidebar — persists across document navigation
   const [dockedVideoDocId, setDockedVideoDocId] = useState<string | null>(null);
-  // Collapsible left sidebar
+  // Collapsible left sidebar — collapsed state shows a 56px icon strip,
+  // not a fully-hidden surface (the previous behavior left the main content
+  // edge-to-edge with only an overlay hamburger as the entry point).
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const SIDEBAR_WIDTH = sidebarOpen ? 260 : 0;
+  const SIDEBAR_COLLAPSED_WIDTH = 56;
+  const SIDEBAR_OPEN_WIDTH = 260;
+  const SIDEBAR_WIDTH = sidebarOpen ? SIDEBAR_OPEN_WIDTH : SIDEBAR_COLLAPSED_WIDTH;
 
   const { rooms } = useRooms({ idToken: idToken!, onMessage });
 
@@ -632,31 +637,17 @@ function AppLayoutInner({
       {/* Body — sidebar + main */}
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 53px)' }}>
 
-        {/* Sidebar toggle button — visible when sidebar is collapsed */}
-        {!sidebarOpen && (
-          <button
-            onClick={() => setSidebarOpen(true)}
-            style={{
-              position: 'fixed', top: 60, left: 8, zIndex: 41,
-              width: 28, height: 28, borderRadius: 6,
-              border: '1px solid #e2e8f0', background: '#fff',
-              cursor: 'pointer', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 14, color: '#64748b',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-            }}
-            title="Open sidebar"
-          >{'\u2630'}</button>
-        )}
-
-        {/* Sidebar */}
+        {/* Sidebar — full when open; 56px icon strip when collapsed.
+            Always visible, full-height, persistent. Replaces the previous
+            display:none + overlay hamburger pattern. */}
         <div
           style={{
-            width: 260,
+            width: SIDEBAR_WIDTH,
             flexShrink: 0,
-            padding: '1rem',
+            padding: sidebarOpen ? '1rem' : '0.5rem 0',
             borderRight: '1px solid #e2e8f0',
             background: '#ffffff',
-            display: sidebarOpen ? 'flex' : 'none',
+            display: 'flex',
             flexDirection: 'column',
             position: 'fixed',
             top: 53,
@@ -665,27 +656,38 @@ function AppLayoutInner({
             overflowY: 'auto',
             zIndex: 40,
             boxSizing: 'border-box',
+            transition: 'width 0.18s ease, padding 0.18s ease',
           }}
         >
-          <CollapsibleSidebar
-            connectionState={connectionState}
-            onDisconnect={onDisconnect}
-            onReconnect={onReconnect}
-            onCollapse={() => setSidebarOpen(false)}
-            presenceUsers={presenceUsers}
-            currentClientId={currentClientId ?? ''}
-            currentChannel={currentChannel}
-            activityEvents={activityEvents}
-            userId={userId}
-            documents={documents}
-            onOpenDocument={(id: string) => {
-              navigate(`/documents/${id}`);
-            }}
-            pipelines={pipelineIndex}
-            onOpenPipeline={(id: string) => navigate(`/pipelines/${id}`)}
-            onSeeAllPipelines={() => navigate('/pipelines')}
-            videoSlot={dockedVideoDocId ? <div id="sidebar-video-slot" /> : undefined}
-          />
+          {sidebarOpen ? (
+            <CollapsibleSidebar
+              connectionState={connectionState}
+              onDisconnect={onDisconnect}
+              onReconnect={onReconnect}
+              onCollapse={() => setSidebarOpen(false)}
+              presenceUsers={presenceUsers}
+              currentClientId={currentClientId ?? ''}
+              currentChannel={currentChannel}
+              activityEvents={activityEvents}
+              userId={userId}
+              documents={documents}
+              onOpenDocument={(id: string) => {
+                navigate(`/documents/${id}`);
+              }}
+              pipelines={pipelineIndex}
+              onOpenPipeline={(id: string) => navigate(`/pipelines/${id}`)}
+              onSeeAllPipelines={() => navigate('/pipelines')}
+              videoSlot={dockedVideoDocId ? <div id="sidebar-video-slot" /> : undefined}
+            />
+          ) : (
+            <CollapsedIconStrip
+              connectionState={connectionState}
+              onExpand={() => setSidebarOpen(true)}
+              onPipelines={() => navigate('/pipelines')}
+              onObservability={() => navigate('/observability')}
+              onDocuments={() => navigate('/documents')}
+            />
+          )}
         </div>
 
         {/* Main content — offset by fixed sidebar width */}
@@ -693,10 +695,13 @@ function AppLayoutInner({
           style={{
             marginLeft: SIDEBAR_WIDTH,
             width: `calc(100% - ${SIDEBAR_WIDTH}px)`,
-            padding: '1.5rem 2rem',
+            // No top padding — the primary tab bar sits flush below the
+            // header. Horizontal/bottom padding still applies via the
+            // wrapper around the route Outlet (see below).
+            padding: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: '1.5rem',
+            gap: 0,
             minHeight: 0,
             background: '#f8fafc',
             position: 'relative',
@@ -704,11 +709,11 @@ function AppLayoutInner({
           }}
         >
 
-          {/* Primary tab bar */}
+          {/* Primary tab bar — sits flush against the 53px header. */}
           {(() => {
             const inContent = activeView === 'doc-editor' || activeView === 'doc-types' || activeView === 'field-types';
             return (
-              <div style={{ position: 'sticky', top: 53, background: '#f8fafc', zIndex: 33 }}>
+              <div style={{ position: 'sticky', top: 53, background: '#f8fafc', zIndex: 33, padding: '0 2rem' }}>
                 {/* Main tabs */}
                 <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
                   {([
@@ -890,12 +895,16 @@ function AppLayoutInner({
             );
           })()}
 
-          {/* Route content — rendered by React Router */}
-          <ErrorBoundary name="RouteContent">
-            <Suspense fallback={<div>Loading...</div>}>
-              <Outlet context={{ dockedVideoDocId, setDockedVideoDocId } satisfies DockVideoContext} />
-            </Suspense>
-          </ErrorBoundary>
+          {/* Route content — rendered by React Router. Wrapped in a
+              padded container so the tab bar above stays flush to the
+              header but the page content below has breathing room. */}
+          <div style={{ padding: '1rem 2rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, minHeight: 0 }}>
+            <ErrorBoundary name="RouteContent">
+              <Suspense fallback={<div>Loading...</div>}>
+                <Outlet context={{ dockedVideoDocId, setDockedVideoDocId } satisfies DockVideoContext} />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
 
           {/* Docked-video document — stays mounted across navigation to preserve IVS connection.
               Only rendered when user is NOT on the docked doc's route; otherwise the primary
