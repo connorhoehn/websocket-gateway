@@ -542,6 +542,16 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       }
     : undefined;
 
+  // Stream 5 (BusMetrics): thread the gateway's MetricsRegistry singleton into
+  // the pipeline EventBus so bus-level activity (publish/subscribe/replay)
+  // surfaces on /internal/metrics. Default ON — the EventBus counters are
+  // cheap and useful by default. Set PIPELINE_EVENT_BUS_METRICS_ENABLED=false
+  // to opt out.
+  const eventBusMetricsEnabled =
+    (process.env.PIPELINE_EVENT_BUS_METRICS_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+  logger.info(
+    eventBusMetricsEnabled ? 'EventBus metrics ENABLED' : 'EventBus metrics DISABLED',
+  );
   const module = new PipelineModule(
     buildPipelineModuleConfig({
       nodeId,
@@ -551,6 +561,7 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       ...(eventBusDeadLetterHandler ? { eventBusDeadLetterHandler } : {}),
       eventBusAutoCompactIntervalMs: effectiveAutoCompactIntervalMs,
       eventBusAutoCompactOptions: effectiveAutoCompactOptions,
+      ...(eventBusMetricsEnabled ? { eventBusMetrics: metricsRegistry } : {}),
     }),
   );
 
