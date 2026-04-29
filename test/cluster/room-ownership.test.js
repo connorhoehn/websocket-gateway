@@ -227,38 +227,54 @@ describe('RoomOwnershipService — single-node bootstrap', () => {
         bootstrap = null;
     });
 
-    it('shutdown order: primary node.stop → rebalanceManager.stop → clusterHandle.stop', async () => {
+    it('shutdown order: clusterManager.stop → rebalanceManager.stop → cluster.stop', async () => {
+        // Phase 3 (2026-04-28): the size === 1 path migrated from
+        // createCluster() (multi-node front-door, returns ClusterHandle) to
+        // Cluster.create() (single-process facade, returns Cluster). The
+        // facade has no `getNode(N)` API — that was a multi-node-only
+        // construct. The user-visible shutdown ordering invariant is
+        // preserved: stop the LEAVING-emitter first (now `clusterManager`,
+        // formerly `primaryHandle`), brief delay, stop our externally-owned
+        // RebalanceManager, then call `cluster.stop()` to tear down the
+        // rest. We assert the same property: peers see LEAVING before our
+        // local manager goes silent.
         const order = [];
-        const primary = bootstrap.clusterHandle.getNode(0);
+        const cluster = bootstrap.cluster;
+        expect(cluster).not.toBeNull();
+        const clusterManager = cluster.clusterManager;
 
-        const origNodeStop = primary.stop.bind(primary);
+        const origCmStop = clusterManager.stop.bind(clusterManager);
         const origRMStop = bootstrap.rebalanceManager.stop.bind(bootstrap.rebalanceManager);
-        const origClusterStop = bootstrap.clusterHandle.stop.bind(bootstrap.clusterHandle);
+        const origClusterStop = cluster.stop.bind(cluster);
 
-        jest.spyOn(primary, 'stop').mockImplementation(async (...args) => {
-            order.push('node');
-            return origNodeStop(...args);
+        jest.spyOn(clusterManager, 'stop').mockImplementation(async (...args) => {
+            order.push('clusterManager');
+            return origCmStop(...args);
         });
         jest.spyOn(bootstrap.rebalanceManager, 'stop').mockImplementation(async (...args) => {
             order.push('rebalanceManager');
             return origRMStop(...args);
         });
-        jest.spyOn(bootstrap.clusterHandle, 'stop').mockImplementation(async (...args) => {
-            order.push('clusterHandle');
+        jest.spyOn(cluster, 'stop').mockImplementation(async (...args) => {
+            order.push('cluster');
             return origClusterStop(...args);
         });
 
         await bootstrap.shutdown();
         bootstrap = null; // already torn down
 
-        const nodeIdx = order.indexOf('node');
+        // Find the FIRST occurrence of each phase. clusterManager.stop()
+        // gets called twice — once explicitly in phase 1 (our shutdown),
+        // and a second time inside `cluster.stop()` (idempotent). We care
+        // about the first call's position relative to the others.
+        const cmIdx = order.indexOf('clusterManager');
         const rmIdx = order.indexOf('rebalanceManager');
-        const clusterIdx = order.indexOf('clusterHandle');
+        const clusterIdx = order.indexOf('cluster');
 
-        expect(nodeIdx).toBeGreaterThanOrEqual(0);
+        expect(cmIdx).toBeGreaterThanOrEqual(0);
         expect(rmIdx).toBeGreaterThanOrEqual(0);
         expect(clusterIdx).toBeGreaterThanOrEqual(0);
-        expect(nodeIdx).toBeLessThan(rmIdx);
+        expect(cmIdx).toBeLessThan(rmIdx);
         expect(rmIdx).toBeLessThan(clusterIdx);
     });
 });

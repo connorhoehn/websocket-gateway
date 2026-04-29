@@ -1,36 +1,66 @@
 // cluster/cluster-bootstrap.js
 /**
- * Gateway-side cluster bootstrap (Wave 4b W1).
+ * Gateway-side cluster bootstrap.
  *
- * Wires distributed-core's CRDT entity registry + RebalanceManager + ResourceRouter
- * for the websocket-gateway process. This is the *cluster substrate* — it does
- * not (yet) hook into message-router or presence-service. Wave 4c does that.
+ * Phase 3 (April 2026): migrated the **size === 1** (single-process / production)
+ * path from `createCluster()` (multi-node test front-door, returns ClusterHandle)
+ * to `Cluster.create()` (single-process facade, returns Cluster). The
+ * `size > 1` path is test-only and continues to use `createCluster()` for
+ * the 2-node integration test that depends on `clusterHandle.getNode(N)`.
+ *
+ * What the facade gives us "for free" vs. the previous wiring:
+ *   - `cluster.scope('rooms')` (v0.5.7+) — namespaced lock / resource IDs
+ *     for RoomOwnershipService to drop down to in a follow-up PR.
+ *   - `cluster.snapshot()` (v0.4.0+) — postmortem aggregator.
+ *   - `cluster.lock` — DistributedLock factory we no longer hand-wire.
+ *   - Single `metrics:` config field — was per-primitive plumbing.
+ *
+ * What the facade does NOT do (and we still wire ourselves):
+ *   - RebalanceManager — distributed-core v0.6.7's facade does not own a
+ *     RebalanceManager. We construct one against `cluster.router` +
+ *     `cluster.clusterManager` and start it with `seedOwnership: true` (M11).
+ *   - PeerMessaging — non-Raft facade does not auto-construct PeerMessaging.
+ *     We construct one against `cluster.clusterManager.transport` so
+ *     message-router can do peer-addressed delivery (DC-PIPELINE-7).
+ *   - Stop-first-then-delay-then-teardown shutdown order. The facade's
+ *     `cluster.stop()` runs the right sequence internally, but it does the
+ *     LEAVING-emit + the rest atomically. We need peers to observe LEAVING
+ *     and reclaim our resources BEFORE we silence our own RebalanceManager,
+ *     so we still drive the phases ourselves: clusterManager.stop() →
+ *     delay → rebalanceManager.stop() → cluster.stop().
+ *
+ * The bootstrap return shape is preserved verbatim so existing callers
+ * (RoomOwnershipService, message-router, server.js) need NO changes:
+ *   { registry, rebalanceManager, router, clusterHandle, nodeId,
+ *     peerMessaging, presenceRegistry, cluster (NEW), shutdown }
  *
  * Behind a feature flag (`WSG_ENABLE_OWNERSHIP_ROUTING`). When the flag is off
  * (default), `bootstrapGatewayCluster()` returns `null` so callers can
  * idempotently call it without conditionals.
  *
- * Construction order (matches the verified pattern in
- * social-api/src/__tests__/cluster-verification/ownership-events.test.ts):
+ * Construction order (size === 1, facade path):
  *   1. Resolve nodeId (optionally persisted via loadOrCreateNodeId).
- *   2. createCluster({ size, transport, autoStart, nodes: [{ id }] }).
- *   3. waitForConvergence(5_000).
- *   4. Per-node: EntityRegistryFactory.create({ type: 'crdt', nodeId,
- *        crdtOptions: { tombstoneTTLMs } }).
- *   5. ResourceRouter wired against that registry with HashPlacement.
- *   6. RebalanceManager(router, cluster).
+ *   2. Cluster.create({ nodeId, topic, pubsub: 'memory', transport, registry: 'crdt' }).
+ *   3. cluster.start() — facade brings up transport / pubsub / registry /
+ *      clusterManager / router / lock / autoReclaim in the correct order.
+ *   4. RebalanceManager(router, clusterManager, { metrics, ... }) — external.
+ *   5. PeerMessaging(nodeId, clusterManager.transport, clusterManager) — external.
+ *   6. Optional secondary CRDT registry for presence shadow-writes (L2).
+ *   7. rebalanceManager.start({ seedOwnership: true }).
  *
- * Shutdown is *stop-first-then-teardown* (the inverse of distributed-core's
- * own example, which has it backwards for consumers needing `ownership:lost`):
- *   1. node.stop()  — emits LEAVING; peers react.
+ * Shutdown is *stop-first-then-teardown* (same user-visible behaviour as
+ * the pre-Phase-3 implementation):
+ *   1. cluster.clusterManager.stop() — emits LEAVING; peers reclaim our
+ *      resources, our RebalanceManager observes and emits `ownership:lost`.
  *   2. brief delay (`WSG_TEARDOWN_DELAY_MS`, default 50ms).
- *   3. rebalanceManager.stop() / router.stop() / registry.stop().
- *   4. clusterHandle.stop() — full cluster teardown.
+ *   3. rebalanceManager.stop() / peerMessaging.stop() / presenceRegistry.stop().
+ *   4. cluster.stop() — facade tears down router → lock → registry →
+ *      pubsub → transport. clusterManager.stop() is idempotent on the
+ *      second call inside cluster.stop().
  *
  * @group cluster
  */
 
-const path = require('path');
 const Logger = require('../utils/logger');
 
 /**
@@ -108,9 +138,10 @@ function isFastTestModeEnabled() {
 }
 
 /**
- * Distributed-core fast-timer overrides for use in tests. These match
- * `FixtureCluster`'s test defaults from DC v0.6.3 (commit 82f4782) so the
- * gateway's bootstrap behaves identically to DC's own fixtures under jest.
+ * Distributed-core fast-timer overrides for `createCluster()` (size > 1
+ * test path). These match `FixtureCluster`'s test defaults from DC v0.6.3
+ * (commit 82f4782) so the gateway's bootstrap behaves identically to DC's
+ * own fixtures under jest.
  *
  * Returned object is shaped for `createCluster({ nodeDefaults })` —
  * distributed-core's Node ctor reads gossipInterval / joinTimeout /
@@ -136,14 +167,31 @@ function fastTimerNodeDefaults() {
 }
 
 /**
+ * Failure-detection overrides for `Cluster.create()` (size === 1 facade
+ * path). The facade exposes `failureDetection: { heartbeatMs, deadTimeoutMs,
+ * activeProbing }` — different field shape from `nodeDefaults` above, but
+ * same intent: shrink jest's wait on `cluster.start()` / `stop()` so we
+ * don't sit on the prod 1s / 6s timers during a unit test.
+ *
+ * Mirrors the social-api precedent in `social-api/src/pipeline/bootstrap.ts`.
+ */
+function fastFailureDetection() {
+    return {
+        heartbeatMs: 100,
+        deadTimeoutMs: 600,
+        activeProbing: true,
+    };
+}
+
+/**
  * Lazily resolves the gateway's shared MetricsRegistry singleton from
- * src/observability/metrics.js. Threaded into distributed-core's ResourceRouter
- * and RebalanceManager so their internal counters
- * (resource.claim.count, resource.release.count, rebalance.triggered.count, ...)
- * land on the same /internal/metrics scrape surface as the gateway's own
- * shadow Prometheus metrics. Returns null on any failure — callers MUST
- * tolerate a missing registry (DC's primitives accept `metrics?: ...` and
- * skip emission when null).
+ * src/observability/metrics.js. Threaded into the facade's `metrics:`
+ * field (single-config metrics threading, v0.6.5+) so distributed-core's
+ * ResourceRouter and DistributedLock land their counters on the same
+ * /internal/metrics scrape surface as the gateway's own shadow Prometheus
+ * metrics. Returns null on any failure — callers MUST tolerate a missing
+ * registry (DC's primitives accept `metrics?: ...` and skip emission when
+ * null).
  *
  * @param {object} opts — bootstrap options; honors `opts.metrics` as an
  *   explicit override (caller-supplied registry instance), and
@@ -192,7 +240,8 @@ function delay(ms) {
  * @param {number} [opts.teardownDelayMs]
  * @param {object} [opts.logger] — Logger-compatible instance
  * @returns {Promise<null | {
- *   registry, rebalanceManager, router, clusterHandle, nodeId, peerMessaging, shutdown
+ *   registry, rebalanceManager, router, clusterHandle, nodeId, peerMessaging,
+ *   presenceRegistry, cluster, shutdown
  * }>}
  */
 async function bootstrapGatewayCluster(opts = {}) {
@@ -219,9 +268,303 @@ async function bootstrapGatewayCluster(opts = {}) {
         return null;
     }
 
+    const transport = resolveTransport(opts);
+    const size = resolveSize(opts);
+    const tombstoneTTLMs = resolveTombstoneTtl(opts);
+    const identityFile = resolveIdentityFile(opts);
+    const teardownDelayMs = resolveTeardownDelay(opts);
+    const fastTimers = isFastTestModeEnabled();
+
+    // Shared MetricsRegistry (the gateway's /internal/metrics surface).
+    // Threaded into the facade's `metrics:` config (v0.6.5+) for the
+    // size === 1 path so ResourceRouter / DistributedLock counters land
+    // automatically. The size > 1 path threads it into RebalanceManager
+    // + ResourceRouter explicitly (legacy plumbing).
+    const metrics = resolveMetricsRegistry(opts, logger);
+
+    // Branch on `size`:
+    //   - size === 1 (production)  → Cluster.create() facade.
+    //   - size  >  1 (test-only)   → createCluster() multi-node front-door.
+    // The 2-node integration test (`test/cluster/room-ownership.test.js`'s
+    // 2-node describe block) depends on `clusterHandle.getNode(N)`, which
+    // is a multi-node-only API. Single-process production deployments use
+    // size === 1 exclusively — that's where the facade's ergonomics matter.
+    if (size === 1) {
+        return bootstrapViaFacade({
+            opts, logger, transport, tombstoneTTLMs, identityFile,
+            teardownDelayMs, fastTimers, metrics,
+        });
+    }
+    return bootstrapViaCreateCluster({
+        opts, logger, transport, size, tombstoneTTLMs, identityFile,
+        teardownDelayMs, fastTimers, metrics,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// size === 1: Cluster.create() facade path
+// ---------------------------------------------------------------------------
+
+async function bootstrapViaFacade({
+    opts, logger, transport, tombstoneTTLMs, identityFile,
+    teardownDelayMs, fastTimers, metrics,
+}) {
     // Lazy-require so test environments without distributed-core compiled
-    // can still load this module (e.g. for the smoke test with the flag off
-    // — though we already returned above in that case).
+    // can still load this module (e.g. for the smoke test with the flag off).
+    const {
+        Cluster,
+        RebalanceManager,
+        PeerMessaging,
+        EntityRegistryFactory,
+        loadOrCreateNodeId,
+        HashPlacement,
+    } = require('distributed-core');
+
+    // -----------------------------------------------------------------
+    // 1. Resolve nodeId (persistent or ephemeral). Cluster.create()
+    //    requires `nodeId`, so resolution happens before construction.
+    // -----------------------------------------------------------------
+    let resolvedNodeId = opts.nodeId;
+    if (!resolvedNodeId && identityFile) {
+        try {
+            resolvedNodeId = await loadOrCreateNodeId(identityFile);
+        } catch (err) {
+            logger.warn(`loadOrCreateNodeId failed for ${identityFile}; falling back to ephemeral id`, {
+                error: err && err.message,
+            });
+            resolvedNodeId = undefined;
+        }
+    }
+    // Ephemeral fallback: same convention loadOrCreateNodeId uses internally,
+    // so the visible format is consistent across paths.
+    const nodeId = resolvedNodeId || `wsg-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+
+    // -----------------------------------------------------------------
+    // 2. Build the Cluster facade. Transport: env-var-driven; defaults
+    //    in-memory for single-process. The `WSG_CLUSTER_TRANSPORT=tcp`
+    //    (etc.) escape hatch survives the migration intact.
+    // -----------------------------------------------------------------
+    const transportConfig = transport === 'in-memory'
+        ? { type: 'in-memory' }
+        : { type: transport };
+
+    const clusterConfig = {
+        nodeId,
+        topic: `wsg-rooms-${nodeId}`, // per-node topic so two bootstraps in the
+                                       // same process don't cross-talk on the
+                                       // in-memory pubsub fabric.
+        pubsub: { type: 'memory' },    // single-process today; multi-node will
+                                       // flip to 'redis' (Phase 4).
+        transport: transportConfig,
+        // The facade's `crdt` registry mode replaces the manual
+        // EntityRegistryFactory.create({ type: 'crdt', ... }) we used to do
+        // alongside the legacy front-door.
+        registry: { type: 'crdt', crdtOptions: { tombstoneTTLMs } },
+        // Single-config metrics threading (v0.6.5+). The facade forwards this
+        // into ResourceRouter and DistributedLock automatically. Our
+        // externally-constructed RebalanceManager threads it separately below.
+        ...(metrics ? { metrics } : {}),
+        // Fast-timer overrides for test mode (mirrors social-api precedent).
+        ...(fastTimers ? { failureDetection: fastFailureDetection() } : {}),
+        // No `logger` — facade defaults to NOOP_LOGGER, which is what we
+        // want. Test-mode noise reduction is handled by the `logger` we
+        // constructed in the parent function (which scopes to OUR own logs).
+    };
+
+    const cluster = await Cluster.create(clusterConfig);
+    await cluster.start();
+
+    // -----------------------------------------------------------------
+    // 3. RebalanceManager — external; the v0.6.7 facade does not own one.
+    //    Wire it against `cluster.router` + `cluster.clusterManager`.
+    // -----------------------------------------------------------------
+    const router = cluster.router;
+    const registry = cluster.registry;
+    const clusterManager = cluster.clusterManager;
+
+    // NB: under v0.6.7 the facade always wires LocalPlacement on its router.
+    // We wanted HashPlacement historically (room-id → node hash). For Phase 3
+    // we accept the facade default to keep the migration mechanical; the
+    // placement-strategy decision is logged here as a known difference and
+    // a TODO for Phase 4 (when multi-node lands and placement actually
+    // matters). With size === 1 there is exactly one node, so all placement
+    // strategies pick it.
+    void HashPlacement; // explicit unused — see TODO above
+
+    const rebalanceManager = new RebalanceManager(router, clusterManager, {
+        // 0 disables the periodic timer in tests so jest doesn't wait on it
+        // during teardown; production gets the DC default (30s).
+        ...(fastTimers ? { autoRebalanceIntervalMs: 0 } : {}),
+        // RebalanceManager records `rebalance.triggered.count{reason}` and
+        // `rebalance.duration_ms{reason}` when this is set.
+        ...(metrics ? { metrics } : {}),
+    });
+
+    // -----------------------------------------------------------------
+    // 4. PeerMessaging — external; the v0.6.7 facade only auto-constructs
+    //    PeerMessaging for Raft-mode registries (we use CRDT). We use it
+    //    on the gateway for peer-addressed channel delivery (DC-PIPELINE-7).
+    //    Construct against `clusterManager.transport` — that's the same
+    //    transport the facade wired internally, so PeerMessaging shares
+    //    membership + transport with everything else.
+    // -----------------------------------------------------------------
+    let peerMessaging = null;
+    try {
+        peerMessaging = new PeerMessaging(nodeId, clusterManager.transport, clusterManager);
+        peerMessaging.start();
+    } catch (err) {
+        // Defensive: if PeerMessaging construction or start fails we want
+        // ownership routing to still work — the gateway's message-router
+        // path falls back to Redis pub/sub when peerMessaging is null.
+        logger.warn && logger.warn(
+            'PeerMessaging construction/start failed; falling back to null (Redis pub/sub still works)',
+            { error: err && err.message },
+        );
+        peerMessaging = null;
+    }
+
+    // -----------------------------------------------------------------
+    // Optional secondary registry for presence shadow-writes (L2 work,
+    // unchanged from pre-Phase-3). When `WSG_PRESENCE_REGISTRY_ENABLED=true`,
+    // construct a separate CRDT registry pinned to the same nodeId but with
+    // a much shorter tombstone TTL (presence churn is high). PresenceService
+    // uses this as a shadow-write secondary path; reads still come from its
+    // in-memory map. Default: null (the flag is off, byte-identical
+    // pre-Phase-3 behaviour).
+    // -----------------------------------------------------------------
+    let presenceRegistry = null;
+    const presenceRegistryEnabled = String(process.env.WSG_PRESENCE_REGISTRY_ENABLED || '').trim().toLowerCase() === 'true';
+    if (presenceRegistryEnabled) {
+        presenceRegistry = EntityRegistryFactory.create({
+            type: 'crdt',
+            nodeId,
+            crdtOptions: { tombstoneTTLMs: 60_000 },
+        });
+        try {
+            await presenceRegistry.start();
+            logger.info && logger.info('Presence shadow-write registry started', { nodeId });
+        } catch (err) {
+            logger.warn && logger.warn('presenceRegistry.start() failed; disabling shadow-writes', {
+                error: err && err.message,
+            });
+            presenceRegistry = null;
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // 5. Start the RebalanceManager last, with seedOwnership.
+    //
+    //    M11 (DC v0.4.0): seedOwnership pre-populates the manager's
+    //    ownerCache from the registry on start, so the first observed
+    //    migration carries a non-null `previousOwnerId`. The default in
+    //    `RebalanceManager.start()` is `seedOwnership: false` (verified
+    //    against distributed-core/src/cluster/topology/RebalanceManager.ts
+    //    `RebalanceManagerStartOptions` — "Default: false") so we MUST
+    //    pass it explicitly here. Also: the facade's `cluster.start()`
+    //    does not start a RebalanceManager (it doesn't own one), so we
+    //    are not double-starting anything.
+    // -----------------------------------------------------------------
+    await rebalanceManager.start({ seedOwnership: true });
+
+    logger.info && logger.info('Gateway cluster bootstrap complete (Cluster.create facade)', {
+        nodeId,
+        transport,
+        size: 1,
+        tombstoneTTLMs,
+        identityFile: identityFile || '(ephemeral)',
+        peerMessaging: peerMessaging ? 'enabled' : 'disabled',
+    });
+
+    let shuttingDown = false;
+    /**
+     * Stop-first-then-teardown shutdown order. Same user-visible behaviour
+     * as the pre-Phase-3 implementation: peers observe LEAVING and reclaim
+     * our resources BEFORE we silence our local RebalanceManager.
+     *
+     *   1. clusterManager.stop()   — emits LEAVING; peers see it. Our
+     *                                 RebalanceManager observes the
+     *                                 resulting `resource:migrated` events
+     *                                 and emits `ownership:lost` for
+     *                                 anything we still owned.
+     *   2. small delay (configurable via WSG_TEARDOWN_DELAY_MS).
+     *   3. rebalanceManager.stop() — local listeners drop.
+     *   4. peerMessaging.stop()    — local listeners drop.
+     *   5. presenceRegistry.stop() — if wired.
+     *   6. cluster.stop()          — facade tears down router → lock →
+     *                                 clusterManager (idempotent on the
+     *                                 second call) → registry → pubsub →
+     *                                 transport.
+     */
+    async function shutdown() {
+        if (shuttingDown) return;
+        shuttingDown = true;
+
+        logger.info && logger.info('Cluster shutdown: phase 1 — clusterManager.stop() (LEAVING gossip)', { nodeId });
+        try {
+            await clusterManager.stop();
+        } catch (err) {
+            logger.warn && logger.warn('clusterManager.stop() failed', { error: err && err.message });
+        }
+
+        await delay(teardownDelayMs);
+
+        logger.info && logger.info('Cluster shutdown: phase 2 — tearing down local services', { nodeId });
+        try { await rebalanceManager.stop(); } catch (err) {
+            logger.warn && logger.warn('rebalanceManager.stop() failed', { error: err && err.message });
+        }
+        if (peerMessaging) {
+            try { peerMessaging.stop(); } catch (err) {
+                logger.warn && logger.warn('peerMessaging.stop() failed', { error: err && err.message });
+            }
+        }
+        if (presenceRegistry) {
+            try { await presenceRegistry.stop(); } catch (err) {
+                logger.warn && logger.warn('presenceRegistry.stop() failed', { error: err && err.message });
+            }
+        }
+
+        logger.info && logger.info('Cluster shutdown: phase 3 — cluster.stop() (facade teardown)', { nodeId });
+        try { await cluster.stop(); } catch (err) {
+            logger.warn && logger.warn('cluster.stop() failed', { error: err && err.message });
+        }
+    }
+
+    return {
+        registry,
+        rebalanceManager,
+        router,
+        // Backwards-compat alias: pre-Phase-3 callers (and the
+        // shutdown-ordering test) reach into `bootstrap.clusterHandle`. With
+        // the facade migration `clusterHandle` IS the Cluster instance.
+        // Tests that called `clusterHandle.getNode(N)` only run on size > 1
+        // (the createCluster path); callers that need `.scope()` /
+        // `.snapshot()` use the explicit `cluster` field below.
+        clusterHandle: cluster,
+        nodeId,
+        peerMessaging,
+        presenceRegistry,
+        // NEW in Phase 3: expose the Cluster instance directly so a
+        // follow-up RoomOwnershipService refactor (DC-FR-3) can grab
+        // `cluster.scope('rooms')` for namespaced resource IDs.
+        cluster,
+        shutdown,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// size > 1: createCluster() multi-node test path
+// ---------------------------------------------------------------------------
+//
+// Preserved verbatim from the pre-Phase-3 implementation. Used exclusively by
+// `test/cluster/room-ownership.test.js`'s 2-node describe block, which
+// constructs a second observer service against `clusterHandle.getNode(1)` —
+// a multi-node-only API not exposed by Cluster.create(). No production
+// deployment runs with size > 1.
+
+async function bootstrapViaCreateCluster({
+    opts, logger, transport, size, tombstoneTTLMs, identityFile,
+    teardownDelayMs, fastTimers, metrics,
+}) {
     const {
         createCluster,
         EntityRegistryFactory,
@@ -231,25 +574,6 @@ async function bootstrapGatewayCluster(opts = {}) {
         loadOrCreateNodeId,
     } = require('distributed-core');
 
-    const transport = resolveTransport(opts);
-    const size = resolveSize(opts);
-    const tombstoneTTLMs = resolveTombstoneTtl(opts);
-    const identityFile = resolveIdentityFile(opts);
-    const teardownDelayMs = resolveTeardownDelay(opts);
-
-    // Shared MetricsRegistry (the gateway's /internal/metrics surface). When
-    // present, distributed-core's primitives (ResourceRouter / RebalanceManager)
-    // record counters/histograms onto it: resource.claim.count{result},
-    // resource.release.count, resource.transfer.count, resource.orphaned.count,
-    // rebalance.triggered.count{reason}, rebalance.duration_ms{reason}, plus
-    // the resource.claim.latency_ms histogram and resource.local.gauge.
-    // Falls back to null in environments without the observability module
-    // (DC primitives short-circuit on null — see ResourceRouter.metrics?? path).
-    const metrics = resolveMetricsRegistry(opts, logger);
-
-    // -----------------------------------------------------------------
-    // 1. Resolve nodeId (persistent or ephemeral).
-    // -----------------------------------------------------------------
     let primaryNodeId = opts.nodeId;
     if (!primaryNodeId && identityFile) {
         try {
@@ -262,25 +586,12 @@ async function bootstrapGatewayCluster(opts = {}) {
         }
     }
 
-    // -----------------------------------------------------------------
-    // 2. Build the cluster. For size=1 we pass an explicit node config so
-    //    we can pin our resolved id; for size>1 we still allow node[0]
-    //    to be the gateway and the rest to be placeholders (mostly only
-    //    useful in tests).
-    // -----------------------------------------------------------------
     const nodes = [];
     if (size >= 1) {
         nodes.push(primaryNodeId ? { id: primaryNodeId } : {});
         for (let i = 1; i < size; i++) nodes.push({});
     }
 
-    // Fast-timer overrides: only when running under jest (and the operator
-    // hasn't opted out via WSG_TEST_FAST_MODE=false). Production paths get
-    // distributed-core's own defaults (1s gossip / 5s join / 6s deadTimeout).
-    // Threading via `nodeDefaults` is the v0.6.3 API — DC's Node ctor reads
-    // gossipInterval / joinTimeout / failureDetector / lifecycle and
-    // `logging: false` quiets per-node FrameworkLogger + transport adapters.
-    const fastTimers = isFastTestModeEnabled();
     const nodeDefaults = fastTimers ? fastTimerNodeDefaults() : undefined;
 
     const clusterHandle = await createCluster({
@@ -291,32 +602,17 @@ async function bootstrapGatewayCluster(opts = {}) {
         ...(nodeDefaults ? { nodeDefaults } : {}),
     });
 
-    // Convergence wait scales with the join timeout — in fast mode we can
-    // afford a much shorter ceiling because join itself is bounded at 500ms.
     const convergenceTimeoutMs = fastTimers ? 1000 : 5000;
     const converged = await clusterHandle.waitForConvergence(convergenceTimeoutMs);
     if (!converged) {
         logger.warn(`Cluster did not fully converge within ${convergenceTimeoutMs}ms; continuing best-effort`);
     }
 
-    // -----------------------------------------------------------------
-    // 3. Wire the *primary* (index-0) node's registry/router/manager.
-    //    Multi-node bootstraps are typically test-only; we only return
-    //    one set of services because the gateway process owns one node.
-    // -----------------------------------------------------------------
     const primaryHandle = clusterHandle.getNode(0);
     const nodeId = primaryHandle.id;
     const cluster = primaryHandle.getCluster();
-    // distributed-core v0.4.3+: each NodeHandle exposes a PeerMessaging
-    // dispatcher that's started automatically by Node.start(). We surface
-    // it on the bootstrap return so message-router can use peer-addressed
-    // delivery for cross-node room ownership routing (DC-PIPELINE-7).
-    // Defensive: older builds may not expose `.peer` — fall back to null.
     const peerMessaging = primaryHandle.peer || null;
 
-    // CRITICAL: option key is `crdtOptions`, NOT `options`. The factory
-    // silently ignores unknown keys, so passing `options:` would leave us
-    // on the default "tombstones forever" path.
     const registry = EntityRegistryFactory.create({
         type: 'crdt',
         nodeId,
@@ -325,36 +621,13 @@ async function bootstrapGatewayCluster(opts = {}) {
 
     const router = new ResourceRouter(nodeId, registry, cluster, {
         placement: new HashPlacement(),
-        // Optional. When non-null, ResourceRouter increments
-        // `resource.claim.count{result}`, `resource.release.count`,
-        // `resource.transfer.count`, `resource.orphaned.count`, observes
-        // `resource.claim.latency_ms`, and sets `resource.local.gauge`.
         ...(metrics ? { metrics } : {}),
     });
 
     const rebalanceManager = new RebalanceManager(router, cluster, {
-        // Optional. When non-null, RebalanceManager increments
-        // `rebalance.triggered.count{reason}` and observes
-        // `rebalance.duration_ms{reason}` for each dispatched rebalance trigger
-        // (manual, member-joined, member-left, interval, topology-recommendation).
         ...(metrics ? { metrics } : {}),
-        // Keep the periodic timer active — gateway runs are long-lived; the
-        // membership-driven path covers most cases but periodic ticks let
-        // skewed placements catch up. The default in distributed-core is
-        // sane; we only override here if the operator asks.
     });
 
-    // -----------------------------------------------------------------
-    // Optional secondary registry for presence shadow-writes.
-    //
-    // When `WSG_PRESENCE_REGISTRY_ENABLED=true`, we construct a *second*
-    // CrdtEntityRegistry pinned to the same nodeId but with a much shorter
-    // tombstone TTL (presence churn is high — clients connect/disconnect
-    // frequently and stale tombstones bloat memory). PresenceService uses
-    // this as a shadow-write secondary path; reads still come from its
-    // in-memory map. Default: undefined (the flag is off and this path
-    // does not execute, preserving byte-identical behaviour).
-    // -----------------------------------------------------------------
     let presenceRegistry = null;
     const presenceRegistryEnabled = String(process.env.WSG_PRESENCE_REGISTRY_ENABLED || '').trim().toLowerCase() === 'true';
     if (presenceRegistryEnabled) {
@@ -378,13 +651,9 @@ async function bootstrapGatewayCluster(opts = {}) {
             presenceRegistry = null;
         }
     }
-    // M11 (distributed-core v0.4.0): seedOwnership pre-populates the manager's
-    // ownerCache from the wired registry on start, so the first observed
-    // migration carries a non-null `previousOwnerId`. Without this, router-only
-    // setups would see `previousOwnerId === null` until the cache built lazily.
     await rebalanceManager.start({ seedOwnership: true });
 
-    logger.info && logger.info('Gateway cluster bootstrap complete', {
+    logger.info && logger.info('Gateway cluster bootstrap complete (createCluster size>1)', {
         nodeId,
         transport,
         size,
@@ -393,28 +662,12 @@ async function bootstrapGatewayCluster(opts = {}) {
     });
 
     let shuttingDown = false;
-    /**
-     * Stop-first-then-teardown shutdown order.
-     *
-     *   1. primary node.stop() — emits LEAVING; peers see it and reclaim
-     *      our resources, which lets *our* RebalanceManager observe and
-     *      emit `ownership:lost`. If we tore down the manager first, the
-     *      manager's listeners would be gone before the LEAVING propagates
-     *      and we'd silently miss the loss event.
-     *   2. small delay (configurable via WSG_TEARDOWN_DELAY_MS).
-     *   3. rebalanceManager.stop() → router.stop() → registry.stop().
-     *   4. clusterHandle.stop() to clean up any other nodes (in tests).
-     */
     async function shutdown() {
         if (shuttingDown) return;
         shuttingDown = true;
 
         logger.info && logger.info('Cluster shutdown: phase 1 — stopping primary node (LEAVING gossip)', { nodeId });
         try {
-            // Don't await graceful drain (~5s); we just need the LEAVING
-            // broadcast to land. The handle's stop() resolves quickly enough
-            // for the gossip layer's purposes; we still await to surface
-            // catastrophic errors.
             await primaryHandle.stop();
         } catch (err) {
             logger.warn && logger.warn('primary node.stop() failed', { error: err && err.message });
@@ -452,6 +705,10 @@ async function bootstrapGatewayCluster(opts = {}) {
         nodeId,
         peerMessaging,
         presenceRegistry,
+        // size > 1 path doesn't have a Cluster facade instance; expose null
+        // so downstream code (RoomOwnershipService follow-up) can null-check
+        // and fall back to legacy plumbing in test scenarios.
+        cluster: null,
         shutdown,
     };
 }
@@ -469,5 +726,6 @@ module.exports = {
         isTestEnv,
         isFastTestModeEnabled,
         fastTimerNodeDefaults,
+        fastFailureDetection,
     },
 };
