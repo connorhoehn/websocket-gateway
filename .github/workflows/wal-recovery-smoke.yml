@@ -46,52 +46,38 @@ jobs:
     # each boot at STARTUP_TIMEOUT=60s.
     timeout-minutes: 5
     steps:
-      # social-api/package.json declares `distributed-core` as a path-dep
-      # (`file:../../distributed-core`), so the sibling repo MUST be checked
-      # out alongside this one for `npm ci` to succeed. We mirror the
-      # on-disk layout the dev workflow expects: parent/{websocket-gateway,
-      # distributed-core}.
-      - name: Checkout websocket-gateway
-        uses: actions/checkout@v4
-        with:
-          path: websocket-gateway
-
-      - name: Checkout distributed-core (path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/distributed-core
-          path: distributed-core
-          # The path-dep in social-api consumes the prebuilt `dist/`
-          # output. Pinning to main is fine for a smoke test — if the
-          # smoke breaks because distributed-core's main moved, the
-          # signal we want IS exactly that.
-          ref: main
+      # `distributed-core` is now a git-URL dep (`git+https://github.com/
+      # connorhoehn/distributed-core.git#vX.Y.Z`) — npm fetches the pinned
+      # tag at install time and runs its `prepare` script to build dist/.
+      # We just need GitHub auth for the private repo; see the rewrite
+      # step below.
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: websocket-gateway/social-api/package-lock.json
+          cache-dependency-path: social-api/package-lock.json
 
-      # distributed-core ships `dist/` in-repo (consumers consume the
-      # compiled output, not the TS sources). If a future consumer change
-      # ever lands that requires a build, this is where we'd run it.
-      # Today: no-op, kept here as a placeholder for visibility.
-      - name: Verify distributed-core dist is present
-        working-directory: distributed-core
+      # See ci.yml for the full rationale on this rewrite. distributed-core
+      # is a private repo; without a token-bearing HTTPS URL, npm ci fails
+      # on the lockfile's git+ssh resolved field.
+      - name: Configure git for private DC dep
+        env:
+          DC_TOKEN: ${{ secrets.DC_REPO_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          if [ ! -d dist ]; then
-            echo "::error::distributed-core/dist/ missing — smoke can't run"
+          if [ -z "$DC_TOKEN" ]; then
+            echo "::error::Neither DC_REPO_TOKEN nor GITHUB_TOKEN is available — cannot fetch private distributed-core dep"
             exit 1
           fi
-          test -f dist/index.js || (echo "::error::dist/index.js missing" && exit 1)
+          git config --global url."https://x-access-token:${DC_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${DC_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Install social-api deps
-        working-directory: websocket-gateway/social-api
+        working-directory: social-api
         run: npm ci
 
       - name: Make smoke script executable
-        working-directory: websocket-gateway
         run: chmod +x scripts/wal-recovery-smoke.sh
 
       # The script writes its own "FAIL: <what was expected vs what was
@@ -99,7 +85,6 @@ jobs:
       # so a failed run shows actionable detail in the GHA log without
       # any extra plumbing here.
       - name: Run WAL recovery smoke
-        working-directory: websocket-gateway
         env:
           # Pin a generous startup timeout for ts-node-dev cold compile in
           # CI (the default 60s in the script is already conservative; this

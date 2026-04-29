@@ -7,6 +7,35 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
+      # `distributed-core` is a private sibling repo pinned via git URL.
+      # npm normalizes the lockfile's `resolved` field to git+ssh which CI
+      # can't fetch (no SSH key). Two-pronged fix:
+      #   1. Rewrite ssh://git@github.com/ → https://x-access-token:${TOKEN}@github.com/
+      #   2. Provide TOKEN via the DC_REPO_TOKEN secret (a PAT with read
+      #      access to connorhoehn/distributed-core). Falls back to
+      #      GITHUB_TOKEN, which works only if the workflow has been granted
+      #      cross-repo read at the org level.
+      - name: Configure git for private DC dep
+        env:
+          DC_TOKEN: ${{ secrets.DC_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$DC_TOKEN" ]; then
+            echo "::error::Neither DC_REPO_TOKEN nor GITHUB_TOKEN is available — cannot fetch private distributed-core dep"
+            exit 1
+          fi
+          # Multiple insteadOf rewrites because npm's hosted-git-info
+          # normalizes GitHub URLs to several forms and uses ssh:// for
+          # ls-remote even when the spec is git+https://. `--add` is
+          # essential — without it each call overwrites the previous one
+          # and only the last rule survives.
+          REWRITE="https://x-access-token:${DC_TOKEN}@github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "ssh://git@github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "git@github.com:"
+          git config --global --add url."${REWRITE}".insteadOf "https://github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "git://github.com/"
+          # Sanity-check all 4 rules survived the --add calls.
+          rule_count=$(git config --global --get-all url."${REWRITE}".insteadOf | wc -l | tr -d ' ')
+          [ "$rule_count" -eq 4 ] || (echo "::error::expected 4 git rewrite rules, got $rule_count"; exit 1)
       - run: cd frontend && npm ci && npx tsc --noEmit
       - run: cd social-api && npm ci && npx tsc --noEmit
       - run: npm ci && node --check src/server.js # syntax check
@@ -17,5 +46,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # gateway image is built from src/package*.json (no private deps) —
+      # plain build is fine.
       - run: docker build -t gateway:test .
-      - run: docker build -t social-api:test social-api/
+      # social-api consumes the private distributed-core git-URL dep, so
+      # we pass GH_TOKEN through a BuildKit secret. The Dockerfile rewrites
+      # git URLs only during install; the token is never written into a
+      # layer of the final image.
+      - name: Build social-api image (with private DC dep)
+        env:
+          DOCKER_BUILDKIT: '1'
+          GH_TOKEN: ${{ secrets.DC_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+        run: docker build --secret id=gh_token,env=GH_TOKEN -t social-api:test social-api/
