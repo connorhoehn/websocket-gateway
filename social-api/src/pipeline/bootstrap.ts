@@ -58,7 +58,7 @@
 // getMetrics, getPendingApprovals, pipeline.run.reassigned) into WebSockets.
 
 import { Cluster, PipelineModule } from 'distributed-core';
-import type { BusEvent, LLMClient } from 'distributed-core';
+import type { BusEvent, LLMClient, EventBusCompactionOptions } from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
 import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
@@ -145,6 +145,20 @@ export interface BootstrapOptions {
    * both, RPCs are unsigned (back-compat).
    */
   raftSignerDir?: string;
+  /**
+   * Stream 4 (BusCompact): EventBus auto-compaction interval (ms). When
+   * set AND `walFilePath` is configured, the bus runs `compact()` on this
+   * interval. Overridden by PIPELINE_EVENT_BUS_COMPACT_INTERVAL_MS when
+   * not provided here. Default: undefined (no auto-compaction).
+   */
+  eventBusAutoCompactIntervalMs?: number;
+  /**
+   * Stream 4 (BusCompact): compaction options used at each tick.
+   * Overridden by PIPELINE_EVENT_BUS_COMPACT_KEEP_LAST_N when not
+   * provided here. Default: { keepLastNPerType: 100 } when an interval
+   * is set.
+   */
+  eventBusAutoCompactOptions?: EventBusCompactionOptions;
 }
 
 interface ResolvedBootstrapOptions {
@@ -158,6 +172,10 @@ interface ResolvedBootstrapOptions {
   registryMode: PipelineRegistryMode;
   raftDataDir: string | undefined;
   raftSignerDir: string | undefined;
+  // Stream 4 (BusCompact): EventBus auto-compaction config. Both undefined
+  // means the bus runs in manual-compact-only mode.
+  eventBusAutoCompactIntervalMs: number | undefined;
+  eventBusAutoCompactOptions: EventBusCompactionOptions | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +263,50 @@ function resolveOptions(opts: BootstrapOptions): ResolvedBootstrapOptions {
   // (unsigned RPCs); set to enable signing.
   const raftSignerDir = opts.raftSignerDir ?? process.env.PIPELINE_RAFT_SIGNER_DIR;
 
+  // --- Stream 4 (BusCompact) — EventBus auto-compaction tunables ---
+  //
+  // PIPELINE_EVENT_BUS_COMPACT_INTERVAL_MS controls the cadence; when unset,
+  // the bus runs no auto-compaction (manual `compact()` only).
+  //
+  // PIPELINE_EVENT_BUS_COMPACT_KEEP_LAST_N controls keepLastNPerType for
+  // the compaction options. Defaults to 100 (matches upstream EventBus
+  // default) when an interval is configured but no keep-N override is given.
+  let eventBusAutoCompactIntervalMs: number | undefined;
+  if (opts.eventBusAutoCompactIntervalMs !== undefined) {
+    eventBusAutoCompactIntervalMs = opts.eventBusAutoCompactIntervalMs;
+  } else {
+    const envInterval = process.env.PIPELINE_EVENT_BUS_COMPACT_INTERVAL_MS;
+    if (envInterval !== undefined && envInterval !== '') {
+      const parsed = Number(envInterval);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(
+          `[pipeline] PIPELINE_EVENT_BUS_COMPACT_INTERVAL_MS must be a non-negative number, got: ${envInterval}`,
+        );
+      }
+      eventBusAutoCompactIntervalMs = parsed;
+    }
+  }
+
+  let eventBusAutoCompactOptions: EventBusCompactionOptions | undefined;
+  if (opts.eventBusAutoCompactOptions !== undefined) {
+    eventBusAutoCompactOptions = opts.eventBusAutoCompactOptions;
+  } else if (eventBusAutoCompactIntervalMs !== undefined) {
+    // An interval was set but no explicit options object — read keepLastN
+    // from env (default 100) and synthesize the options.
+    const envKeepN = process.env.PIPELINE_EVENT_BUS_COMPACT_KEEP_LAST_N;
+    let keepLastN = 100;
+    if (envKeepN !== undefined && envKeepN !== '') {
+      const parsed = Number(envKeepN);
+      if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+        throw new Error(
+          `[pipeline] PIPELINE_EVENT_BUS_COMPACT_KEEP_LAST_N must be a non-negative integer, got: ${envKeepN}`,
+        );
+      }
+      keepLastN = parsed;
+    }
+    eventBusAutoCompactOptions = { keepLastNPerType: keepLastN };
+  }
+
   return {
     transport,
     basePort,
@@ -256,6 +318,8 @@ function resolveOptions(opts: BootstrapOptions): ResolvedBootstrapOptions {
     registryMode,
     raftDataDir,
     raftSignerDir,
+    eventBusAutoCompactIntervalMs,
+    eventBusAutoCompactOptions,
   };
 }
 
@@ -291,6 +355,8 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     registryMode,
     raftDataDir,
     raftSignerDir,
+    eventBusAutoCompactIntervalMs,
+    eventBusAutoCompactOptions,
   } = resolveOptions(opts);
 
   // --- Pre-flight: writability + identity ---
@@ -429,6 +495,29 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     logger.info('ResourceRegistry running in-memory (test mode or no PIPELINE_REGISTRY_WAL_PATH)');
   }
 
+  // Stream 4 (BusCompact): EventBus auto-compaction decision logging.
+  // Auto-compaction is a no-op upstream when walFilePath is undefined
+  // (compact() throws WalNotConfiguredError) — surface that to the operator
+  // so a misconfigured `INTERVAL_MS without WAL` doesn't silently degrade.
+  let effectiveAutoCompactIntervalMs: number | undefined = eventBusAutoCompactIntervalMs;
+  let effectiveAutoCompactOptions: EventBusCompactionOptions | undefined = eventBusAutoCompactOptions;
+  if (eventBusAutoCompactIntervalMs !== undefined && !walFilePath) {
+    logger.info(
+      'EventBus auto-compaction skipped: no WAL configured '
+      + '(PIPELINE_EVENT_BUS_COMPACT_INTERVAL_MS requires PIPELINE_WAL_PATH)',
+    );
+    // Don't thread through — keep the EventBus config minimal so tests that
+    // look at the underlying config don't see a vestigial interval setting.
+    effectiveAutoCompactIntervalMs = undefined;
+    effectiveAutoCompactOptions = undefined;
+  } else if (eventBusAutoCompactIntervalMs !== undefined) {
+    const keepN = eventBusAutoCompactOptions?.keepLastNPerType;
+    logger.info(
+      `EventBus auto-compaction every ${eventBusAutoCompactIntervalMs}ms `
+      + `(keepLastN=${keepN ?? 'default(100)'})`,
+    );
+  }
+
   // --- PipelineModule construction ---
   const llmClient = opts.llmClient ?? createLLMClient();
 
@@ -460,6 +549,8 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       llmClient,
       metricsRegistry,
       ...(eventBusDeadLetterHandler ? { eventBusDeadLetterHandler } : {}),
+      eventBusAutoCompactIntervalMs: effectiveAutoCompactIntervalMs,
+      eventBusAutoCompactOptions: effectiveAutoCompactOptions,
     }),
   );
 
