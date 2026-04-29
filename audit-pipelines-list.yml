@@ -1,0 +1,78 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: WebSocket Gateway
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: ⬤
+        - generic [ref=e9]: Reconnecting…
+      - generic [ref=e10]: general
+    - generic [ref=e11]:
+      - generic [ref=e12]: frank.davis@local.dev
+      - button "Sign Out" [ref=e13] [cursor=pointer]
+      - button "Open app menu" [ref=e15] [cursor=pointer]: ☰
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - button "✕" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e22]: Connecting...
+          - button "Reconnect" [ref=e24] [cursor=pointer]
+        - separator [ref=e25]
+        - generic [ref=e26]:
+          - button "▸ Channels" [ref=e27] [cursor=pointer]:
+            - generic [ref=e28]: ▸
+            - generic [ref=e29]: Channels
+          - generic [ref=e31]:
+            - generic [ref=e32]: "# general"
+            - generic [ref=e34]: No users online
+        - separator [ref=e35]
+        - generic [ref=e36]:
+          - button "▸ Activity" [ref=e37] [cursor=pointer]:
+            - generic [ref=e38]: ▸
+            - generic [ref=e39]: Activity
+          - generic [ref=e42]: No recent activity
+        - separator [ref=e43]
+        - generic [ref=e44]:
+          - button "▸ Documents" [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]: ▸
+            - generic [ref=e47]: Documents
+          - generic [ref=e50]: No documents
+        - separator [ref=e51]
+        - generic [ref=e52]:
+          - button "▸ 🔀 Pipelines" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]: ▸
+            - generic [ref=e55]: 🔀
+            - generic [ref=e56]: Pipelines
+          - generic [ref=e59]:
+            - generic [ref=e60]: No pipelines yet
+            - button "+ New" [ref=e61] [cursor=pointer]
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - button "Previews" [ref=e65] [cursor=pointer]
+          - button "Social" [ref=e66] [cursor=pointer]
+          - button "Documents" [ref=e67] [cursor=pointer]
+          - button "Pipelines" [ref=e68] [cursor=pointer]
+          - button "Observability" [ref=e69] [cursor=pointer]
+        - generic [ref=e70]:
+          - button "All pipelines" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: All pipelines
+          - button "Pending approvals" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: Pending approvals
+      - generic [ref=e76]:
+        - generic [ref=e77]:
+          - generic [ref=e78]: Pipelines
+          - generic [ref=e79]:
+            - button "☑ Select" [ref=e80] [cursor=pointer]
+            - button "Templates" [ref=e81] [cursor=pointer]
+            - button "+ New Pipeline" [ref=e82] [cursor=pointer]
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - generic [ref=e86]: 🔀
+            - generic [ref=e87]: No pipelines yet
+            - generic [ref=e88]: Design your first one — from scratch or pick a template later.
+            - button "+ New Pipeline" [ref=e89] [cursor=pointer]
+          - generic [ref=e90]:
+            - button "or try the demo pipeline" [ref=e91] [cursor=pointer]
+            - generic [ref=e92]: ·
+            - button "or browse templates" [ref=e93] [cursor=pointer]
