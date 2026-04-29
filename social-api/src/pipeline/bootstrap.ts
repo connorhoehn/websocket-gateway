@@ -63,12 +63,18 @@ import type { LLMClient } from 'distributed-core';
 import { createLLMClient } from './createLLMClient';
 import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
 import { getRegistry as getMetricsRegistry } from '../observability/metrics';
-import { buildClusterConfig, type PipelineTransportKind } from './config/cluster';
+import {
+  buildClusterConfig,
+  resolveRegistryMode,
+  type PipelineRegistryMode,
+  type PipelineTransportKind,
+} from './config/cluster';
 import { buildPipelineModuleConfig } from './config/pipelineModule';
 import { buildAppLayerRegistries } from './config/registries';
 import { resolveStableNodeId } from './config/identity';
 import { verifyWalParentWritable } from './config/walPreflight';
 import { setupHintedHandoffQueue } from './config/hintedHandoffQueue';
+import { buildRaftSigner } from './config/signer';
 
 // ---------------------------------------------------------------------------
 // Test-mode helpers
@@ -105,6 +111,37 @@ export interface BootstrapOptions {
   llmClient?: LLMClient;
   identityFile?: string;
   registryWalFilePath?: string;
+  /**
+   * Registry mode override. When set, takes precedence over the env-var
+   * resolver in `resolveRegistryMode()`. Tests use this to opt into the
+   * 'raft' branch without monkey-patching `process.env`.
+   *
+   *  - 'memory' → in-process EntityRegistry, no durability.
+   *  - 'wal'    → on-disk WAL-backed EntityRegistry. Requires
+   *               `registryWalFilePath` (or PIPELINE_REGISTRY_WAL_PATH).
+   *  - 'raft'   → cluster's EntityRegistry is RaftEntityRegistry — writes
+   *               are linearizable through consensus. Requires
+   *               `raftDataDir` (or PIPELINE_RAFT_DATA_DIR). The
+   *               ResourceRegistry's *resource-side* entity registry is
+   *               downgraded to wal-or-memory because distributed-core
+   *               HEAD's ResourceRegistry constructor can't host a Raft
+   *               entity registry (see `config/registries.ts` for the
+   *               full gap analysis).
+   */
+  registryMode?: PipelineRegistryMode;
+  /**
+   * On-disk dataDir for the Raft log + persistent state + snapshots. Only
+   * consulted when `registryMode === 'raft'`. Overridden by
+   * PIPELINE_RAFT_DATA_DIR when not provided here.
+   */
+  raftDataDir?: string;
+  /**
+   * Directory holding per-node signer keys. When set, each Raft RPC is
+   * signed with the node's private key + verified on receipt. Overridden
+   * by PIPELINE_RAFT_SIGNER_DIR when not provided here. When unset on
+   * both, RPCs are unsigned (back-compat).
+   */
+  raftSignerDir?: string;
 }
 
 interface ResolvedBootstrapOptions {
@@ -115,6 +152,9 @@ interface ResolvedBootstrapOptions {
   identityFilePath: string | undefined;
   identityExplicitlyDisabled: boolean;
   registryWalFilePath: string | undefined;
+  registryMode: PipelineRegistryMode;
+  raftDataDir: string | undefined;
+  raftSignerDir: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +223,25 @@ function resolveOptions(opts: BootstrapOptions): ResolvedBootstrapOptions {
   // behavior should run under test env or pass an empty value.
   const registryWalFilePath = resolveRegistryWalPath(opts.registryWalFilePath);
 
+  // Registry mode: opts wins over env. resolveRegistryMode() reads
+  // PIPELINE_REGISTRY_MODE; when absent, falls back to 'wal' if walPath is
+  // set, else 'memory'.
+  const registryMode: PipelineRegistryMode =
+    opts.registryMode ?? resolveRegistryMode(registryWalFilePath);
+
+  // Raft dataDir: explicit opt > env > sensible default for raft mode.
+  const raftDataDir = opts.raftDataDir
+    ?? process.env.PIPELINE_RAFT_DATA_DIR
+    ?? (registryMode === 'raft'
+      ? (process.env.NODE_ENV === 'production'
+          ? '/var/lib/social-api/raft'
+          : `/tmp/social-api-raft-${process.pid}`)
+      : undefined);
+
+  // Raft signer dir: per-node KeyManager secrets directory. Off by default
+  // (unsigned RPCs); set to enable signing.
+  const raftSignerDir = opts.raftSignerDir ?? process.env.PIPELINE_RAFT_SIGNER_DIR;
+
   return {
     transport,
     basePort,
@@ -191,6 +250,9 @@ function resolveOptions(opts: BootstrapOptions): ResolvedBootstrapOptions {
     identityFilePath,
     identityExplicitlyDisabled,
     registryWalFilePath,
+    registryMode,
+    raftDataDir,
+    raftSignerDir,
   };
 }
 
@@ -223,6 +285,9 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     identityFilePath,
     identityExplicitlyDisabled,
     registryWalFilePath,
+    registryMode,
+    raftDataDir,
+    raftSignerDir,
   } = resolveOptions(opts);
 
   // --- Pre-flight: writability + identity ---
@@ -231,6 +296,22 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   }
   if (registryWalFilePath) {
     verifyWalParentWritable(registryWalFilePath, 'PIPELINE_REGISTRY_WAL_PATH', /* disableHint */ false);
+  }
+  // Raft mode requires a writable dataDir. Create it if missing (Raft itself
+  // expects it to exist) and fail fast on permission issues so the operator
+  // sees a clear error before the cluster comes up.
+  if (registryMode === 'raft' && raftDataDir) {
+    const fs = await import('fs');
+    try {
+      fs.mkdirSync(raftDataDir, { recursive: true });
+      fs.accessSync(raftDataDir, fs.constants.W_OK);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `[pipeline] PIPELINE_RAFT_DATA_DIR (${raftDataDir}) is not writable: ${message}. `
+        + `Fix the filesystem permission or set PIPELINE_RAFT_DATA_DIR to a writable path.`,
+      );
+    }
   }
   const { nodeId, persistentNodeId } = await resolveStableNodeId(identityFilePath);
 
@@ -242,12 +323,24 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const fastTimers = isPipelineFastTestModeEnabled();
   const metricsRegistry = getMetricsRegistry();
 
+  // Build the per-node Raft signer (returns undefined unless
+  // PIPELINE_RAFT_SIGNER_DIR / opts.raftSignerDir is set). When set, every
+  // outbound Raft RPC is signed and every inbound RPC is verified using the
+  // node's KeyManager-backed key pair.
+  const raftSigner = buildRaftSigner({
+    nodeId,
+    keyManagerSecretsDir: raftSignerDir,
+  });
+
   // --- Cluster: build config → create → start ---
   const clusterConfig = buildClusterConfig({
     nodeId,
     transport,
     basePort,
+    registryMode,
     registryWalFilePath,
+    raftDataDir,
+    raftSigner,
     fastTimers,
     metricsRegistry,
   });
@@ -268,9 +361,11 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     resourceRegistry,
     topologyManager,
     moduleRegistry,
+    warnings: registryWarnings,
   } = await buildAppLayerRegistries({
     nodeId,
     clusterMgr,
+    mode: registryMode,
     registryWalFilePath,
   });
 
@@ -302,6 +397,26 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     );
   } else {
     logger.warn('WAL disabled — pipeline state is in-memory only');
+  }
+  // Registry-mode decision logging + downgrade warnings produced by
+  // buildAppLayerRegistries (notably the ResourceRegistry-can't-host-Raft
+  // downgrade documented in config/registries.ts).
+  if (registryMode === 'raft') {
+    if (raftSigner) {
+      logger.info(
+        `Raft mode active (dataDir=${raftDataDir}); RPC payload signing ENABLED via per-node KeyManager`,
+      );
+    } else {
+      logger.warn(
+        `Raft mode active (dataDir=${raftDataDir}); RPC payload signing DISABLED — `
+        + `set PIPELINE_RAFT_SIGNER_DIR to a writable directory to enable signed RPCs`,
+      );
+    }
+  } else {
+    logger.info(`Registry mode: ${registryMode}`);
+  }
+  for (const w of registryWarnings) {
+    logger.warn(w);
   }
   if (registryWalFilePath) {
     logger.info(
