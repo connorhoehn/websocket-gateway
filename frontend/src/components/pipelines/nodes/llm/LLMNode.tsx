@@ -10,13 +10,21 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import BaseNode, { type NodeExecutionState } from '../BaseNode';
 import type { LLMNodeData } from '../../../../types/pipeline';
 import { colors } from '../../../../constants/styles';
-import { useRetryFromStep } from '../../context/PipelineRunsContext';
+import { useRetryFromStep, useLatestStepForNode } from '../../context/PipelineRunsContext';
 
 interface LLMResponseInfo {
   response: string;
   tokensIn?: number;
   tokensOut?: number;
+  /** True while tokens are actively arriving (tokensOut > 0 and step still running). */
   streaming?: boolean;
+  /**
+   * True between `pipeline.llm.stream.opened` and the first token. Distinct
+   * from `streaming` — this is the open-but-no-tokens window and is the
+   * visual signal that latency is being measured. Cleared as soon as the
+   * first token lands.
+   */
+  streamOpening?: boolean;
 }
 
 type LLMData = LLMNodeData & {
@@ -72,7 +80,18 @@ function ResponseFooter({ info }: { info: LLMResponseInfo }) {
             {info.tokensIn ?? 0} → {info.tokensOut ?? 0} tokens
           </span>
         )}
-        {info.streaming && <span style={tokensLabel}>· streaming…</span>}
+        {info.streamOpening && (
+          <span
+            style={{ ...tokensLabel, color: colors.state.running }}
+            data-testid="llm-stream-opening"
+            title="LLM stream is open — waiting for the first token"
+          >
+            · stream open — waiting…
+          </span>
+        )}
+        {!info.streamOpening && info.streaming && (
+          <span style={tokensLabel}>· streaming…</span>
+        )}
       </button>
       <div
         style={{
@@ -92,7 +111,34 @@ function ResponseFooter({ info }: { info: LLMResponseInfo }) {
 
 export default function LLMNode(props: NodeProps<LLMFlowNode>) {
   const { id, data, selected } = props;
-  const state: NodeExecutionState = data._state ?? 'idle';
+
+  // Runtime step state for this node — folded from the latest run that has
+  // executed it (see useLatestStepForNode). Falls back to the static node
+  // config when no run has touched this node yet, so editor view (no runs
+  // triggered) renders as before.
+  const liveStep = useLatestStepForNode(id);
+  // StepStatus is a structural superset of NodeExecutionState — both share
+  // pending|running|completed|failed|skipped|awaiting. The only divergence is
+  // `cancelled`, which we surface as `failed` (the reducer already records
+  // it that way for run-level UI, see PipelineRunsContext.tsx step.cancelled).
+  const liveState: NodeExecutionState | undefined =
+    liveStep?.status === 'cancelled' ? 'failed' : (liveStep?.status as NodeExecutionState | undefined);
+  const state: NodeExecutionState = liveState ?? data._state ?? 'idle';
+
+  // Build a runtime LLMResponseInfo from the live step. Two visuals are
+  // distinguished:
+  //   - streamOpening: open but no tokens yet (waiting on first token)
+  //   - streaming: tokens are arriving and the step is still running
+  // Both clear when the step completes (status !== 'running').
+  const liveLlm = liveStep?.llm;
+  const isStreamOpening =
+    state === 'running' &&
+    liveLlm?.streamOpened === true &&
+    (liveLlm?.tokensOut ?? 0) === 0;
+  const isStreaming =
+    state === 'running' &&
+    liveLlm !== undefined &&
+    (liveLlm.tokensOut ?? 0) > 0;
 
   // §17.6 retry-from-here — see TriggerNode for the rationale.
   const retry = useRetryFromStep();
@@ -104,7 +150,20 @@ export default function LLMNode(props: NodeProps<LLMFlowNode>) {
     </span>
   );
 
-  const footer = data._llmResponse ? <ResponseFooter info={data._llmResponse} /> : undefined;
+  // Prefer the live response info when a run has touched this node; otherwise
+  // fall back to whatever static `_llmResponse` was stamped on the data.
+  const liveResponse: LLMResponseInfo | undefined = liveLlm
+    ? {
+        response: liveLlm.response ?? '',
+        tokensIn: liveLlm.tokensIn,
+        tokensOut: liveLlm.tokensOut,
+        streaming: isStreaming,
+        streamOpening: isStreamOpening,
+      }
+    : undefined;
+
+  const responseInfo = liveResponse ?? data._llmResponse;
+  const footer = responseInfo ? <ResponseFooter info={responseInfo} /> : undefined;
 
   const targetHandleStyle: CSSProperties = {
     background: colors.borderEmphasis, width: 10, height: 10,

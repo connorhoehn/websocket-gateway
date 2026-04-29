@@ -201,6 +201,48 @@ describe('LLMNode', () => {
     });
     expect(queryByText(/Response/i)).toBeNull();
   });
+
+  test('shows "stream open — waiting…" indicator when streamOpening is true', () => {
+    const { getByTestId, queryByText } = renderNode(LLMNode as AnyNodeComponent, {
+      type: 'llm',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      systemPrompt: '',
+      userPromptTemplate: '',
+      streaming: false,
+      _llmResponse: {
+        response: '',
+        tokensIn: 0,
+        tokensOut: 0,
+        streaming: false,
+        streamOpening: true,
+      },
+    });
+    // The "open — waiting" indicator is visible.
+    expect(getByTestId('llm-stream-opening')).toBeInTheDocument();
+    // The "streaming…" indicator is NOT visible (the two are mutually exclusive).
+    expect(queryByText(/· streaming…/)).toBeNull();
+  });
+
+  test('shows "streaming…" once tokens arrive (streamOpening cleared)', () => {
+    const { getByText, queryByTestId } = renderNode(LLMNode as AnyNodeComponent, {
+      type: 'llm',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      systemPrompt: '',
+      userPromptTemplate: '',
+      streaming: false,
+      _llmResponse: {
+        response: 'Hello',
+        tokensIn: 10,
+        tokensOut: 1,
+        streaming: true,
+        streamOpening: false,
+      },
+    });
+    expect(getByText(/· streaming…/)).toBeInTheDocument();
+    expect(queryByTestId('llm-stream-opening')).toBeNull();
+  });
 });
 
 describe('TransformNode', () => {

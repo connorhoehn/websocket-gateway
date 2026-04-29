@@ -691,3 +691,39 @@ export function useRetryFromStep(): (nodeId: string) => void {
   const ctx = useContext(PipelineRunsContext);
   return ctx?.retryFromStep ?? (() => {});
 }
+
+/**
+ * Lookup the most recent run that contains a step matching `nodeId`, and
+ * return that step. Used by per-node visuals (LLMNode etc.) to surface live
+ * runtime state on the canvas without each node having to fold over all
+ * runs itself.
+ *
+ * "Most recent" is defined as max(run.startedAt). Active runs are NOT
+ * preferred over completed — the visual is the *latest observed* state of
+ * this node, regardless of whether the run is still running. The streaming
+ * indicators rely on freshness anyway: streamOpened is cleared on the
+ * first token and never re-set, so a stale streamOpened from a completed
+ * run would imply the run never received its first token (which is
+ * accurate state to render).
+ *
+ * Returns null when no run has executed this node yet (the common case
+ * for nodes that haven't run, or for the editor view when no run has been
+ * triggered).
+ */
+export function useLatestStepForNode(nodeId: string): StepExecution | null {
+  const ctx = useContext(PipelineRunsContext);
+  return useMemo(() => {
+    if (!ctx) return null;
+    let latest: StepExecution | null = null;
+    let latestStartedAt = '';
+    for (const run of Object.values(ctx.runs)) {
+      const step = run.steps[nodeId];
+      if (!step) continue;
+      if (run.startedAt > latestStartedAt) {
+        latest = step;
+        latestStartedAt = run.startedAt;
+      }
+    }
+    return latest;
+  }, [ctx, nodeId]);
+}
