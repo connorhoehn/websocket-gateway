@@ -309,7 +309,7 @@ class MessageRouter {
      * Send a message to a specific channel with intelligent routing
      */
     async sendToChannel(channel, message, excludeClientId = null) {
-        // ---- Wave 4c step 1: owner-aware routing scaffolding (flag-gated) ----
+        // ---- Wave 4c step 2: owner-aware routing (flag-gated) ----------------
         // The env-var pre-check below is the *only* code that runs on the
         // hot path when WSG_ENABLE_OWNERSHIP_ROUTING is unset/false — so the
         // flag-off behavior is byte-identical to today (no require, no
@@ -324,18 +324,15 @@ class MessageRouter {
         // flag-on simply kicks off bootstrap and falls through. Subsequent
         // calls do an O(1) Map lookup via getOwner().
         //
-        // For Wave 4c step 1 we LOG the forward intent and fall through to
-        // the existing Redis fan-out. The actual cluster.send() forwarding
-        // to the owning peer is BLOCKED on a distributed-core surface gap:
-        // the bootstrap API used by the gateway (createCluster → ClusterHandle
-        // → NodeHandle) does not expose a peer-addressed send method.
-        // PubSub is broadcast-only; Transport.send() reaches the peer but the
-        // peer's only transport listener is ClusterManager, which dispatches
-        // strictly on JOIN/GOSSIP and drops everything else. See
-        // .planning/DISTRIBUTED-CORE-INTEGRATION-SPEC.md → "DC-PIPELINE-7 —
-        // Peer-addressed send API" for the requested API shape, semantics, and
-        // the rejected alternatives. Until that lands, this branch stays
-        // log-only and the broadcast continues to Redis fan-out below.
+        // distributed-core v0.4.3 shipped peer-addressed delivery via
+        // `PeerMessaging.sendToPeer(peerId, topic, payload)`, and v0.5.1
+        // added at-least-once delivery semantics. When the resolved service
+        // exposes a PeerMessaging instance (`getPeerMessaging()`), we forward
+        // cross-node ownership messages directly to the owning peer with
+        // `deliverySemantics: 'at-least-once'` — this is the production
+        // unicast path that closes DC-PIPELINE-7. Any peer-send failure
+        // (PeerNotFoundError / PeerNotAliveError / transport throw) falls
+        // through to the Redis fan-out below so messages are NEVER dropped.
         const ownershipFlagRaw = process.env.WSG_ENABLE_OWNERSHIP_ROUTING;
         if (ownershipFlagRaw && String(ownershipFlagRaw).trim().toLowerCase() === 'true') {
             try {
@@ -343,10 +340,79 @@ class MessageRouter {
                 if (svc && svc.isEnabled && svc.isEnabled()) {
                     const ownership = svc.getOwner(channel);
                     if (ownership && ownership.isLocal === false) {
-                        this.logger.info(
-                            `owner-aware route: would forward to ${ownership.ownerId}`,
-                            { channelId: channel }
-                        );
+                        const peerMessaging = svc.getPeerMessaging && svc.getPeerMessaging();
+                        if (peerMessaging && typeof peerMessaging.sendToPeer === 'function') {
+                            // Build a topic-addressed envelope mirroring the
+                            // Redis CHANNEL_MESSAGE shape so the receiving
+                            // node's onPeerMessage handler can dispatch to
+                            // local subscribers identically. We do NOT
+                            // include `targetNodes` here — peer-send is
+                            // already point-to-point.
+                            const seq = this.getNextSequence(channel);
+                            const peerPayload = {
+                                type: this.messageTypes.CHANNEL_MESSAGE,
+                                channel,
+                                message,
+                                excludeClientId,
+                                fromNode: this.nodeManager.nodeId,
+                                seq,
+                                timestamp: new Date().toISOString(),
+                            };
+                            try {
+                                await peerMessaging.sendToPeer(
+                                    ownership.ownerId,
+                                    `wsg.channel.${channel}`,
+                                    peerPayload,
+                                    { deliverySemantics: 'at-least-once' },
+                                );
+                                // Best-effort metrics. Lazy-require so this
+                                // module remains importable in environments
+                                // (tests) that don't init the metrics layer.
+                                try {
+                                    // eslint-disable-next-line global-require
+                                    const m = require('../observability/metrics');
+                                    if (m && typeof m.recordPeerRoutedOk === 'function') {
+                                        m.recordPeerRoutedOk();
+                                    }
+                                } catch (_metricsErr) { /* metrics optional */ }
+                                this.logger.debug && this.logger.debug(
+                                    `owner-aware route: delivered to ${ownership.ownerId}`,
+                                    { channelId: channel },
+                                );
+                                // Locally also deliver to any subscribers on
+                                // THIS node — the owner is responsible for
+                                // its own local fan-out, but the sender's
+                                // locally-subscribed clients (if any) still
+                                // need the message. Mirror Redis semantics:
+                                // the publishing node gets local-broadcast
+                                // via the route channel handler; here we do
+                                // it inline.
+                                this.broadcastToLocalChannel(channel, message, excludeClientId);
+                                return;
+                            } catch (peerErr) {
+                                this.logger.warn(
+                                    `peer-send to ${ownership.ownerId} failed; falling back to Redis fan-out`,
+                                    { channelId: channel, error: peerErr && peerErr.message },
+                                );
+                                try {
+                                    // eslint-disable-next-line global-require
+                                    const m = require('../observability/metrics');
+                                    if (m && typeof m.recordPeerRoutedFallback === 'function') {
+                                        m.recordPeerRoutedFallback();
+                                    }
+                                } catch (_metricsErr) { /* metrics optional */ }
+                                // Fall through to Redis fan-out below.
+                            }
+                        } else {
+                            // Service is wired but no PeerMessaging available
+                            // (older distributed-core, or test wiring). Keep
+                            // the previous log-only behavior so we still see
+                            // intent in logs and Redis still fans out.
+                            this.logger.info(
+                                `owner-aware route: would forward to ${ownership.ownerId} (peer-send unavailable)`,
+                                { channelId: channel },
+                            );
+                        }
                     }
                 } else if (svc === undefined) {
                     // First flag-on call: kick off lazy resolution and cache

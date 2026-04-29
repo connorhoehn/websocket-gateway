@@ -25,6 +25,19 @@
 //                                 At startup we verify the parent directory of
 //                                 the chosen path is writable; if not, we
 //                                 throw before bringing the cluster up.
+//   PIPELINE_REGISTRY_WAL_PATH  — Filesystem path for the ResourceRegistry
+//                                 entity WAL. When set, the entity registry
+//                                 swaps from `'memory'` to `'wal'`, so runs
+//                                 created via `resourceRegistry.createResource`
+//                                 are journaled to disk and replayed on
+//                                 startup. Production default:
+//                                   '/var/lib/social-api/pipeline-registry-wal.log'
+//                                 Dev default:
+//                                   '/tmp/pipeline-registry-wal.log'
+//                                 Tests (NODE_ENV=test or JEST_WORKER_ID set)
+//                                 default to undefined → in-memory registry,
+//                                 keeping per-test isolation. Same parent-dir
+//                                 writability check applies.
 //   PIPELINE_IDENTITY_FILE      — Filesystem path holding this node's stable
 //                                 identity. When set, the node id is loaded
 //                                 from (or persisted to) this file via
@@ -70,6 +83,7 @@ import {
 } from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
+import { getRegistry as getMetricsRegistry } from '../observability/metrics';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -126,6 +140,15 @@ export interface BootstrapOptions {
    * and let distributed-core mint a fresh ephemeral id (a warning is logged).
    */
   identityFile?: string;
+  /**
+   * WAL file path for the ResourceRegistry's underlying entity registry. When
+   * set, the registry swaps from 'memory' to 'wal' and pipeline-run resource
+   * records survive process restart by journal replay.
+   *
+   * Overridden by PIPELINE_REGISTRY_WAL_PATH env when not provided here.
+   * When undefined (default in test mode) the registry stays in-memory.
+   */
+  registryWalFilePath?: string;
 }
 
 function resolveOptions(opts: BootstrapOptions): {
@@ -136,6 +159,7 @@ function resolveOptions(opts: BootstrapOptions): {
   walExplicitlyDisabled: boolean;
   identityFilePath: string | undefined;
   identityExplicitlyDisabled: boolean;
+  registryWalFilePath: string | undefined;
 } {
   const size = opts.size ?? Number(process.env.PIPELINE_CLUSTER_SIZE ?? '1');
   const transport = (opts.transport
@@ -213,6 +237,19 @@ function resolveOptions(opts: BootstrapOptions): {
     throw new Error(`[pipeline] PIPELINE_CLUSTER_BASE_PORT must be >= 0, got: ${basePort}`);
   }
 
+  // Registry WAL path resolution mirrors PIPELINE_WAL_PATH:
+  //   1. Explicit opts.registryWalFilePath wins.
+  //   2. Otherwise PIPELINE_REGISTRY_WAL_PATH env wins.
+  //   3. Otherwise:
+  //      - test mode (NODE_ENV=test or JEST_WORKER_ID set) → undefined,
+  //        so the registry stays 'memory' and per-test isolation holds.
+  //      - production → '/var/lib/social-api/pipeline-registry-wal.log'
+  //      - dev        → '/tmp/pipeline-registry-wal.log'
+  // We do NOT honor a 'disabled' magic value here — callers wanting
+  // hermetic memory-only behaviour should run under test env or pass an
+  // empty/undefined opts.registryWalFilePath.
+  const registryWalFilePath = resolveRegistryWalPath(opts.registryWalFilePath);
+
   return {
     size,
     transport,
@@ -221,7 +258,33 @@ function resolveOptions(opts: BootstrapOptions): {
     walExplicitlyDisabled,
     identityFilePath,
     identityExplicitlyDisabled,
+    registryWalFilePath,
   };
+}
+
+/**
+ * Resolve the ResourceRegistry WAL path, mirroring the PIPELINE_WAL_PATH
+ * resolver above. Returns `undefined` in test mode (so the registry stays
+ * in-memory and tests remain isolated). Returns a path otherwise — callers
+ * are responsible for the parent-dir writability check.
+ */
+function resolveRegistryWalPath(explicit: string | undefined): string | undefined {
+  if (explicit !== undefined && explicit !== '') {
+    return explicit;
+  }
+  const envValue = process.env.PIPELINE_REGISTRY_WAL_PATH;
+  if (envValue !== undefined && envValue !== '') {
+    return envValue;
+  }
+  // Tests must be hermetic — sharing a registry WAL across `bootstrapPipeline()`
+  // calls in the same jest run would replay stale resources and cross-contaminate
+  // the suite. Tests fall through to `undefined` → 'memory' registry.
+  if (process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined) {
+    return undefined;
+  }
+  return process.env.NODE_ENV === 'production'
+    ? '/var/lib/social-api/pipeline-registry-wal.log'
+    : '/tmp/pipeline-registry-wal.log';
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +305,7 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     walExplicitlyDisabled,
     identityFilePath,
     identityExplicitlyDisabled,
+    registryWalFilePath,
   } = resolveOptions(opts);
 
   // Verify the WAL parent directory is writable BEFORE we start the cluster.
@@ -257,6 +321,21 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
         `[pipeline] PIPELINE_WAL_PATH (${walFilePath}) is not writable: ${message}. `
         + `Fix the filesystem permission, set PIPELINE_WAL_PATH to a writable path, `
         + `or set PIPELINE_WAL_PATH=disabled to opt out.`,
+      );
+    }
+  }
+
+  // Same writability check for the registry WAL — fail fast with a clear
+  // error before the cluster comes up.
+  if (registryWalFilePath) {
+    const parentDir = path.dirname(registryWalFilePath);
+    try {
+      fs.accessSync(parentDir, fs.constants.W_OK);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `[pipeline] PIPELINE_REGISTRY_WAL_PATH (${registryWalFilePath}) is not writable: ${message}. `
+        + `Fix the filesystem permission or set PIPELINE_REGISTRY_WAL_PATH to a writable path.`,
       );
     }
   }
@@ -323,10 +402,29 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // resourceRegistry.registerResourceType() during onInitialize, so the
   // registry MUST be a real instance — the no-op stubs from the previous
   // single-node mode are gone.
-  const resourceRegistry = new ResourceRegistry({
-    nodeId,
-    entityRegistryType: 'memory',
-  });
+  //
+  // Registry mode:
+  //   - When `registryWalFilePath` is set, switch to entityRegistryType='wal'
+  //     and pass `entityRegistryConfig: { walConfig: { filePath } }`. The
+  //     option key is `walConfig` — distributed-core's
+  //     EntityRegistryFactory destructures that exact key and silently
+  //     ignores anything else (same gotcha as `crdtOptions`). On startup
+  //     `WriteAheadLogEntityRegistry` reads the file, replays each entry,
+  //     and hydrates the registry BEFORE PipelineModule.start() runs.
+  //   - When undefined (test mode), we keep `'memory'` so each test gets
+  //     a fresh, empty registry.
+  const resourceRegistry = new ResourceRegistry(
+    registryWalFilePath
+      ? {
+          nodeId,
+          entityRegistryType: 'wal',
+          entityRegistryConfig: { walConfig: { filePath: registryWalFilePath } },
+        }
+      : {
+          nodeId,
+          entityRegistryType: 'memory',
+        },
+  );
   // Start the resource registry so getResourcesByType() / createResource()
   // work as soon as the module's lifecycle reaches RUNNING. Stop is wired
   // into shutdown() below.
@@ -383,6 +481,17 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     );
   }
 
+  // Resolve the social-api MetricsRegistry singleton so distributed-core
+  // primitives that opt into `metrics?: MetricsRegistry` (e.g. EventBus,
+  // routing, lock managers) emit prometheus-style counters into the same
+  // registry that `/internal/metrics` scrapes. ResourceRegistryConfig does
+  // not currently surface a `metrics` field directly — distributed-core
+  // would silently drop it (same gotcha as `crdtOptions` / `walConfig`),
+  // so we deliberately do NOT pass it on the registry config and instead
+  // thread it via context.configuration where PipelineModule can pick it
+  // up if/when its config grows that field.
+  const metricsRegistry = getMetricsRegistry();
+
   const context: ApplicationModuleContext = {
     clusterManager:  clusterMgr as unknown as ClusterManager,
     resourceRegistry,
@@ -392,6 +501,11 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       // CRITICAL: PipelineModule.onInitialize() reads
       // context.configuration.pubsub to construct its internal EventBus.
       pubsub,
+      // Optional MetricsRegistry — `configuration` is `Record<string, any>`
+      // so this is always shape-compatible. PipelineModule reads it lazily
+      // in versions of distributed-core that opted into the v0.4.4+ metrics
+      // threading; older versions ignore the field harmlessly.
+      metrics: metricsRegistry,
     },
     logger,
   };
@@ -410,6 +524,13 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     );
   } else {
     logger.warn('WAL disabled — pipeline state is in-memory only');
+  }
+  if (registryWalFilePath) {
+    logger.info(
+      `ResourceRegistry WAL enabled at ${registryWalFilePath} — registry state will survive restart`,
+    );
+  } else {
+    logger.info('ResourceRegistry running in-memory (test mode or no PIPELINE_REGISTRY_WAL_PATH)');
   }
 
   const module = new PipelineModule({

@@ -40,6 +40,24 @@ const pipelineApprovalsTotal = registry.counter('pipeline_approvals_total', BASE
 const pipelineCancelsTotal = registry.counter('pipeline_cancels_total', BASE_LABELS, 'Pipeline runs explicitly cancelled by an operator.');
 const pipelineErrorsTotal = registry.counter('pipeline_errors_total', BASE_LABELS, 'Pipeline operations that failed (bridge throw, probe timeout, etc).');
 
+// Owner-aware routing (Wave 4c step 2 / DC-PIPELINE-7). Counts message-router
+// `sendToChannel` invocations that resolved to a non-local room owner and
+// attempted peer-addressed delivery via distributed-core's PeerMessaging.
+// Outcomes:
+//   - ok: peer-send resolved successfully.
+//   - peer_failed_fallback: peer-send threw; we fell back to Redis fan-out
+//     so the message is NOT dropped.
+const peerRoutedOk = registry.counter(
+    'gateway_message_peer_routed_count',
+    { ...BASE_LABELS, outcome: 'ok' },
+    'Owner-aware peer-addressed deliveries from message-router (per-outcome).',
+);
+const peerRoutedFailed = registry.counter(
+    'gateway_message_peer_routed_count',
+    { ...BASE_LABELS, outcome: 'peer_failed_fallback' },
+    'Owner-aware peer-addressed deliveries from message-router (per-outcome).',
+);
+
 function recordConnection(delta) {
     if (delta > 0) activeConnections.inc(delta);
     else if (delta < 0) activeConnections.dec(-delta);
@@ -81,6 +99,14 @@ function recordPipelineError() {
     pipelineErrorsTotal.inc();
 }
 
+function recordPeerRoutedOk() {
+    peerRoutedOk.inc();
+}
+
+function recordPeerRoutedFallback() {
+    peerRoutedFailed.inc();
+}
+
 // Renders the registry snapshot as Prometheus 0.0.4 text format.
 // Suitable for `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
 function renderPrometheusText() {
@@ -105,6 +131,8 @@ module.exports = {
     recordPipelineApproval,
     recordPipelineCancel,
     recordPipelineError,
+    recordPeerRoutedOk,
+    recordPeerRoutedFallback,
     renderPrometheusText,
     getRegistry,
 };

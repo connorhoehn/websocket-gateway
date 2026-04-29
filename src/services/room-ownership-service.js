@@ -46,14 +46,19 @@ class RoomOwnershipService extends EventEmitter {
      * @param {object} [deps.registry]
      * @param {object} [deps.router]
      * @param {string} [deps.nodeId]
+     * @param {object} [deps.peerMessaging] - distributed-core PeerMessaging
+     *   instance (v0.4.3+). Optional. When present, callers (e.g. message-router)
+     *   may use `getPeerMessaging()` to perform peer-addressed delivery to a
+     *   non-local owner instead of falling back to Redis pub/sub.
      * @param {object} [deps.logger]
      */
-    constructor({ rebalanceManager, registry, router, nodeId, logger } = {}) {
+    constructor({ rebalanceManager, registry, router, nodeId, peerMessaging, logger } = {}) {
         super();
         this.rebalanceManager = rebalanceManager || null;
         this.registry = registry || null;
         this.router = router || null;
         this.nodeId = nodeId || (router && router.nodeId) || null;
+        this.peerMessaging = peerMessaging || null;
         this.logger = logger || new Logger('room-ownership-service');
 
         /** @type {Map<string, string>} resourceId → ownerNodeId */
@@ -71,6 +76,15 @@ class RoomOwnershipService extends EventEmitter {
 
     isEnabled() {
         return this._enabled;
+    }
+
+    /**
+     * Returns the wired PeerMessaging instance, or null if peer-addressed
+     * delivery is not available (older distributed-core build, or service
+     * was constructed without the dep). Callers MUST null-check.
+     */
+    getPeerMessaging() {
+        return this.peerMessaging;
     }
 
     _attachListeners() {
@@ -255,6 +269,7 @@ class NullRoomOwnershipService extends EventEmitter {
         this.logger = logger || new Logger('room-ownership-service:null');
     }
     isEnabled() { return false; }
+    getPeerMessaging() { return null; }
     async claim(_roomId) { return null; }
     async release(_roomId) { /* noop */ }
     getOwner(_roomId) { return null; }
@@ -309,6 +324,7 @@ async function getRoomOwnershipService(opts = {}) {
             registry: bootstrap.registry,
             router: bootstrap.router,
             nodeId: bootstrap.nodeId,
+            peerMessaging: bootstrap.peerMessaging || null,
             logger,
         });
         // Attach the shutdown helper so callers can tear down via the service.

@@ -52,6 +52,11 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { trace, SpanStatusCode, type Span } from '@opentelemetry/api';
+import type {
+  PipelineRunSnapshot as DCPipelineRunSnapshot,
+  PendingApprovalRow as DCPendingApprovalRow,
+  PublicBusEvent,
+} from 'distributed-core';
 import { asyncHandler, NotFoundError, ValidationError } from '../middleware/error-handler';
 import { idempotency } from '../middleware/idempotency';
 import { createRateLimiter } from '../middleware/rateLimit';
@@ -162,20 +167,59 @@ const triggerRateLimiter = createRateLimiter({
 });
 
 // ---------------------------------------------------------------------------
-// Bridge contract (matches `~/Sandbox/distributed-core` PipelineModule shape).
+// Bridge contract (matches `distributed-core` PipelineModule shape).
+//
+// As of distributed-core v0.5.7 the consumer-facing types `PipelineRunSnapshot`,
+// `PendingApprovalRow`, and `PublicBusEvent` are part of DC's public surface.
+// We import them here rather than redeclare so the contract stays in sync
+// across the social-api ↔ distributed-core boundary.
+//
+// Local extension shapes (`PipelineRunSnapshot`, `BusEvent`,
+// `PendingApprovalRow`) preserve the index-signature / extra fields the
+// social-api routes and tests have always relied on (e.g. `runId` alias,
+// `pipelineId`/`message` on approvals, `at`/`version` on history events).
+// They `extends` (or wrap) the DC type so callers still type-check against
+// DC where the shapes overlap.
 // ---------------------------------------------------------------------------
 
-export interface PipelineRunSnapshot {
+/**
+ * Run snapshot consumed by social-api routes. Extends DC's public
+ * `PipelineRunSnapshot` (= `Omit<PipelineRun, 'ownerNodeId' | 'currentStepIds'>`)
+ * with a `runId` alias for the canonical `id` field — the bridge and stub
+ * routes have historically read `runId` and the resource registry exposes
+ * `applicationData.runId`, so we expose both. Index signature retained for
+ * forward-compat with future DC fields the route doesn't model.
+ */
+export interface PipelineRunSnapshot extends Omit<Partial<DCPipelineRunSnapshot>, 'status'> {
+  /**
+   * Resource-registry / bridge-side run id. Mirrors DC's `id` field on
+   * `PipelineRun` for legacy callers that read `runId`.
+   */
   runId: string;
   pipelineId?: string;
+  /**
+   * DC narrows status to a `RunStatus` enum; we widen to `string` so legacy
+   * stub branches (which set 'running'/'pending'/...) still type-check
+   * without forcing every caller to import the enum. Forward-compatible —
+   * any DC-emitted status remains a valid string.
+   */
   status?: string;
   [k: string]: unknown;
 }
 
-export interface BusEvent {
+/**
+ * History event shape consumed by the GET `/:runId/history` route. We treat
+ * DC's `PublicBusEvent` (`{ type, payload, timestamp }`) as the canonical
+ * envelope and add the optional `at` / `version` fields the route has long
+ * exposed for replay tooling. Tests pass plain `{ type, version }` shapes
+ * so `payload`/`timestamp` stay optional locally.
+ */
+export interface BusEvent<T = unknown> extends Partial<PublicBusEvent<T>> {
   type: string;
-  payload?: unknown;
+  payload?: T;
+  /** Monotonic event sequence — populated when the bus exposes a WAL. */
   version?: number;
+  /** ISO 8601 timestamp string. */
   at?: string;
   [k: string]: unknown;
 }
@@ -268,14 +312,28 @@ export interface PipelineBridgeMetrics {
 }
 
 /**
- * Mirror of distributed-core's `PendingApprovalRow`. Kept here as a local
- * shape so social-api consumers don't need to import `distributed-core` until
- * the live bridge is wired. Must stay in sync — see PIPELINES_PLAN.md §11.5.
+ * Pending-approval row consumed by the social-api approvals route.
+ *
+ * distributed-core v0.5.7 exports a public `PendingApprovalRow` shape
+ * (`runId`, `stepId`, `approvers: Approver[]`, `requiredCount`,
+ * `recordedApprovals`, `requestedAt`, `timeoutAt?`). The runtime data
+ * actually returned by `PipelineModule.getPendingApprovals()` carries
+ * additional fields the public type omits (`pipelineId`, `message`) and
+ * the social-api UI filter relies on `approvers[i].userId`. This local
+ * extension intersects DC's public shape with the extra fields callers
+ * depend on so we keep DC as the source-of-truth for the overlapping
+ * fields without losing the social-api-specific surface.
  */
-export interface PendingApprovalRow {
+export interface PendingApprovalRow
+  extends Omit<Partial<DCPendingApprovalRow>, 'approvers'> {
   runId: string;
   stepId: string;
   pipelineId: string;
+  /**
+   * Approvers the route filters on. Carries `userId` for the
+   * `?userId=` filter; `teamId`/`role` are optional metadata the
+   * dashboard renders.
+   */
   approvers: Array<{ userId: string; teamId?: string; role?: string }>;
   message?: string;
   /** ISO 8601. */

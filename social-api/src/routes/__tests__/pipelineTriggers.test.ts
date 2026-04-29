@@ -279,7 +279,7 @@ describe('GET /pipelines/:pipelineId/runs/:runId (snapshot)', () => {
 
   test('200 with snapshot when bridge returns one', async () => {
     setPipelineBridge({
-      getRun: async (runId) => ({ runId, status: 'running', steps: [] }),
+      getRun: async (runId) => ({ runId, status: 'running', steps: {} }),
       getHistory: async () => [],
       resolveApproval: async () => {},
     });

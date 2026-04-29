@@ -25,7 +25,7 @@
 // is consumed via `module.getEventBus().subscribe(...)` from the gateway-side
 // bridge in src/pipeline-bridge/pipeline-bridge.js — not here.
 
-import type { PipelineModule } from 'distributed-core';
+import type { PipelineModule, PublicBusEvent } from 'distributed-core';
 import type {
   BusEvent,
   PipelineBridge,
@@ -78,10 +78,12 @@ export function createBridge(module: PipelineModule): PipelineBridge {
     async getHistory(runId: string, fromVersion: number): Promise<BusEvent[]> {
       // Per the cross-repo contract: `getHistory` returns [] (no throw) when
       // the underlying EventBus has no walFilePath configured. PipelineModule
-      // honors that already; pass-through. Cast widens distributed-core's
-      // typed `BusEvent<T>` shape to social-api's index-signature shape.
-      const events = await module.getHistory(runId, fromVersion);
-      return events as unknown as BusEvent[];
+      // honors that already; pass-through. social-api's `BusEvent` extends
+      // DC's `PublicBusEvent`, so a structural cast is enough — DC's wider
+      // internal envelope (`id`, `sourceNodeId`, `version`, `v`) is dropped
+      // by the route, but the runtime payload carries them harmlessly.
+      const events = (await module.getHistory(runId, fromVersion)) as Array<PublicBusEvent>;
+      return events as BusEvent[];
     },
 
     async resolveApproval(runId, stepId, userId, decision, comment) {

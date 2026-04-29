@@ -82,6 +82,43 @@ function resolveSize(opts = {}) {
     return 1;
 }
 
+/**
+ * Lazily resolves the gateway's shared MetricsRegistry singleton from
+ * src/observability/metrics.js. Threaded into distributed-core's ResourceRouter
+ * and RebalanceManager so their internal counters
+ * (resource.claim.count, resource.release.count, rebalance.triggered.count, ...)
+ * land on the same /internal/metrics scrape surface as the gateway's own
+ * shadow Prometheus metrics. Returns null on any failure — callers MUST
+ * tolerate a missing registry (DC's primitives accept `metrics?: ...` and
+ * skip emission when null).
+ *
+ * @param {object} opts — bootstrap options; honors `opts.metrics` as an
+ *   explicit override (caller-supplied registry instance), and
+ *   `opts.metrics === false` to opt out entirely (used by tests that don't
+ *   want global side-effects).
+ */
+function resolveMetricsRegistry(opts = {}, logger = null) {
+    if (opts.metrics === false) return null;
+    if (opts.metrics) return opts.metrics;
+    try {
+        // Lazy require: keeps cluster-bootstrap loadable in environments where
+        // the observability module isn't on the path (e.g. minimal smoke tests).
+        // eslint-disable-next-line global-require
+        const obs = require('../observability/metrics');
+        if (obs && typeof obs.getRegistry === 'function') {
+            return obs.getRegistry();
+        }
+        return null;
+    } catch (err) {
+        if (logger && logger.debug) {
+            logger.debug('No MetricsRegistry available for cluster substrate', {
+                error: err && err.message,
+            });
+        }
+        return null;
+    }
+}
+
 function delay(ms) {
     if (!ms || ms <= 0) return Promise.resolve();
     return new Promise((r) => setTimeout(r, ms));
@@ -102,7 +139,7 @@ function delay(ms) {
  * @param {number} [opts.teardownDelayMs]
  * @param {object} [opts.logger] — Logger-compatible instance
  * @returns {Promise<null | {
- *   registry, rebalanceManager, router, clusterHandle, nodeId, shutdown
+ *   registry, rebalanceManager, router, clusterHandle, nodeId, peerMessaging, shutdown
  * }>}
  */
 async function bootstrapGatewayCluster(opts = {}) {
@@ -130,6 +167,16 @@ async function bootstrapGatewayCluster(opts = {}) {
     const tombstoneTTLMs = resolveTombstoneTtl(opts);
     const identityFile = resolveIdentityFile(opts);
     const teardownDelayMs = resolveTeardownDelay(opts);
+
+    // Shared MetricsRegistry (the gateway's /internal/metrics surface). When
+    // present, distributed-core's primitives (ResourceRouter / RebalanceManager)
+    // record counters/histograms onto it: resource.claim.count{result},
+    // resource.release.count, resource.transfer.count, resource.orphaned.count,
+    // rebalance.triggered.count{reason}, rebalance.duration_ms{reason}, plus
+    // the resource.claim.latency_ms histogram and resource.local.gauge.
+    // Falls back to null in environments without the observability module
+    // (DC primitives short-circuit on null — see ResourceRouter.metrics?? path).
+    const metrics = resolveMetricsRegistry(opts, logger);
 
     // -----------------------------------------------------------------
     // 1. Resolve nodeId (persistent or ephemeral).
@@ -178,6 +225,12 @@ async function bootstrapGatewayCluster(opts = {}) {
     const primaryHandle = clusterHandle.getNode(0);
     const nodeId = primaryHandle.id;
     const cluster = primaryHandle.getCluster();
+    // distributed-core v0.4.3+: each NodeHandle exposes a PeerMessaging
+    // dispatcher that's started automatically by Node.start(). We surface
+    // it on the bootstrap return so message-router can use peer-addressed
+    // delivery for cross-node room ownership routing (DC-PIPELINE-7).
+    // Defensive: older builds may not expose `.peer` — fall back to null.
+    const peerMessaging = primaryHandle.peer || null;
 
     // CRITICAL: option key is `crdtOptions`, NOT `options`. The factory
     // silently ignores unknown keys, so passing `options:` would leave us
@@ -190,9 +243,19 @@ async function bootstrapGatewayCluster(opts = {}) {
 
     const router = new ResourceRouter(nodeId, registry, cluster, {
         placement: new HashPlacement(),
+        // Optional. When non-null, ResourceRouter increments
+        // `resource.claim.count{result}`, `resource.release.count`,
+        // `resource.transfer.count`, `resource.orphaned.count`, observes
+        // `resource.claim.latency_ms`, and sets `resource.local.gauge`.
+        ...(metrics ? { metrics } : {}),
     });
 
     const rebalanceManager = new RebalanceManager(router, cluster, {
+        // Optional. When non-null, RebalanceManager increments
+        // `rebalance.triggered.count{reason}` and observes
+        // `rebalance.duration_ms{reason}` for each dispatched rebalance trigger
+        // (manual, member-joined, member-left, interval, topology-recommendation).
+        ...(metrics ? { metrics } : {}),
         // Keep the periodic timer active — gateway runs are long-lived; the
         // membership-driven path covers most cases but periodic ticks let
         // skewed placements catch up. The default in distributed-core is
@@ -268,6 +331,7 @@ async function bootstrapGatewayCluster(opts = {}) {
         router,
         clusterHandle,
         nodeId,
+        peerMessaging,
         shutdown,
     };
 }
