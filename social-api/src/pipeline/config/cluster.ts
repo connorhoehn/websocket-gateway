@@ -20,19 +20,9 @@ import type {
   RegistryConfig,
   ClusterFailureDetectionConfig,
   RaftConfig,
+  RaftRpcSigner,
 } from 'distributed-core';
-
-// `DEFAULT_RAFT_CONFIG` is defined in `cluster/raft/types` but NOT re-exported
-// from the top-level barrel as of distributed-core HEAD — only the *types*
-// (RaftConfig, RaftLogEntry, etc.) are. We pull the value via the subpath.
-// Tracked in the upstream tech-debt doc; ideal fix is to add the value to
-// the barrel.
-import { DEFAULT_RAFT_CONFIG } from 'distributed-core/dist/cluster/raft/types';
-
-// Subpath import for the duck-typed signer interface — RaftRpcSigner lives
-// in the rpc subdirectory and isn't barrel-exported either. KeyManager (from
-// the main barrel) satisfies this interface; see config/signer.ts.
-import type { RaftRpcSigner } from 'distributed-core/dist/cluster/raft/rpc/RaftRpcRouter';
+import { DEFAULT_RAFT_CONFIG } from 'distributed-core';
 
 // `PubSubConfig` is exported from two places in distributed-core
 // (gateway/pubsub/types and cluster/Cluster) with different shapes — the

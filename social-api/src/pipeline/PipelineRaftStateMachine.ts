@@ -41,20 +41,13 @@
 // Snapshot/restore: JSON-serializable. `exportUserState()` returns a
 // versioned envelope so a future on-disk snapshot can detect format drift.
 
-// distributed-core does not barrel-export `IRaftStateMachine` /
-// `RaftStateMachineBase`; both live under cluster/raft/state. The
-// "./dist/*" subpath in the package's `exports` map is honored by
-// node-resolution under our `module: commonjs` tsconfig, so these
-// imports resolve cleanly without the @ts-expect-error guard the
-// `distributed-core/testing` subpath needs. (Spot-checked with the
-// project tsc — no error.)
-import { RaftStateMachineBase } from 'distributed-core/dist/cluster/raft/state/RaftStateMachineBase';
+import { RaftStateMachineBase } from 'distributed-core';
 import type {
   RaftClusterConfig,
   RaftLogEntry,
   RaftSnapshot,
-} from 'distributed-core/dist/cluster/raft/types';
-import type { RunStatus } from 'distributed-core';
+  RunStatus,
+} from 'distributed-core';
 
 // ---------------------------------------------------------------------------
 // Public command + state types

@@ -12,12 +12,7 @@
 // is additive and side-effect-free w.r.t. existing dashboards.
 
 import os from 'os';
-import { MetricsRegistry } from 'distributed-core';
-// `formatPrometheus` is exported from the metrics sub-module of distributed-core
-// but is not re-exported from the top-level barrel as of v0.6.7. The wildcard
-// `./dist/*` mapping in distributed-core's package.json exports makes this
-// deep path a stable, supported entry point.
-import { formatPrometheus } from 'distributed-core/dist/monitoring/metrics/PrometheusExporter';
+import { MetricsRegistry, formatPrometheus } from 'distributed-core';
 
 const SERVICE = process.env.WSG_SERVICE_NAME || 'social-api';
 const NODE_ID = process.env.WSG_NODE_ID || os.hostname();

@@ -39,7 +39,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { KeyManager } from 'distributed-core';
-import type { RaftRpcSigner } from 'distributed-core/dist/cluster/raft/rpc/RaftRpcRouter';
+import type { RaftRpcSigner } from 'distributed-core';
 
 export interface BuildRaftSignerOptions {
   /** This node's stable identity. Used as the on-disk file prefix. */

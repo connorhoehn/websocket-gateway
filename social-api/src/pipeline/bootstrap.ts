@@ -437,82 +437,48 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     }),
   );
 
-  // Wiring choice depends on whether we're in fast/test mode:
-  //
-  // Production path → moduleRegistry.register(module, …). The registry auto-
-  // wires the 6-field ApplicationModuleContext from its own internal state
+  // Register the module with ApplicationRegistry. The registry auto-wires the
+  // 6-field ApplicationModuleContext from its own internal state
   // (clusterManager, resourceRegistry, topologyManager, moduleRegistry,
-  // configuration, logger). It also tracks module state in its dependency
-  // graph and emits 'registry:module-registered' for any observers.
+  // configuration, logger), tracks module state in its dependency graph, and
+  // emits `registry:module-registered` for any observers.
   //
-  // Test path → bypass the registry and call module.initialize(context) +
-  // module.start() directly with a quiet context. Suppresses the hardcoded
-  // '[INFO] [moduleId] …' chatter from ApplicationRegistry.createModuleContext
-  // (v0.6.3 added IS_TEST_ENV for FrameworkLogger / transport adapters but did
-  // NOT thread it into that inline logger). We give up registry-side state
-  // tracking, but no consumer depends on it — shutdown() knows to stop the
-  // module directly when it's not registry-managed.
-  if (fastTimers) {
-    const quietModuleLogger = {
-      info:  (_message: string, _meta?: unknown) => { /* suppressed */ },
-      warn:  (message: string, meta?: unknown) =>
-        console.warn(`[WARN] [${module.moduleId}] ${message}`, meta || ''),
-      error: (message: string, meta?: unknown) =>
-        console.error(`[ERROR] [${module.moduleId}] ${message}`, meta || ''),
-      debug: (_message: string, _meta?: unknown) => { /* suppressed */ },
-    };
-    const quietContext = {
-      clusterManager: clusterMgr,
-      resourceRegistry,
-      topologyManager,
-      moduleRegistry,
-      configuration: {
-        // CRITICAL: PipelineModule.onInitialize() reads
-        // context.configuration.pubsub to construct its internal EventBus.
-        pubsub,
-        metrics: metricsRegistry,
-      },
-      logger: quietModuleLogger,
-    };
-    await module.initialize(quietContext as Parameters<typeof module.initialize>[0]);
-    await module.start();
-  } else {
-    await moduleRegistry.register(module, {
-      configuration: {
-        // CRITICAL: PipelineModule.onInitialize() reads
-        // context.configuration.pubsub to construct its internal EventBus.
-        pubsub,
-        // Optional MetricsRegistry — `configuration` is `Record<string, any>`
-        // so this is always shape-compatible.
-        metrics: metricsRegistry,
-      },
-    });
-  }
+  // The previous code carried a `fastTimers` bypass that called
+  // `module.initialize() + module.start()` directly with a quiet context,
+  // purely to suppress hardcoded '[INFO] [moduleId] …' chatter from
+  // ApplicationRegistry.createModuleContext. distributed-core v0.7.2 fixed
+  // that upstream (createModuleContext now uses a noop logger when
+  // IS_TEST_ENV, which matches our test conditions exactly), so the bypass
+  // and its ~40 LOC of context-building have been removed.
+  await moduleRegistry.register(module, {
+    configuration: {
+      // CRITICAL: PipelineModule.onInitialize() reads
+      // context.configuration.pubsub to construct its internal EventBus.
+      pubsub,
+      // Optional MetricsRegistry — `configuration` is `Record<string, any>`
+      // so this is always shape-compatible.
+      metrics: metricsRegistry,
+    },
+  });
 
   // --- Coordinated shutdown ---
   //
-  // Order matters and matches the pre-Phase-3 shape:
-  //   1a. (prod) moduleRegistry.stop()  — stops every registered module in
-  //                                       reverse dependency order.
-  //   1b. (test) module.stop()          — registry isn't tracking us when
-  //                                       fastTimers is on, so we stop the
-  //                                       module directly.
-  //   2. resourceRegistry.stop()  — closes the underlying entity registry.
-  //   3. cluster.stop()           — facade tears down router → lock →
-  //                                 clusterManager → registry → pubsub →
-  //                                 transport in the correct reverse order.
+  // Order matters:
+  //   1. moduleRegistry.stop() — stops every registered module in reverse
+  //                              dependency order.
+  //   2. resourceRegistry.stop() — closes the underlying entity registry.
+  //   3. sidecars (hintedHandoff, fdBridge) — LIFO of their construction.
+  //   4. cluster.stop() — facade tears down router → lock → clusterManager
+  //                       → registry → pubsub → transport in the correct
+  //                       reverse order.
   // Any throw is logged but does not abort the rest of the chain — operators
   // need every subsystem torn down even if one stage misbehaves.
   const shutdown = async (): Promise<void> => {
     clearInterval(keepAlive);
     try {
-      if (fastTimers) {
-        await module.stop();
-      } else {
-        await moduleRegistry.stop();
-      }
+      await moduleRegistry.stop();
     } catch (err) {
-      console.error('[pipeline] module/registry stop() failed', err);
+      console.error('[pipeline] moduleRegistry.stop() failed', err);
     }
     try {
       await resourceRegistry.stop();
