@@ -3,17 +3,29 @@
 // Bootstrap that stands up an in-process distributed-core Cluster +
 // PipelineModule for the social-api service.
 //
+// Phase 3 (April 2026): migrated from the multi-node `createCluster()` test
+// front-door to the single-process `Cluster.create()` facade (DC v0.5.x/v0.6.x
+// production surface). The facade owns its own ClusterManager, PubSubManager,
+// EntityRegistry, ResourceRouter, DistributedLock, and AutoReclaimPolicy —
+// the bootstrap only has to wire the *application-layer* registries
+// (ResourceRegistry / ResourceTopologyManager / ApplicationRegistry) on top.
+//
+// What the facade gives us "for free" vs. the previous wiring:
+//   - `cluster.scope('pipeline')` (v0.5.7) — namespacing for locks/elections.
+//   - `cluster.snapshot()`        (v0.4.0) — postmortem aggregator.
+//   - `cluster.lock`              — replaces hand-wired DistributedLock.
+//   - `metrics:` config field     — single-config metrics threading
+//                                   (FR-6, v0.6.5 — accepts MetricsRegistry).
+//
 // Tunables (all read from env at call time, with safe defaults):
-//   PIPELINE_CLUSTER_SIZE       — number of nodes in this process. Default 1.
-//                                 size > 1 is for integration tests; real
-//                                 multi-process production deploys are gated
-//                                 on distributed-core gap DC-1.1 (see
-//                                 .planning/DISTRIBUTED-CORE-INTEGRATION-SPEC.md).
-//   PIPELINE_CLUSTER_TRANSPORT  — 'in-memory' | 'websocket' | 'tcp' | 'udp' |
-//                                 'http'. Default 'in-memory'.
-//   PIPELINE_CLUSTER_BASE_PORT  — Starting port for sequential allocation
-//                                 (only meaningful for non-in-memory
-//                                 transports). Default 0 (ephemeral).
+//   PIPELINE_CLUSTER_TRANSPORT  — 'in-memory' | 'tcp' | 'websocket' | 'http' |
+//                                 'udp'. Default 'in-memory'. Single-process
+//                                 deployments must use 'in-memory'; the other
+//                                 transports are reserved for the multi-node
+//                                 work in Phase 4.
+//   PIPELINE_CLUSTER_BASE_PORT  — Local bind port for non-in-memory transports.
+//                                 Default 0 (ephemeral). Ignored for
+//                                 'in-memory'.
 //   PIPELINE_WAL_PATH           — Filesystem path for the EventBus WAL. When
 //                                 set, pipeline run state survives restart.
 //                                 Default (when unset): durable on-disk WAL —
@@ -62,14 +74,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import {
-  createCluster,
+  Cluster,
   loadOrCreateNodeId,
   PipelineModule,
-  // Real registries — replace the previous no-op stubs (gaps DC-4.x closed
-  // in distributed-core v0.3.0 made these classes / their accessors part of
-  // the public surface). NodeHandle does not yet expose accessor methods for
-  // these, so we instantiate them directly from the exported classes — the
-  // same pattern used by distributed-core's own production-chat-harness.
+  // Application-layer registries — these still live above the cluster
+  // substrate. The Cluster facade owns ClusterManager / PubSubManager /
+  // EntityRegistry / ResourceRouter / DistributedLock; ResourceRegistry +
+  // ResourceTopologyManager + ApplicationRegistry remain bootstrap-owned
+  // because they are sibling concepts to the cluster, not part of it.
   ResourceRegistry,
   ResourceTypeRegistry,
   ResourceTopologyManager,
@@ -77,29 +89,24 @@ import {
   StateAggregator,
   MetricsTracker,
 } from 'distributed-core';
+import type { ClusterConfig, ClusterTransportConfig } from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
 import { getRegistry as getMetricsRegistry } from '../observability/metrics';
 
 // ---------------------------------------------------------------------------
-// Test-mode helpers (DC v0.6.3 fast-timer + log-suppression API)
+// Test-mode helpers
 // ---------------------------------------------------------------------------
 //
-// distributed-core v0.6.3 (commit 82f4782) introduced two helpers explicitly
-// for cutting jest noise + cluster-startup latency in tests:
-//   - `IS_TEST_ENV` (auto-detected from NODE_ENV=test or JEST_WORKER_ID) makes
-//     the FrameworkLogger and transport adapters silent by default.
-//   - `nodeDefaults: { gossipInterval, joinTimeout, failureDetector, lifecycle,
-//     logging }` on createCluster() forwards through to Node ctor, swapping
-//     the prod 1s/5s/6s timers for FixtureCluster-style 50ms/500ms/600ms.
-//
-// We mirror DC's detection here and only activate when:
-//   - We're running under jest (NODE_ENV=test or JEST_WORKER_ID set), AND
-//   - The operator has not opted out via PIPELINE_TEST_FAST_MODE=false.
-//
-// Production paths are unaffected: `isPipelineTestEnv()` returns false outside
-// of jest, so `pipelineFastTimerNodeDefaults()` is never threaded into
-// createCluster() in real deploys.
+// Phase 3 simplification: the v0.6.3 `nodeDefaults` fast-timer overrides were
+// a `createCluster()`-specific hack. The Cluster facade exposes the same
+// underlying knobs through `failureDetection: { heartbeatMs, deadTimeoutMs,
+// activeProbing }` and is silent-by-default (NOOP_LOGGER) when no `logger`
+// is provided. Test-mode only needs to:
+//   1. shrink the failure-detector timers so jest doesn't sit on a 6-second
+//      DEAD_TIMEOUT during `cluster.start()`/`stop()`, and
+//   2. stay quiet (info-level chatter from this bootstrap and from
+//      ApplicationRegistry.createModuleContext).
 function isPipelineTestEnv(): boolean {
   return process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
 }
@@ -112,26 +119,16 @@ function isPipelineFastTestModeEnabled(): boolean {
 }
 
 /**
- * Fast-timer overrides matching `FixtureCluster`'s defaults from DC v0.6.3.
- * Threaded into `createCluster({ nodeDefaults })` — Node ctor reads the
- * fields directly, and `logging: false` propagates suppression to per-node
- * FrameworkLogger and Transport adapters.
+ * Failure-detection overrides matching the spirit of FixtureCluster's defaults.
+ * Threaded into `Cluster.create({ failureDetection })` — the facade forwards
+ * these into BootstrapConfig so the underlying FailureDetector uses 100ms /
+ * 600ms instead of the prod 1s / 6s. Keeps jest test runs fast.
  */
-function pipelineFastTimerNodeDefaults(): Record<string, unknown> {
+function pipelineFastFailureDetection(): NonNullable<ClusterConfig['failureDetection']> {
   return {
-    logging: false,
-    gossipInterval: 50,
-    joinTimeout: 500,
-    failureDetector: {
-      heartbeatInterval: 100,
-      failureTimeout: 300,
-      deadTimeout: 600,
-      pingTimeout: 200,
-    },
-    lifecycle: {
-      enableGracefulShutdown: true,
-      maxShutdownWait: 50,
-    },
+    heartbeatMs: 100,
+    deadTimeoutMs: 600,
+    activeProbing: true,
   };
 }
 
@@ -156,20 +153,18 @@ export interface BootstrapOptions {
    */
   walFilePath?: string;
   /**
-   * Number of cluster nodes spawned in this process. Default 1.
-   * Overridden by PIPELINE_CLUSTER_SIZE env when not provided here.
-   * size > 1 is for integration tests — real multi-process production
-   * is blocked on distributed-core gap DC-1.1.
-   */
-  size?: number;
-  /**
    * Cluster transport. Default 'in-memory'.
    * Overridden by PIPELINE_CLUSTER_TRANSPORT env when not provided here.
+   *
+   * NOTE: as of Phase 3 (April 2026) only 'in-memory' is exercised in
+   * production. The other adapters are accepted by the Cluster facade and
+   * forwarded as-is, but multi-node bring-up is gated on Phase 4.
    */
   transport?: 'in-memory' | 'websocket' | 'tcp' | 'udp' | 'http';
   /**
-   * Starting port for sequential allocation (non-in-memory transports only).
-   * Overridden by PIPELINE_CLUSTER_BASE_PORT env when not provided here.
+   * Local bind port for non-in-memory transports. Ignored when
+   * `transport === 'in-memory'`. Overridden by PIPELINE_CLUSTER_BASE_PORT
+   * env when not provided here.
    */
   basePort?: number;
   /**
@@ -202,7 +197,6 @@ export interface BootstrapOptions {
 }
 
 function resolveOptions(opts: BootstrapOptions): {
-  size: number;
   transport: 'in-memory' | 'websocket' | 'tcp' | 'udp' | 'http';
   basePort: number;
   walFilePath: string | undefined;
@@ -211,7 +205,6 @@ function resolveOptions(opts: BootstrapOptions): {
   identityExplicitlyDisabled: boolean;
   registryWalFilePath: string | undefined;
 } {
-  const size = opts.size ?? Number(process.env.PIPELINE_CLUSTER_SIZE ?? '1');
   const transport = (opts.transport
     ?? (process.env.PIPELINE_CLUSTER_TRANSPORT as BootstrapOptions['transport'])
     ?? 'in-memory') as Exclude<BootstrapOptions['transport'], undefined>;
@@ -280,9 +273,6 @@ function resolveOptions(opts: BootstrapOptions): {
       : '/tmp/social-api-node-identity';
   }
 
-  if (!Number.isFinite(size) || size < 1) {
-    throw new Error(`[pipeline] PIPELINE_CLUSTER_SIZE must be >= 1, got: ${size}`);
-  }
   if (!Number.isFinite(basePort) || basePort < 0) {
     throw new Error(`[pipeline] PIPELINE_CLUSTER_BASE_PORT must be >= 0, got: ${basePort}`);
   }
@@ -301,7 +291,6 @@ function resolveOptions(opts: BootstrapOptions): {
   const registryWalFilePath = resolveRegistryWalPath(opts.registryWalFilePath);
 
   return {
-    size,
     transport,
     basePort,
     walFilePath,
@@ -342,13 +331,13 @@ function resolveRegistryWalPath(explicit: string | undefined): string | undefine
 // ---------------------------------------------------------------------------
 
 /**
- * Stand up an in-process single-node cluster with a PipelineModule registered.
- * Returns the module + a shutdown function. Idempotent only at the call site —
- * callers are responsible for not bootstrapping twice in the same process.
+ * Stand up an in-process single-node cluster (via `Cluster.create()`) with a
+ * PipelineModule registered. Returns the module + a shutdown function.
+ * Idempotent only at the call site — callers are responsible for not
+ * bootstrapping twice in the same process.
  */
 export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<PipelineBootstrap> {
   const {
-    size,
     transport,
     basePort,
     walFilePath,
@@ -393,9 +382,8 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // Resolve a stable node id BEFORE we bring the cluster up. When an
   // identity file is configured we delegate to distributed-core's
   // loadOrCreateNodeId(), which atomically reads-or-creates the persisted
-  // id (DC-1.3). The resolved id is then injected into createCluster() via
-  // the per-node `nodes: [{ id }]` override so size=1 cluster's lone node
-  // adopts the persistent identity.
+  // id (DC-1.3). The resolved id is then injected into Cluster.create()'s
+  // required `nodeId` field.
   let persistentNodeId: string | undefined;
   if (identityFilePath) {
     try {
@@ -410,72 +398,85 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     }
   }
 
+  // Cluster.create() requires `nodeId`. When no identity file is configured
+  // we mint a fresh ephemeral id ourselves — same convention loadOrCreateNodeId
+  // uses internally, so the visible format is consistent across paths.
+  const nodeId = persistentNodeId ?? `node-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+
   // Hold the Node event loop open during cluster setup. Every internal cluster
   // timer is `.unref()`'d, so without this hold a one-shot script (no HTTP
-  // server) would see Node drain before createCluster() resolves. Cleared in
-  // shutdown(). Harmless when an HTTP server is already holding the loop.
+  // server) would see Node drain before Cluster.create()/start() resolves.
+  // Cleared in shutdown(). Harmless when an HTTP server is already holding
+  // the loop.
   const keepAlive = setInterval(() => { /* hold the event loop */ }, 1 << 30);
 
-  // Step 1 — bring up the cluster. autoStart wires gossip + transport.
-  // size=1 in-memory is the default. size>1 spawns multiple nodes in this
-  // process (integration-test scope). Multi-process production multi-node
-  // is gated on distributed-core gap DC-1.1.
+  // Resolve the social-api MetricsRegistry singleton so distributed-core
+  // primitives that opt into `metrics?: MetricsRegistry` (Cluster.create()
+  // forwards this into ResourceRouter and DistributedLock as of v0.6.5) emit
+  // prometheus-style counters into the same registry that `/internal/metrics`
+  // scrapes.
+  const metricsRegistry = getMetricsRegistry();
+
+  // Step 1 — bring up the Cluster facade. It owns:
+  //   - InMemoryAdapter (transport) — or the configured network adapter
+  //   - PubSubManager (in-memory)
+  //   - EntityRegistry (memory or wal)
+  //   - EntityRegistrySyncAdapter
+  //   - ClusterManager + FailureDetector
+  //   - ResourceRouter (with metrics threaded automatically)
+  //   - DistributedLock (with metrics threaded automatically)
+  //   - AutoReclaimPolicy (default-on; jitterMs: 500)
   //
-  // When a persistent node id is available, pass it as the per-node id so
-  // gossip membership is stable across restarts. When size > 1 only node 0
-  // gets the persistent id; the rest fall back to ephemeral ids since the
-  // identity file is per-process, not per-node.
-  // Fast-timer overrides — only when running under jest (and the operator
-  // hasn't disabled them via PIPELINE_TEST_FAST_MODE=false). Threading via
-  // `nodeDefaults` is the v0.6.3 API; Node ctor reads gossipInterval /
-  // joinTimeout / failureDetector / lifecycle directly, and `logging: false`
-  // propagates suppression to per-node FrameworkLogger + transport adapters.
-  // Production paths get DC's own 1s/5s/6s defaults — `isPipelineTestEnv()`
-  // is false outside of jest.
+  // Notes:
+  //   - `topic` is per-node so two bootstraps in the same process don't
+  //     cross-talk on the in-memory pubsub fabric.
+  //   - `pubsub: { type: 'memory' }` is correct for the single-process
+  //     pipeline. Multi-node deploys (Phase 4) will flip to 'redis'.
+  //   - `transport` defaults to in-memory; the env-var override is forwarded
+  //     verbatim (the facade supports the same set of names).
   const fastTimers = isPipelineFastTestModeEnabled();
-  const nodeDefaults = fastTimers ? pipelineFastTimerNodeDefaults() : undefined;
+  const transportConfig: ClusterTransportConfig = transport === 'in-memory'
+    ? { type: 'in-memory' }
+    : { type: transport, port: basePort };
+  const clusterConfig: ClusterConfig = {
+    nodeId,
+    topic: `pipeline-${nodeId}`,
+    pubsub: { type: 'memory' },
+    transport: transportConfig,
+    registry: registryWalFilePath
+      ? { type: 'wal', walPath: registryWalFilePath }
+      : { type: 'memory' },
+    metrics: metricsRegistry,
+    ...(fastTimers ? { failureDetection: pipelineFastFailureDetection() } : {}),
+    // No `logger` — the facade defaults to a NOOP logger, which is exactly
+    // what we want. Test-mode noise reduction is handled by the per-bootstrap
+    // logger we construct below for the application-layer module.
+  };
 
-  const clusterHandle = await createCluster({
-    size,
-    transport,
-    basePort,
-    autoStart: true,
-    ...(persistentNodeId ? { nodes: [{ id: persistentNodeId }] } : {}),
-    ...(nodeDefaults ? { nodeDefaults } : {}),
-  } as Parameters<typeof createCluster>[0]);
+  const cluster = await Cluster.create(clusterConfig);
+  await cluster.start();
 
-  // Wait for the membership table to settle. With size=1 this is effectively
-  // instant; we keep the call so the contract matches the multi-node case.
-  // In fast mode, joinTimeout is 500ms so a 1s convergence ceiling is plenty.
-  await clusterHandle.waitForConvergence(fastTimers ? 1000 : 5000);
+  const clusterMgr = cluster.clusterManager;
+  const pubsub = cluster.pubsub;
 
-  const handle = clusterHandle.getNode(0);
-  const clusterMgr = handle.getCluster();
-  const pubsub = handle.getPubSub();
-  const nodeId = handle.id;
-
-  // Step 2 — assemble the registries that ApplicationRegistry will auto-wire
-  // into the module context.
+  // Step 2 — assemble the application-layer registries that ApplicationRegistry
+  // will auto-wire into the module context.
   //
-  // distributed-core v0.3.0 closed gaps DC-4.x and made ResourceRegistry,
-  // ResourceTopologyManager, and ApplicationRegistry first-class public
-  // exports. NodeHandle does NOT (yet) expose accessor methods for these,
-  // so we instantiate them here using the same pattern as distributed-core's
-  // own production-chat-harness. PipelineModule.initialize() calls
-  // resourceRegistry.registerResourceType() during onInitialize, so the
-  // registry MUST be a real instance — the no-op stubs from the previous
-  // single-node mode are gone.
+  // ResourceRegistry / ResourceTopologyManager / ApplicationRegistry are NOT
+  // owned by the Cluster facade — they're sibling concepts (the facade sits
+  // beneath them). PipelineModule.initialize() calls
+  // `context.resourceRegistry.registerResourceType()`, so the registry MUST
+  // be a real ResourceRegistry instance backed by an EntityRegistry of the
+  // matching mode (wal vs memory). ResourceRegistry constructs its own
+  // EntityRegistry internally via EntityRegistryFactory — we cannot plug in
+  // `cluster.registry` directly. This is intentional: the cluster's
+  // EntityRegistry is for ownership/router/lock state; the
+  // ResourceRegistry's EntityRegistry is for resource-typed metadata.
   //
-  // Registry mode:
-  //   - When `registryWalFilePath` is set, switch to entityRegistryType='wal'
-  //     and pass `entityRegistryConfig: { walConfig: { filePath } }`. The
-  //     option key is `walConfig` — distributed-core's
-  //     EntityRegistryFactory destructures that exact key and silently
-  //     ignores anything else (same gotcha as `crdtOptions`). On startup
-  //     `WriteAheadLogEntityRegistry` reads the file, replays each entry,
-  //     and hydrates the registry BEFORE PipelineModule.start() runs.
-  //   - When undefined (test mode), we keep `'memory'` so each test gets
-  //     a fresh, empty registry.
+  // Registry mode mirrors the cluster's registry config so the WAL-on/off
+  // decision is consistent across the substrate and the resource layer:
+  //   - `registryWalFilePath` set → entityRegistryType: 'wal'
+  //   - undefined (test mode)    → entityRegistryType: 'memory'
   const resourceRegistry = new ResourceRegistry(
     registryWalFilePath
       ? {
@@ -518,11 +519,10 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   );
 
   // ApplicationRegistry tracks lifecycle of all modules registered against
-  // this node. As of distributed-core v0.5.7 it also offers a `register()`
-  // helper that auto-wires the 6-field ApplicationModuleContext from its
-  // own internal state (clusterManager, resourceRegistry, topologyManager,
-  // moduleRegistry, configuration, logger) — replacing what used to be
-  // ~40 lines of manual context construction in this bootstrap.
+  // this node. As of distributed-core v0.5.7 it offers a `register()` helper
+  // that auto-wires the 6-field ApplicationModuleContext from its own
+  // internal state (clusterManager, resourceRegistry, topologyManager,
+  // moduleRegistry, configuration, logger).
   const moduleRegistry = new ApplicationRegistry(
     clusterMgr,
     resourceRegistry,
@@ -551,17 +551,6 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       'Stable identity explicitly disabled via PIPELINE_IDENTITY_FILE=disabled — nodeId is ephemeral and will change on every restart',
     );
   }
-
-  // Resolve the social-api MetricsRegistry singleton so distributed-core
-  // primitives that opt into `metrics?: MetricsRegistry` (e.g. EventBus,
-  // routing, lock managers) emit prometheus-style counters into the same
-  // registry that `/internal/metrics` scrapes. ResourceRegistryConfig does
-  // not currently surface a `metrics` field directly — distributed-core
-  // would silently drop it (same gotcha as `crdtOptions` / `walConfig`),
-  // so we deliberately do NOT pass it on the registry config and instead
-  // thread it via context.configuration where PipelineModule can pick it
-  // up if/when its config grows that field.
-  const metricsRegistry = getMetricsRegistry();
 
   // Step 3 — pick the LLM client. Tests pass an explicit override (typically
   // FixtureLLMClient); production reads PIPELINE_LLM_PROVIDER + the matching
@@ -658,14 +647,16 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
 
   // Step 5 — coordinated shutdown.
   //
-  // Order matters:
+  // Order matters and matches the pre-Phase-3 shape:
   //   1a. (prod) moduleRegistry.stop()   — stops every registered module in
   //                                        reverse dependency order.
   //   1b. (test) module.stop()           — registry isn't tracking us when
   //                                        fastTimers is on, so we stop the
   //                                        module directly.
   //   2. resourceRegistry.stop() — closes the underlying entity registry.
-  //   3. clusterHandle.stop()    — stops gossip + transport.
+  //   3. cluster.stop()          — facade tears down router → lock →
+  //                                clusterManager → registry → pubsub →
+  //                                transport in the correct reverse order.
   // Any throw is logged but does not abort the rest of the chain — operators
   // need every subsystem torn down even if one stage misbehaves.
   const shutdown = async (): Promise<void> => {
@@ -685,7 +676,7 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       console.error('[pipeline] resourceRegistry.stop() failed', err);
     }
     try {
-      await clusterHandle.stop();
+      await cluster.stop();
     } catch (err) {
       console.error('[pipeline] cluster.stop() failed', err);
     }
