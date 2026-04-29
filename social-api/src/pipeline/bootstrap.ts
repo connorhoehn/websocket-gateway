@@ -61,6 +61,7 @@ import { Cluster, PipelineModule } from 'distributed-core';
 import type { LLMClient } from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
+import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
 import { getRegistry as getMetricsRegistry } from '../observability/metrics';
 import { buildClusterConfig, type PipelineTransportKind } from './config/cluster';
 import { buildPipelineModuleConfig } from './config/pipelineModule';
@@ -253,6 +254,10 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const cluster = await Cluster.create(clusterConfig);
   await cluster.start();
 
+  // Optional cluster sidecars wired AFTER cluster.start(). Each setup helper
+  // is feature-flagged via env (see config/*.ts) and returns null when its
+  // feature is disabled — making both opt-in and zero-cost when off.
+  const fdBridge = await setupFailureDetectorBridge(cluster);
   const hintedHandoff = await setupHintedHandoffQueue(cluster);
 
   const clusterMgr = cluster.clusterManager;
@@ -399,7 +404,9 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     } catch (err) {
       console.error('[pipeline] resourceRegistry.stop() failed', err);
     }
+    // Sidecars torn down in reverse construction order (LIFO).
     try { if (hintedHandoff) await hintedHandoff.stop(); } catch (err) { console.error('[pipeline] hintedHandoff.stop() failed', err); }
+    try { if (fdBridge) await fdBridge.stop(); } catch (err) { console.error('[pipeline] fdBridge.stop() failed', err); }
     try {
       await cluster.stop();
     } catch (err) {
