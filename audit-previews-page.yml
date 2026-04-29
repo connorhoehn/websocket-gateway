@@ -1,0 +1,113 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: WebSocket Gateway
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: ⬤
+        - generic [ref=e9]: Reconnecting…
+      - generic [ref=e10]: general
+    - generic [ref=e11]:
+      - generic [ref=e12]: grace.wilson@local.dev
+      - button "Sign Out" [ref=e13] [cursor=pointer]
+      - button "Open app menu" [ref=e15] [cursor=pointer]: ☰
+  - generic [ref=e16]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e21]: Connecting...
+        - generic [ref=e22]:
+          - button "Reconnect" [ref=e23] [cursor=pointer]
+          - button "Collapse sidebar" [ref=e24] [cursor=pointer]: ✕
+      - separator [ref=e25]
+      - generic [ref=e26]:
+        - button "▸ Channels" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: ▸
+          - generic [ref=e29]: Channels
+        - generic [ref=e31]:
+          - generic [ref=e32]: "# general"
+          - generic [ref=e34]: No users online
+      - separator [ref=e35]
+      - generic [ref=e36]:
+        - button "▸ Activity" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: ▸
+          - generic [ref=e39]: Activity
+        - generic [ref=e42]: No recent activity
+      - separator [ref=e43]
+      - generic [ref=e44]:
+        - button "▸ Documents" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: ▸
+          - generic [ref=e47]: Documents
+        - generic [ref=e50]: No documents
+      - separator [ref=e51]
+      - generic [ref=e52]:
+        - button "▸ 🔀 Pipelines 1" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: ▸
+          - generic [ref=e55]: 🔀
+          - generic [ref=e56]: Pipelines
+          - generic [ref=e57]: "1"
+        - button "📄 Document Summary Pipeline (Demo) published" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: 📄
+          - generic [ref=e62]: Document Summary Pipeline (Demo)
+          - generic [ref=e63]: published
+    - generic [ref=e64]:
+      - generic [ref=e66]:
+        - button "Previews" [ref=e67] [cursor=pointer]
+        - button "Social" [ref=e68] [cursor=pointer]
+        - button "Documents" [ref=e69] [cursor=pointer]
+        - button "Pipelines" [ref=e70] [cursor=pointer]
+        - button "Observability" [ref=e71] [cursor=pointer]
+      - generic [ref=e72]:
+        - generic [ref=e73]:
+          - paragraph [ref=e74]: Chat
+          - generic [ref=e75]:
+            - generic [ref=e76]: Chat (0)
+            - generic [ref=e78]: No messages yet
+            - generic [ref=e79]:
+              - textbox "Not connected" [disabled] [ref=e80]
+              - button "Send" [disabled] [ref=e81]
+        - generic [ref=e82]:
+          - paragraph [ref=e83]: Cursors
+          - generic [ref=e84]:
+            - button "Freeform" [ref=e85] [cursor=pointer]
+            - button "Table" [ref=e86] [cursor=pointer]
+            - button "Text" [ref=e87] [cursor=pointer]
+            - button "Canvas" [ref=e88] [cursor=pointer]
+          - generic [ref=e89]:
+            - generic: Move your mouse here
+        - generic [ref=e90]:
+          - paragraph [ref=e91]: Reactions
+          - generic [ref=e92]:
+            - button "❤️" [disabled] [ref=e93]
+            - button "😂" [disabled] [ref=e94]
+            - button "👍" [disabled] [ref=e95]
+            - button "👎" [disabled] [ref=e96]
+            - button "😮" [disabled] [ref=e97]
+            - button "😢" [disabled] [ref=e98]
+            - button "😡" [disabled] [ref=e99]
+            - button "🎉" [disabled] [ref=e100]
+            - button "🔥" [disabled] [ref=e101]
+            - button "⚡" [disabled] [ref=e102]
+            - button "💯" [disabled] [ref=e103]
+            - button "🚀" [disabled] [ref=e104]
+        - generic [ref=e105]:
+          - paragraph [ref=e106]: Shared Document
+          - generic [ref=e107]:
+            - generic [ref=e108]:
+              - button "B" [disabled] [ref=e109] [cursor=pointer]
+              - button "I" [disabled] [ref=e110] [cursor=pointer]
+              - button "U" [disabled] [ref=e111] [cursor=pointer]
+              - button "S" [disabled] [ref=e112] [cursor=pointer]
+              - button "1." [disabled] [ref=e113] [cursor=pointer]
+              - button "•" [disabled] [ref=e114] [cursor=pointer]
+              - button "≡L" [disabled] [ref=e115] [cursor=pointer]
+              - button "≡C" [disabled] [ref=e116] [cursor=pointer]
+              - button "≡R" [disabled] [ref=e117] [cursor=pointer]
+              - combobox [disabled] [ref=e119]:
+                - option "Paragraph" [selected]
+                - option "H1"
+                - option "H2"
+                - option "H3"
+                - option "Code"
+            - paragraph [ref=e121]: Disconnected — reconnect to edit
+        - generic [ref=e122]:
+          - heading "Activity" [level=2] [ref=e123]
+          - generic [ref=e124]: No activity yet

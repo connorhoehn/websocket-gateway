@@ -1,0 +1,64 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: WebSocket Gateway
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: ⬤
+        - generic [ref=e9]: Disconnected
+      - generic [ref=e10]: general
+    - generic [ref=e11]:
+      - generic [ref=e12]: grace.wilson@local.dev
+      - button "Sign Out" [ref=e13] [cursor=pointer]
+      - button "Open app menu" [ref=e15] [cursor=pointer]: ☰
+  - generic [ref=e16]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e21]: Disconnected
+        - generic [ref=e22]:
+          - button "Reconnect" [ref=e23] [cursor=pointer]
+          - button "Collapse sidebar" [ref=e24] [cursor=pointer]: ✕
+      - separator [ref=e25]
+      - generic [ref=e26]:
+        - button "▸ Channels" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: ▸
+          - generic [ref=e29]: Channels
+        - generic [ref=e31]:
+          - generic [ref=e32]: "# general"
+          - generic [ref=e34]: No users online
+      - separator [ref=e35]
+      - generic [ref=e36]:
+        - button "▸ Activity" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: ▸
+          - generic [ref=e39]: Activity
+        - generic [ref=e42]: No recent activity
+      - separator [ref=e43]
+      - generic [ref=e44]:
+        - button "▸ Documents" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: ▸
+          - generic [ref=e47]: Documents
+        - generic [ref=e50]: No documents
+      - separator [ref=e51]
+      - generic [ref=e52]:
+        - button "▸ 🔀 Pipelines 1" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: ▸
+          - generic [ref=e55]: 🔀
+          - generic [ref=e56]: Pipelines
+          - generic [ref=e57]: "1"
+        - button "📄 Document Summary Pipeline (Demo) published" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: 📄
+          - generic [ref=e62]: Document Summary Pipeline (Demo)
+          - generic [ref=e63]: published
+    - generic [ref=e64]:
+      - generic [ref=e65]:
+        - generic [ref=e66]:
+          - button "Previews" [ref=e67] [cursor=pointer]
+          - button "Social" [ref=e68] [cursor=pointer]
+          - button "Documents" [active] [ref=e69] [cursor=pointer]
+          - button "Pipelines" [ref=e70] [cursor=pointer]
+          - button "Observability" [ref=e71] [cursor=pointer]
+          - button "+ New Document" [ref=e125] [cursor=pointer]
+        - generic [ref=e126]:
+          - button "Documents" [ref=e127] [cursor=pointer]
+          - button "Document Types" [ref=e128] [cursor=pointer]
+          - button "Data Types" [ref=e129] [cursor=pointer]
+      - generic [ref=e131]: No documents yet. Create your first document to get started.
