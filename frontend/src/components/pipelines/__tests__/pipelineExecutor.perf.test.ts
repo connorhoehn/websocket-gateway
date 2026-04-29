@@ -13,7 +13,7 @@
 // `max(50, ms) * speedMultiplier`, so with `speedMultiplier: 0.005` the
 // minimum per-sleep is 0.25ms — fast enough for hundreds of concurrent runs.
 
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import { MockExecutor } from '../mock/MockExecutor';
 import type { MockExecutorOptions } from '../mock/MockExecutor';
 import type {
@@ -326,24 +326,56 @@ describe('MockExecutor performance + stress', () => {
       // (up to its totalMs budget). We don't assert an exact count — jitter
       // and budget truncation make that brittle — but we do assert that the
       // token count correlates with the response word count.
+      //
+      // Determinism: this test used to flake under heavy parallel CPU because
+      // (a) `await this.sleep(perToken)` raced wall-clock against the
+      // executor's `totalMs` budget, and (b) `sampleNormal` (Box-Muller via
+      // `Math.random()`) sometimes drew a low `totalMs` that truncated the
+      // stream below the 50% threshold. We pin both axes:
+      //   1. `vi.useFakeTimers()` — sleeps advance virtual time only, so the
+      //      test never races a real CPU scheduler.
+      //   2. `Math.random()` is stubbed to 0.25 so Box-Muller's `cos(2π·u)`
+      //      term is exactly 0 — every `sampleNormal(mean, stdev)` returns
+      //      `max(50, mean)`. `totalMs` lands at the fixture's mean (4200ms
+      //      for the long-form summary) and `perToken` lands at 20ms (clamped
+      //      to a 50ms sleep floor).
       const def = buildLinearPipeline(['trigger', 'llm']);
-      // Use speedMultiplier=1 so the full token budget is available; with
-      // speedMultiplier<1 and totalMs=3500 baseline, the stream truncates
-      // quickly and token count drops to a trickle.
-      const { run, events } = await runToCompletion(def, {
-        speedMultiplier: 1,
-      });
-      expect(run.status).toBe('completed');
 
-      const tokens = events.filter(([t]) => t === 'pipeline.llm.token');
-      const response = events.find(([t]) => t === 'pipeline.llm.response');
-      expect(tokens.length).toBeGreaterThan(0);
-      expect(response).toBeDefined();
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.25);
+      try {
+        const events: Array<[keyof PipelineEventMap, unknown]> = [];
+        const executor = new MockExecutor({
+          definition: def,
+          failureRateLLM: 0,
+          failureRateOther: 0,
+          // speedMultiplier=1 so the full token budget is available; the
+          // sleep clamp `max(50, ms) * 1` still applies under fake timers.
+          speedMultiplier: 1,
+          onEvent: (type, payload) => events.push([type, payload]),
+        });
 
-      const responseText = (response?.[1] as { response?: string })?.response ?? '';
-      const wordCount = responseText.split(/\s+/).filter(Boolean).length;
-      // The stream may truncate on its totalMs budget — tolerate 50% of words.
-      expect(tokens.length).toBeGreaterThanOrEqual(Math.floor(wordCount * 0.5));
+        const runPromise = executor.run();
+        // Drain every pending timer (microtasks are interleaved by vitest).
+        await vi.runAllTimersAsync();
+        const run = await runPromise;
+        expect(run.status).toBe('completed');
+
+        const tokens = events.filter(([t]) => t === 'pipeline.llm.token');
+        const response = events.find(([t]) => t === 'pipeline.llm.response');
+        expect(tokens.length).toBeGreaterThan(0);
+        expect(response).toBeDefined();
+
+        const responseText = (response?.[1] as { response?: string })?.response ?? '';
+        const wordCount = responseText.split(/\s+/).filter(Boolean).length;
+        // With Math.random pinned and fake timers in lockstep, the stream
+        // emits a stable token count proportional to wordCount; 50% remains
+        // a comfortable lower bound for the deterministic case.
+        expect(tokens.length).toBeGreaterThanOrEqual(Math.floor(wordCount * 0.5));
+      } finally {
+        randomSpy.mockRestore();
+        vi.useRealTimers();
+      }
     }, 20000);
 
     test('Event stream is ordered: run.started first, run terminal last', async () => {
