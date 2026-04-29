@@ -249,6 +249,10 @@ export interface StepExecution {
     response: string;
     tokensIn: number;
     tokensOut: number;
+    /** True between `pipeline.llm.stream.opened` and the first token; cleared when tokensOut > 0. */
+    streamOpened?: boolean;
+    /** Wall-clock ms from stream open to first token (DC v0.3.7+). */
+    firstTokenLatencyMs?: number;
   };
   // Approval-specific
   approvals?: ApprovalRecord[];
@@ -365,6 +369,15 @@ export type PipelineEventMap = {
     model: string;
     prompt: string;
     at: string;
+  };
+  // DC-14: emitted when the LLM stream opens, before any tokens arrive. Pairs
+  // with `pipeline.llm.token` — the time between this event and the first
+  // token is the per-step `firstTokenLatencyMs`.
+  'pipeline.llm.stream.opened': {
+    runId: string;
+    stepId: string;
+    model: string;
+    openedAt: string;
   };
   'pipeline.llm.token': {
     runId: string;

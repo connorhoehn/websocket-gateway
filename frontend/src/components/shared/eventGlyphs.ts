@@ -55,6 +55,7 @@ export const eventGlyphs: Record<string, EventGlyph> = {
 
   // Pipeline LLM streaming
   'pipeline.llm.prompt':         { icon: '💬', color: C_INFO,    severity: 'info' },
+  'pipeline.llm.stream.opened':  { icon: '⟳', color: C_INFO,    severity: 'info' },
   'pipeline.llm.token':          { icon: '·',       color: C_NEUTRAL, severity: 'neutral' },
   'pipeline.llm.response':       { icon: '💬', color: C_INFO,    severity: 'info' },
 

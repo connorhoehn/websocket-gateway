@@ -541,8 +541,42 @@ function reduceEvent(
             response: prev.llm?.response ?? '',
             tokensIn: prev.llm?.tokensIn ?? 0,
             tokensOut: prev.llm?.tokensOut ?? 0,
+            ...(prev.llm?.streamOpened !== undefined
+              ? { streamOpened: prev.llm.streamOpened }
+              : {}),
+            ...(prev.llm?.firstTokenLatencyMs !== undefined
+              ? { firstTokenLatencyMs: prev.llm.firstTokenLatencyMs }
+              : {}),
           },
         })),
+      };
+    }
+    case 'pipeline.llm.stream.opened': {
+      const ev = payload as PipelineEventMap['pipeline.llm.stream.opened'];
+      const run = state[ev.runId];
+      if (!run) return state;
+      return {
+        ...state,
+        [ev.runId]: withStep(run, ev.stepId, (prev) => {
+          const openedAtMs = Date.parse(ev.openedAt);
+          // Internal sentinel for computing firstTokenLatencyMs on first token.
+          const next = {
+            ...prev,
+            llm: {
+              prompt: prev.llm?.prompt ?? '',
+              response: prev.llm?.response ?? '',
+              tokensIn: prev.llm?.tokensIn ?? 0,
+              tokensOut: prev.llm?.tokensOut ?? 0,
+              streamOpened: true,
+              ...(prev.llm?.firstTokenLatencyMs !== undefined
+                ? { firstTokenLatencyMs: prev.llm.firstTokenLatencyMs }
+                : {}),
+            },
+          };
+          (next.llm as unknown as { _streamOpenedAtMs: number })._streamOpenedAtMs =
+            Number.isFinite(openedAtMs) ? openedAtMs : Date.now();
+          return next;
+        }),
       };
     }
     case 'pipeline.llm.token': {
@@ -551,15 +585,31 @@ function reduceEvent(
       if (!run) return state;
       return {
         ...state,
-        [ev.runId]: withStep(run, ev.stepId, (prev) => ({
-          ...prev,
-          llm: {
-            prompt: prev.llm?.prompt ?? '',
-            response: (prev.llm?.response ?? '') + ev.token,
-            tokensIn: prev.llm?.tokensIn ?? 0,
-            tokensOut: (prev.llm?.tokensOut ?? 0) + 1,
-          },
-        })),
+        [ev.runId]: withStep(run, ev.stepId, (prev) => {
+          const prevTokensOut = prev.llm?.tokensOut ?? 0;
+          const isFirstToken = prevTokensOut === 0;
+          const openedAtMs = (
+            prev.llm as unknown as { _streamOpenedAtMs?: number } | undefined
+          )?._streamOpenedAtMs;
+          const tokenAtMs = Date.parse(ev.at);
+          const computedLatency =
+            isFirstToken && typeof openedAtMs === 'number' && Number.isFinite(tokenAtMs)
+              ? Math.max(0, tokenAtMs - openedAtMs)
+              : prev.llm?.firstTokenLatencyMs;
+          return {
+            ...prev,
+            llm: {
+              prompt: prev.llm?.prompt ?? '',
+              response: (prev.llm?.response ?? '') + ev.token,
+              tokensIn: prev.llm?.tokensIn ?? 0,
+              tokensOut: prevTokensOut + 1,
+              streamOpened: false,
+              ...(computedLatency !== undefined
+                ? { firstTokenLatencyMs: computedLatency }
+                : {}),
+            },
+          };
+        }),
       };
     }
     case 'pipeline.llm.response': {
