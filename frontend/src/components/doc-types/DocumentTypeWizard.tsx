@@ -11,10 +11,7 @@ import type {
   DocumentType,
   DocumentTypeField,
 } from '../../types/documentType';
-import {
-  DOCUMENT_TYPE_ICONS,
-  makeEmptyField,
-} from '../../types/documentType';
+import { makeEmptyField } from '../../types/documentType';
 // Trigger side-effect registrations so getFieldTypes() / getFieldType() are populated
 import '../../renderers';
 import { getFieldTypes, getFieldType } from '../../renderers/registry';
@@ -100,10 +97,9 @@ function StepIndicator({ step, total }: { step: number; total: number }) {
 interface Step1Props {
   name: string; setName: (v: string) => void;
   description: string; setDescription: (v: string) => void;
-  icon: string; setIcon: (v: string) => void;
 }
 
-function Step1Info({ name, setName, description, setDescription, icon, setIcon }: Step1Props) {
+function Step1Info({ name, setName, description, setDescription }: Step1Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
@@ -129,29 +125,6 @@ function Step1Info({ name, setName, description, setDescription, icon, setIcon }
           placeholder="Optional — describe when this document type is used"
           maxLength={300}
         />
-      </div>
-
-      <div>
-        <span style={label}>Icon</span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {DOCUMENT_TYPE_ICONS.map(emoji => (
-            <button
-              key={emoji}
-              data-testid={`icon-${emoji}`}
-              type="button"
-              onClick={() => setIcon(emoji)}
-              style={{
-                width: 38, height: 38, borderRadius: 8, fontSize: 18,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: icon === emoji ? '#ede9fe' : '#f8fafc',
-                border: icon === emoji ? '2px solid #646cff' : '2px solid #e2e8f0',
-              }}
-              title={emoji}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -514,7 +487,9 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
   // Draft state — one slice per wizard field so re-renders stay cheap
   const [name,        setName]        = useState(initialType?.name        ?? '');
   const [description, setDescription] = useState(initialType?.description ?? '');
-  const [icon,        setIcon]        = useState(initialType?.icon        ?? '📄');
+  // Icon picker was removed from Step 1 — types now ship with the default
+  // 📄 unless an existing type already had one set (preserved on edit).
+  const icon = initialType?.icon ?? '📄';
   const [fields,      setFields]      = useState<DocumentTypeField[]>(initialType?.fields    ?? []);
 
   const [nameError, setNameError] = useState('');
@@ -549,7 +524,6 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
           <Step1Info
             name={name} setName={v => { setName(v); if (v.trim()) setNameError(''); }}
             description={description} setDescription={setDescription}
-            icon={icon} setIcon={setIcon}
           />
         )}
         {step === 2 && <Step2Fields fields={fields} setFields={setFields} />}

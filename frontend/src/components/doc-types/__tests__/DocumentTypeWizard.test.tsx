@@ -67,12 +67,12 @@ describe('StepIndicator', () => {
 // ---------------------------------------------------------------------------
 
 describe('Step 1 — Basic Info', () => {
-  it('renders the name input, description textarea, and icon picker', () => {
+  it('renders the name input and description textarea', () => {
     setup();
     expect(screen.getByTestId('name-input')).toBeInTheDocument();
     expect(screen.getByTestId('description-input')).toBeInTheDocument();
-    // At least one icon button should be rendered
-    expect(screen.getByTestId('icon-📄')).toBeInTheDocument();
+    // Icon picker was removed from Step 1 — types default to 📄.
+    expect(screen.queryByTestId('icon-📄')).not.toBeInTheDocument();
   });
 
   it('Next button is disabled when name is empty', () => {
@@ -92,15 +92,6 @@ describe('Step 1 — Basic Info', () => {
     await user.type(nameInput, 'Temp');
     await user.clear(nameInput);
     expect(screen.getByTestId('wizard-next')).toBeDisabled();
-  });
-
-  it('can select an icon from the picker', async () => {
-    const { user } = setup();
-    const rocketBtn = screen.getByTestId('icon-🚀');
-    await user.click(rocketBtn);
-    // Selected icon gets a highlighted border — easiest to verify by checking
-    // the icon button is present and clicking does not throw
-    expect(rocketBtn).toBeInTheDocument();
   });
 
   it('Cancel calls onCancel', async () => {
@@ -331,12 +322,11 @@ describe('Step 3 — View Modes', () => {
 // ---------------------------------------------------------------------------
 
 describe('onSave payload', () => {
-  it('calls onSave with name, description, icon, and empty fields', async () => {
+  it('calls onSave with name, description, default icon, and empty fields', async () => {
     const { onSave, user } = setup();
 
     await user.type(screen.getByTestId('name-input'), 'Retro');
     await user.type(screen.getByTestId('description-input'), 'Sprint retrospective template');
-    await user.click(screen.getByTestId('icon-🔥'));
 
     // Navigate steps 2, 3, then save
     await user.click(screen.getByTestId('wizard-next'));
@@ -347,7 +337,8 @@ describe('onSave payload', () => {
     const arg = onSave.mock.calls[0][0] as ReturnType<typeof onSave.mock.calls[0][0]>;
     expect(arg.name).toBe('Retro');
     expect(arg.description).toBe('Sprint retrospective template');
-    expect(arg.icon).toBe('🔥');
+    // Icon picker removed; types default to 📄.
+    expect(arg.icon).toBe('📄');
     expect(arg.fields).toEqual([]);
   });
 

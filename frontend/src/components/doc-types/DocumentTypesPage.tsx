@@ -257,11 +257,28 @@ export function DocumentTypesPage() {
         {/* Type list */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }} data-testid="type-list">
           {types.length === 0 ? (
-            <div style={{ padding: '20px 12px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
-              No types yet.{' '}
+            <div
+              style={{
+                padding: '32px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>No types yet.</div>
               <button
                 onClick={handleCreateClick}
-                style={{ ...menuBtn, display: 'inline', padding: 0, color: '#646cff', fontSize: 12 }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#646cff',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontFamily: 'inherit',
+                }}
               >
                 Create one →
               </button>
