@@ -1,5 +1,8 @@
 name: CI
-on: [push, pull_request]
+# Auto-triggers disabled — set DC_REPO_TOKEN repo secret first, then re-enable
+# by replacing this `on:` block with `on: [push, pull_request]`.
+# Manual run still possible via the Actions tab → "Run workflow".
+on: workflow_dispatch
 jobs:
   lint-and-typecheck:
     runs-on: ubuntu-latest

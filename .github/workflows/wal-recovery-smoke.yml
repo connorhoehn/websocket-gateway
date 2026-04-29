@@ -11,25 +11,30 @@ name: WAL Recovery Smoke
 # the social-api package manifests / lockfile (which pin the
 # distributed-core version that owns the WAL replay path).
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'social-api/src/pipeline/**'
-      - 'social-api/src/index.ts'
-      - 'social-api/package.json'
-      - 'social-api/package-lock.json'
-      - 'scripts/wal-recovery-smoke.sh'
-      - '.github/workflows/wal-recovery-smoke.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'social-api/src/pipeline/**'
-      - 'social-api/src/index.ts'
-      - 'social-api/package.json'
-      - 'social-api/package-lock.json'
-      - 'scripts/wal-recovery-smoke.sh'
-      - '.github/workflows/wal-recovery-smoke.yml'
+# Auto-triggers disabled — see ci.yml for the rationale (private DC dep
+# needs DC_REPO_TOKEN repo secret to be set up). Re-enable by restoring
+# the `push:` and `pull_request:` blocks below; manual run still available
+# via the Actions tab → "Run workflow".
+on: workflow_dispatch
+# on:
+#   push:
+#     branches: [main]
+#     paths:
+#       - 'social-api/src/pipeline/**'
+#       - 'social-api/src/index.ts'
+#       - 'social-api/package.json'
+#       - 'social-api/package-lock.json'
+#       - 'scripts/wal-recovery-smoke.sh'
+#       - '.github/workflows/wal-recovery-smoke.yml'
+#   pull_request:
+#     branches: [main]
+#     paths:
+#       - 'social-api/src/pipeline/**'
+#       - 'social-api/src/index.ts'
+#       - 'social-api/package.json'
+#       - 'social-api/package-lock.json'
+#       - 'scripts/wal-recovery-smoke.sh'
+#       - '.github/workflows/wal-recovery-smoke.yml'
 
 # Workflow-level timeout; the script's STARTUP_TIMEOUT covers each boot,
 # but if something hangs outside the wait_for_log loop we still want the
