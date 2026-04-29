@@ -158,6 +158,25 @@ export function PipelineRunsProvider({ children }: PipelineRunsProviderProps) {
   // same terminal state every time the reducer returns a new reference.
   const persistedRef = useRef<Set<string>>(new Set());
 
+  // Late-seed: the editor's PipelineDefinition loads via a useEffect, so on
+  // direct-URL navigation to /pipelines/:id/runs/:runId the initial useState
+  // above sees `editor.definition === null` and seeds with `{}`. Re-seed
+  // when the pipelineId becomes available so the replay page can resolve
+  // historical runs that aren't otherwise reachable.
+  useEffect(() => {
+    const pipelineId = editor?.definition?.id;
+    if (!pipelineId) return;
+    setRuns((prev) => {
+      const alreadySeeded = Object.values(prev).some((r) => r.pipelineId === pipelineId);
+      if (alreadySeeded) return prev;
+      const next = { ...prev };
+      for (const r of listRuns(pipelineId)) {
+        if (!next[r.id]) next[r.id] = r;
+      }
+      return next;
+    });
+  }, [editor?.definition?.id]);
+
   // Fold every event into the runs state. Using the wildcard channel keeps
   // this a single subscription rather than 15 typed ones.
   useEventStream('*', (env) => {

@@ -53,44 +53,57 @@ function tolerateBackendErrors(page: Page) {
   });
 }
 
-// React Flow's pane is `.react-flow__pane`. Double-clicking it opens the
-// QuickInsertPopover — much easier than simulating HTML5 drag-and-drop, which
-// Playwright cannot fire dataTransfer events for in WebKit/Chromium reliably.
-//
-// The dblclick handler in PipelineCanvas is gated on `event.target` having
-// the class `react-flow__pane` / `__renderer` / `__viewport` — so we MUST
-// target the pane itself with a position clearly outside any rendered node.
-// `fitView` centers the trigger; we offset to bottom-right of the viewport
-// to avoid landing on the trigger card.
-// Insert a node by dragging the corresponding palette card onto the canvas.
-// The palette uses HTML5 drag-and-drop with a custom `application/reactflow`
-// data type. Playwright's locator.dragTo() preserves the dataTransfer payload
-// across the drag/drop pair when both sides use the standard HTML5 drag API.
-//
-// Falls back to a programmatic dispatch if the visual drag does not result
-// in the node being added (some React Flow versions intercept dataTransfer).
-async function dragInsertNode(page: Page, nodeType: string) {
-  const palette = page.getByTestId('node-palette');
-  await expect(palette).toBeVisible();
+// HTML5 drag-and-drop with custom dataTransfer types is not reliably
+// supported by the Chromium DevTools Protocol in headless mode, and React
+// Flow's connect-handle drag is similarly fragile. To keep workflow tests
+// deterministic, we drive the editor through the dev-only imperative bridge
+// exposed at `window.__pipelineEditor` (see useDevEditorBridge.ts). The
+// bridge is stripped from production builds via import.meta.env.DEV.
+async function insertNodeViaBridge(page: Page, nodeType: string): Promise<string> {
+  await page.waitForFunction(() => Boolean((window as unknown as { __pipelineEditor?: unknown }).__pipelineEditor));
+  return page.evaluate((type) => {
+    const bridge = (window as unknown as {
+      __pipelineEditor: { insertNode: (t: string) => string };
+    }).__pipelineEditor;
+    return bridge.insertNode(type);
+  }, nodeType);
+}
 
-  const card = palette.locator(`[data-node-type="${nodeType}"]`).first();
-  await expect(card).toBeVisible();
-
-  const pane = page.locator('.react-flow__pane').first();
-  await expect(pane).toBeVisible();
-  const paneBox = await pane.boundingBox();
-  if (!paneBox) throw new Error('Could not measure react-flow pane');
-
-  // Drop on the top-center of the pane (avoids minimap bottom-right and
-  // controls bottom-left). Playwright fires native HTML5 drag events with
-  // an internal dataTransfer; the onDragStart handler in NodePalette.tsx
-  // sets `application/reactflow` JSON payload, which the canvas onDrop reads.
-  await card.dragTo(pane, {
-    targetPosition: {
-      x: Math.min(paneBox.width / 2, 240),
-      y: 80,
+async function connectViaBridge(page: Page, sourceId: string, targetId: string): Promise<string> {
+  return page.evaluate(
+    ({ s, t }) => {
+      const bridge = (window as unknown as {
+        __pipelineEditor: { connect: (s: string, t: string) => string };
+      }).__pipelineEditor;
+      return bridge.connect(s, t);
     },
-  });
+    { s: sourceId, t: targetId },
+  );
+}
+
+async function findNodeIdByType(page: Page, nodeType: string): Promise<string | undefined> {
+  return page.evaluate((type) => {
+    const bridge = (window as unknown as {
+      __pipelineEditor: { findNodeIdByType: (t: string) => string | undefined };
+    }).__pipelineEditor;
+    return bridge.findNodeIdByType(type);
+  }, nodeType);
+}
+
+async function updateNodeDataViaBridge(
+  page: Page,
+  nodeId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await page.evaluate(
+    ({ id, p }) => {
+      const bridge = (window as unknown as {
+        __pipelineEditor: { updateNodeData: (id: string, patch: Record<string, unknown>) => void };
+      }).__pipelineEditor;
+      bridge.updateNodeData(id, p);
+    },
+    { id: nodeId, p: patch },
+  );
 }
 
 test.describe('Pipelines E2E', () => {
@@ -139,40 +152,21 @@ test.describe('Pipelines E2E', () => {
     await page.getByTestId('new-pipeline-confirm').click();
     await expect(page.getByTestId('pipeline-editor')).toBeVisible();
 
-    // Insert an LLM node by dragging the palette card onto the canvas.
-    await dragInsertNode(page, 'llm');
+    // Insert an LLM node and wire it to the pre-placed Trigger via the
+    // dev-only imperative bridge (drag-drop + handle-drag are unreliable in
+    // headless Chromium, see useDevEditorBridge.ts).
+    const llmId = await insertNodeViaBridge(page, 'llm');
+    const triggerId = await findNodeIdByType(page, 'trigger');
+    if (!triggerId) throw new Error('Trigger node not present after pipeline creation');
+    await connectViaBridge(page, triggerId, llmId);
 
-    // Two nodes now: trigger + llm. If the drag failed to fire dataTransfer
-    // (some Chromium builds drop synthetic dataTransfer payloads), surface a
-    // clear annotation so this isn't conflated with a real regression.
+    // Two nodes now: trigger + llm.
     const nodes = page.locator('.react-flow__node');
-    try {
-      await expect(nodes).toHaveCount(2, { timeout: 5000 });
-    } catch {
-      test.info().annotations.push({
-        type: 'skip-reason',
-        description:
-          'HTML5 drag-and-drop with custom dataTransfer types is not supported ' +
-          'by the underlying Chromium DevTools Protocol in headless mode. ' +
-          'TODO(agent-7): expose a programmatic "insert node" hook on window ' +
-          '(e.g. window.__pipelineEditor.addNode) for E2E tests, or wire the ' +
-          'documented "Press 1-8 to insert at center" keyboard shortcut.',
-      });
-      return;
-    }
-
-    // Connecting handles via real drag is brittle in Playwright + React Flow.
-    // The pipeline storage layer auto-creates an edge between trigger and the
-    // first downstream node when only one path exists — but to be safe we
-    // assert the "Run" button's gating behaves correctly regardless of
-    // edge-state. If validation indicator surfaces unconnected-node errors,
-    // we tolerate it for the run gate test below.
-    // TODO(agent-7): expose `data-testid="connect-trigger-to-${nodeId}"` or a
-    // programmatic "Auto-connect" button to make this deterministic.
+    await expect(nodes).toHaveCount(2);
 
     // Open LLM config — click the LLM node. (React Flow nodes are
     // selectable on click; selectedNodeId then shows ConfigPanel.)
-    const llmNode = page.locator('.react-flow__node').nth(1);
+    const llmNode = page.locator(`.react-flow__node[data-id="${llmId}"]`);
     await llmNode.click();
     const configPanel = page.getByTestId('config-panel');
     await expect(configPanel).toBeVisible();
@@ -212,24 +206,9 @@ test.describe('Pipelines E2E', () => {
     // Publish-confirm modal: click Publish to confirm.
     const publishConfirm = page.getByRole('button', { name: /^Publish$/ });
     await expect(publishConfirm).toBeVisible();
-
-    // If validation has errors (because Trigger.out → LLM.in edge wasn't
-    // auto-created and no programmatic connect was available), the publish
-    // button is disabled. In that case we skip the rest of the run check
-    // with an annotation rather than failing on a connect-handle limitation.
-    const isPublishDisabled = await publishConfirm.isDisabled();
-    if (isPublishDisabled) {
-      test.info().annotations.push({
-        type: 'skip-reason',
-        description:
-          'Publish disabled — Trigger→LLM edge could not be created without a stable connect testid. See TODO(agent-7) above.',
-      });
-      // Close the modal cleanly; nothing else to assert here.
-      await page.keyboard.press('Escape');
-      return;
-    }
-
+    await expect(publishConfirm).toBeEnabled();
     await publishConfirm.click();
+
     // The version badge should flip to "Published".
     await expect(page.getByTestId('version-badge')).toContainText(/Published/i);
 
@@ -238,21 +217,10 @@ test.describe('Pipelines E2E', () => {
     await expect(runBtn).toBeEnabled();
     await runBtn.click();
 
-    // Observe at least one node leave the default "idle" state. MockExecutor
-    // emits state transitions over a few hundred ms; the exact terminal state
-    // depends on whether the LLM node has a valid edge from Trigger.
-    //
-    // TODO(agent-7): Without a stable way to programmatically connect handles,
-    // the LLM node may end up disconnected and the run completes with only the
-    // Trigger transitioning. Worse, the dataTransfer-based drag may insert the
-    // node WITHOUT triggering React Flow's auto-edge logic (it only auto-wires
-    // when dropped on top of a handle). Until we have:
-    //   (a) a `data-testid="auto-connect-btn"` or
-    //   (b) `window.__pipelineEditor.connect(srcId, tgtId)` exposed in dev,
-    // we cannot deterministically observe a `data-state="completed"` node.
-    //
-    // The assertion below tolerates ANY transition from idle. If even that
-    // doesn't fire, we annotate and bail rather than failing the suite.
+    // The LLM node is wired to Trigger via the bridge, so MockExecutor must
+    // transition it out of idle. Any of running/completed/failed satisfies
+    // the lifecycle assertion (we don't gate on terminal state because mock
+    // timing can vary across runs).
     const transitionedNode = page.locator(
       '[data-state="running"], [data-state="completed"], [data-state="failed"], [data-state="awaiting_approval"]'
     ).first();
@@ -313,5 +281,218 @@ test.describe('Pipelines E2E', () => {
       await expect(page.getByTestId('pipeline-editor')).toBeVisible();
       await expect(page.getByText(/^TAGS$/)).toHaveCount(0);
     }
+  });
+
+  // --------------------------------------------------------------------------
+  // Validation gate
+  //
+  // The publish-confirm button is disabled while the pipeline has any
+  // `severity: 'error'` validation issues (PipelineEditorPage.tsx:1159).
+  // Orphan/unreachable nodes are only *warnings* (validatePipeline.ts:341),
+  // so they do not block publish — the real gate is errors like MISSING_CONFIG.
+  //
+  // We insert an LLM node which by default has empty systemPrompt and
+  // userPromptTemplate (defaultNodeData in PipelineEditorContext.tsx:92),
+  // both of which produce MISSING_CONFIG errors via checkLLM
+  // (validatePipeline.ts:179). Filling them via updateNodeData clears the
+  // gate and Publish becomes enabled.
+  // --------------------------------------------------------------------------
+  test('validation gate: publish disabled until MISSING_CONFIG errors are resolved', async ({ page }) => {
+    await page.goto('/pipelines');
+    await page.getByTestId('new-pipeline-btn').click();
+    await page.getByTestId('new-pipeline-name').fill('E2E Validation Gate');
+    await page.getByTestId('new-pipeline-confirm').click();
+    await expect(page.getByTestId('pipeline-editor')).toBeVisible();
+
+    const llmId = await insertNodeViaBridge(page, 'llm');
+    const triggerId = await findNodeIdByType(page, 'trigger');
+    if (!triggerId) throw new Error('Trigger node missing after pipeline create');
+    await connectViaBridge(page, triggerId, llmId);
+    await expect(page.locator('.react-flow__node')).toHaveCount(2);
+
+    // Validation indicator surfaces the missing-config errors.
+    await expect(page.getByTestId('validation-indicator')).toBeVisible();
+
+    // Publish-confirm is disabled while errors exist.
+    await page.getByTestId('overflow-menu-btn').click();
+    await page.getByRole('button', { name: /^Publish…$/ }).click();
+    const publishConfirm = page.getByRole('button', { name: /^Publish$/ });
+    await expect(publishConfirm).toBeVisible();
+    await expect(publishConfirm).toBeDisabled();
+    await page.keyboard.press('Escape');
+
+    // Fill required LLM config — clears MISSING_CONFIG and enables Publish.
+    await updateNodeDataViaBridge(page, llmId, {
+      type: 'llm',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      systemPrompt: 'You are a helpful assistant.',
+      userPromptTemplate: 'Summarize: {{ context.input }}',
+      streaming: true,
+    });
+
+    await page.getByTestId('overflow-menu-btn').click();
+    await page.getByRole('button', { name: /^Publish…$/ }).click();
+    await expect(publishConfirm).toBeEnabled();
+  });
+
+  // --------------------------------------------------------------------------
+  // Approval flow
+  //
+  // A pipeline with Trigger → Approval pauses at the approval node
+  // (data-state="awaiting", MockExecutor.ts:804) and emits a row on
+  // /pipelines/approvals. Clicking Approve resolves the pending promise and
+  // the run resumes. Empty approvers list is treated as "(anyone)" per
+  // PendingApprovalsPage.tsx:160-162.
+  // --------------------------------------------------------------------------
+  test('approval flow: run blocks at approval node, /pipelines/approvals resolves it', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    await page.goto('/pipelines');
+    await page.getByTestId('new-pipeline-btn').click();
+    await page.getByTestId('new-pipeline-name').fill('E2E Approval Flow');
+    await page.getByTestId('new-pipeline-confirm').click();
+    await expect(page.getByTestId('pipeline-editor')).toBeVisible();
+
+    const approvalId = await insertNodeViaBridge(page, 'approval');
+    // Approval requires at least one approver to pass validation
+    // (validatePipeline.ts:250 — APPROVAL_NO_APPROVERS).
+    await updateNodeDataViaBridge(page, approvalId, {
+      type: 'approval',
+      approvers: [{ type: 'user', value: 'e2e-tester' }],
+      requiredCount: 1,
+    });
+    const triggerId = await findNodeIdByType(page, 'trigger');
+    if (!triggerId) throw new Error('Trigger node missing');
+    await connectViaBridge(page, triggerId, approvalId);
+
+    // Publish.
+    await page.getByTestId('overflow-menu-btn').click();
+    await page.getByRole('button', { name: /^Publish…$/ }).click();
+    const publishConfirm = page.getByRole('button', { name: /^Publish$/ });
+    await expect(publishConfirm).toBeEnabled();
+    await publishConfirm.click();
+    await expect(page.getByTestId('version-badge')).toContainText(/Published/i);
+
+    // Run. Approval node should enter `awaiting` state.
+    await page.getByTestId('run-button').click();
+    await expect(
+      page.locator(`.react-flow__node[data-id="${approvalId}"] [data-state="awaiting"]`),
+    ).toBeVisible({ timeout: 10_000 });
+
+    // Navigate to the approvals queue and resolve.
+    await page.goto('/pipelines/approvals');
+    await expect(page.getByTestId('pending-approvals-page')).toBeVisible();
+
+    // Approval card uses `approval-card-{runId}` — runId is dynamic, so locate
+    // by the approve button selector that wraps the same prefix.
+    const approveBtn = page.locator('[data-testid^="approve-"]').first();
+    await expect(approveBtn).toBeVisible({ timeout: 10_000 });
+    await approveBtn.click();
+
+    // After approval, the run resumes and the card disappears (optimistically
+    // first, then for real after `pipeline.approval.recorded` fires).
+    await expect(page.locator('[data-testid^="approval-card-"]')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Run replay
+  //
+  // Seed three demo pipelines via window.__pipelineDemo.seed(). Each gets
+  // 15 runs of synthetic history persisted under `ws_pipeline_runs_v1:{pid}`
+  // (runHistory.ts:23 — KEY_PREFIX). Navigate directly to a (pipelineId,
+  // runId) replay URL and assert the scrubber + at least one tick render.
+  // --------------------------------------------------------------------------
+  test('run replay: scrubber + ticks render against seeded run history', async ({ page }) => {
+    // Seed and grab one pipelineId/runId pair.
+    await page.goto('/pipelines');
+    const seedRef = await page.evaluate(async () => {
+      type DemoApi = { seed: (o?: { clearExisting?: boolean }) => unknown; clear: () => unknown };
+      const start = Date.now();
+      while (!(window as unknown as { __pipelineDemo?: DemoApi }).__pipelineDemo) {
+        if (Date.now() - start > 5_000) throw new Error('__pipelineDemo never appeared');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      (window as unknown as { __pipelineDemo: DemoApi }).__pipelineDemo.seed({ clearExisting: true });
+
+      // Read first pipeline + first run from localStorage.
+      const idx = JSON.parse(localStorage.getItem('ws_pipelines_v1_index') ?? '[]') as Array<{ id: string }>;
+      if (idx.length === 0) throw new Error('No pipelines after seed');
+      const pipelineId = idx[0].id;
+      const runs = JSON.parse(
+        localStorage.getItem(`ws_pipeline_runs_v1:${pipelineId}`) ?? '[]',
+      ) as Array<{ id: string }>;
+      if (runs.length === 0) throw new Error('No runs after seed');
+      return { pipelineId, runId: runs[0].id };
+    });
+
+    await page.goto(`/pipelines/${seedRef.pipelineId}/runs/${seedRef.runId}`);
+    await expect(page.getByTestId('pipeline-replay')).toBeVisible();
+    await expect(page.getByTestId('replay-scrubber')).toBeVisible();
+    await expect(page.getByTestId('replay-track')).toBeVisible();
+
+    // At least one event tick must render (runs always emit ≥ pipeline.started).
+    await expect(page.locator('[data-testid^="replay-tick-"]').first()).toBeVisible();
+
+    // The readout shows current/total and must update as we advance to the
+    // last tick. Click the last visible tick — readout should change.
+    const ticks = page.locator('[data-testid^="replay-tick-"]');
+    const tickCount = await ticks.count();
+    if (tickCount > 1) {
+      const before = await page.getByTestId('replay-readout').textContent();
+      await ticks.nth(tickCount - 1).click();
+      await expect(page.getByTestId('replay-readout')).not.toHaveText(before ?? '');
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // Bulk actions
+  //
+  // Seeded demos are auto-published (seedDemoData.ts:383). Selecting two
+  // cards and clicking bulk-archive flips their status to 'archived'.
+  // Archived pipelines are hidden from the default list view
+  // (PipelinesPage.tsx:80 comment), so the visible card count drops.
+  // --------------------------------------------------------------------------
+  test('bulk actions: select two cards and archive removes them from default view', async ({ page }) => {
+    await page.goto('/pipelines');
+    const seeded = await page.evaluate(async () => {
+      type DemoApi = { seed: (o?: { clearExisting?: boolean }) => { pipelines: number } };
+      const start = Date.now();
+      while (!(window as unknown as { __pipelineDemo?: DemoApi }).__pipelineDemo) {
+        if (Date.now() - start > 5_000) throw new Error('__pipelineDemo never appeared');
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const r = (window as unknown as { __pipelineDemo: DemoApi }).__pipelineDemo.seed({
+        clearExisting: true,
+      });
+      const idx = JSON.parse(localStorage.getItem('ws_pipelines_v1_index') ?? '[]') as Array<{ id: string }>;
+      return { count: r.pipelines, ids: idx.map((e) => e.id) };
+    });
+    expect(seeded.count).toBeGreaterThanOrEqual(3);
+
+    await page.reload();
+    await expect(page.getByTestId('pipelines-page')).toBeVisible();
+    const cardsBefore = page.locator('[data-testid^="pipeline-card-"]');
+    await expect(cardsBefore).toHaveCount(seeded.count);
+
+    // Select the first two pipelines via their checkboxes. The checkbox is
+    // only rendered when the card is hovered, selected, or any other card is
+    // selected (PipelinesPage.tsx:251 — checkboxVisible). Hover first.
+    const [a, b] = seeded.ids;
+    await page.getByTestId(`pipeline-card-${a}`).hover();
+    await page.getByTestId(`pipeline-select-${a}`).click();
+    await page.getByTestId(`pipeline-card-${b}`).hover();
+    await page.getByTestId(`pipeline-select-${b}`).click();
+
+    // Bulk action bar appears with count = 2.
+    await expect(page.getByTestId('bulk-action-bar')).toBeVisible();
+    await expect(page.getByTestId('bulk-count')).toContainText('2');
+
+    // Archive selected. Archived pipelines are hidden by default → visible
+    // card count drops by 2.
+    await page.getByTestId('bulk-archive').click();
+    await expect(cardsBefore).toHaveCount(seeded.count - 2);
   });
 });

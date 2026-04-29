@@ -43,9 +43,11 @@ test.describe('Observability E2E', () => {
     // Page mounts.
     await expect(page.getByTestId('observability-dashboard')).toBeVisible();
 
-    // KPI row: four cards (Runs today / Active now / Pending approvals / Failed).
+    // KPI row: five cards (Runs today / Active now / Pending approvals /
+    // Failed (24h) / Avg first-token latency). The 5th card was added with
+    // the LLM streaming work (DashboardPage.tsx:445).
     const kpis = page.getByTestId('kpi-card');
-    await expect(kpis).toHaveCount(4);
+    await expect(kpis).toHaveCount(5);
 
     // Cluster health chip ("N/M ✓" or "N/M !").
     await expect(page.getByTestId('cluster-health-chip')).toBeVisible();

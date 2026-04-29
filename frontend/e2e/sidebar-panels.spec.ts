@@ -98,6 +98,13 @@ async function clickDirect(locator: ReturnType<Page['locator']>) {
   await locator.evaluate((el) => (el as HTMLButtonElement).click());
 }
 
+// History and Past Calls were moved behind the "⋯ More actions" overflow
+// dropdown in DocumentHeader.tsx:283 (commit e2b8dda — toolbar tightening).
+// Tests must open the dropdown before clicking those entries.
+async function openMoreActions(page: Page) {
+  await clickDirect(page.locator('button[title="More actions"]'));
+}
+
 test.describe('Sidebar panel mutual exclusion', () => {
   test('My Items and Past Calls participate in the same mutex', async ({ page }) => {
     await gotoEditor(page);
@@ -106,8 +113,12 @@ test.describe('Sidebar panel mutual exclusion', () => {
     await clickDirect(headerButton(page, /^My Items(\s*\(\d+\))?$/));
     await expect(panelHeading(page, PANEL_TITLES.myItems)).toBeVisible();
 
-    // Past Calls should replace My Items.
-    const pastCallsBtn = headerButton(page, /^Past Calls$/);
+    // Past Calls now lives in the "⋯ More actions" overflow dropdown — and
+    // is only rendered when pastCallsCount > 0 (DocumentHeader.tsx:301). When
+    // the dev environment has no past calls, this part of the mutex contract
+    // can't be exercised; annotate and bail rather than skipping silently.
+    await openMoreActions(page);
+    const pastCallsBtn = page.getByRole('button', { name: /^Past Calls(\s*\(\d+\))?$/ });
     if ((await pastCallsBtn.count()) > 0) {
       await clickDirect(pastCallsBtn);
       await expect(panelHeading(page, PANEL_TITLES.videoHistory)).toBeVisible();
@@ -115,7 +126,8 @@ test.describe('Sidebar panel mutual exclusion', () => {
     } else {
       test.info().annotations.push({
         type: 'skip-reason',
-        description: 'Past Calls button not present in header; header may have been refactored.',
+        description:
+          'Past Calls entry only renders when pastCallsCount > 0; no calls in this dev environment.',
       });
     }
   });
@@ -125,7 +137,8 @@ test.describe('Sidebar panel mutual exclusion', () => {
   // lowered the Panel's z-index and real users can't close panels by clicking.
   test('close button is reachable by a real mouse click (z-index regression)', async ({ page }) => {
     await gotoEditor(page);
-    await clickDirect(headerButton(page, /^History$/));
+    await openMoreActions(page);
+    await clickDirect(page.getByRole('button', { name: /^History$/ }));
     await expect(panelHeading(page, PANEL_TITLES.history)).toBeVisible();
 
     // Real mouse click (no evaluate fallback). If the header overlays the
@@ -137,8 +150,9 @@ test.describe('Sidebar panel mutual exclusion', () => {
   test('closePanel via panel close button allows re-opening a sibling', async ({ page }) => {
     await gotoEditor(page);
 
-    // Open History.
-    await clickDirect(headerButton(page, /^History$/));
+    // Open History (now nested in the ⋯ More actions dropdown).
+    await openMoreActions(page);
+    await clickDirect(page.getByRole('button', { name: /^History$/ }));
     await expect(panelHeading(page, PANEL_TITLES.history)).toBeVisible();
 
     // Close via the panel's close button. The Panel's top (where the button

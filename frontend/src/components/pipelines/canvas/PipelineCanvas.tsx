@@ -47,6 +47,7 @@ import AnimatedEdge from './edges/AnimatedEdge';
 import QuickInsertPopover from './QuickInsertPopover';
 import { autoArrange } from './autoArrange';
 import { PALETTE_ITEMS } from './NodePalette';
+import { useDevEditorBridge } from '../dev/useDevEditorBridge';
 
 // ---------------------------------------------------------------------------
 // Keyboard helpers (lifted from `useReplayKeyboard.ts` so the canvas honours
@@ -226,9 +227,22 @@ function CanvasInner({ onFilterLog }: CanvasInnerProps) {
     removeNode,
     selectedNodeId,
     setSelectedNodeId,
+    updateNodeData,
   } = usePipelineEditor();
 
   const { screenToFlowPosition, fitView } = useReactFlow();
+
+  // Dev-only: expose `window.__pipelineEditor.{insertNode, connect, ...}` so
+  // E2E tests can drive the canvas without HTML5 drag-and-drop (which
+  // Chromium DevTools Protocol can't fire dataTransfer events for reliably).
+  // Stripped from production builds via the import.meta.env.DEV gate inside
+  // the hook itself.
+  useDevEditorBridge({
+    addNode,
+    addEdge: addDefEdge,
+    updateNodeData,
+    getDefinition: () => definition,
+  });
 
   // Seed initial nodes/edges from definition; subsequent changes go through
   // onNodesChange/onEdgesChange and sync back to the definition in an effect.
