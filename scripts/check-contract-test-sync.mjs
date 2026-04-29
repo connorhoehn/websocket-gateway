@@ -13,9 +13,17 @@
 // and compare the two ordered lists. Anything else is allowed to differ.
 
 import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
-const GATEWAY = '/Users/choehn/Sandbox/websocket-gateway/frontend/src/components/pipelines/__tests__/pipelineExecutor.contract.test.ts';
-const DCORE   = '/Users/choehn/Sandbox/distributed-core/src/applications/pipeline/__tests__/pipelineExecutor.contract.test.ts';
+// Repo-relative paths so this works on any developer machine + CI.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const GATEWAY = resolve(REPO_ROOT, 'frontend/src/components/pipelines/__tests__/pipelineExecutor.contract.test.ts');
+// distributed-core's contract test is in the source tree, not in the
+// published dist/ — so cross-repo compare is a local-dev nicety only.
+// Skips gracefully when the sibling checkout isn't present.
+const DCORE   = resolve(REPO_ROOT, '../distributed-core/src/applications/pipeline/__tests__/pipelineExecutor.contract.test.ts');
 
 // Anchor: the gateway file MUST type-import from the canonical types module.
 const REQUIRED_GATEWAY_IMPORT = /from\s+['"][^'"]*types\/pipeline['"]/;

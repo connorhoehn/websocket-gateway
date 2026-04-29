@@ -61,17 +61,28 @@ jobs:
 
       # See ci.yml for the full rationale on this rewrite. distributed-core
       # is a private repo; without a token-bearing HTTPS URL, npm ci fails
-      # on the lockfile's git+ssh resolved field.
+      # on the lockfile's git+ssh resolved field. See .planning/handoff/CI-SETUP.md.
       - name: Configure git for private DC dep
         env:
           DC_TOKEN: ${{ secrets.DC_REPO_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$DC_TOKEN" ]; then
-            echo "::error::Neither DC_REPO_TOKEN nor GITHUB_TOKEN is available — cannot fetch private distributed-core dep"
+            echo "::error::Neither DC_REPO_TOKEN nor GITHUB_TOKEN is available — cannot fetch private distributed-core dep. See .planning/handoff/CI-SETUP.md"
             exit 1
           fi
-          git config --global url."https://x-access-token:${DC_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${DC_TOKEN}@github.com/".insteadOf "https://github.com/"
+          REWRITE="https://x-access-token:${DC_TOKEN}@github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "ssh://git@github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "git@github.com:"
+          git config --global --add url."${REWRITE}".insteadOf "https://github.com/"
+          git config --global --add url."${REWRITE}".insteadOf "git://github.com/"
+          rule_count=$(git config --global --get-all url."${REWRITE}".insteadOf | wc -l | tr -d ' ')
+          [ "$rule_count" -eq 4 ] || (echo "::error::expected 4 git rewrite rules, got $rule_count"; exit 1)
+          # Verify the token can actually read distributed-core BEFORE npm ci
+          # so we get a clear error instead of 20 lines of npm debug output.
+          if ! git ls-remote "https://x-access-token:${DC_TOKEN}@github.com/connorhoehn/distributed-core.git" HEAD >/dev/null 2>&1; then
+            echo "::error::Token rejected by connorhoehn/distributed-core. Set DC_REPO_TOKEN repo secret to a PAT with read access. See .planning/handoff/CI-SETUP.md"
+            exit 1
+          fi
 
       - name: Install social-api deps
         working-directory: social-api

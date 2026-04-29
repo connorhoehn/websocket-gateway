@@ -11,11 +11,21 @@
 // per TYPES_SYNC.md are allow-listed.
 
 import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 
-const GATEWAY_TS = '/Users/choehn/Sandbox/websocket-gateway/frontend/src/types/pipeline.ts';
-const DCORE_TS   = '/Users/choehn/Sandbox/distributed-core/src/applications/pipeline/types.ts';
-const SCHEMA     = '/Users/choehn/Sandbox/websocket-gateway/schemas/pipeline.schema.json';
-const OPENAPI    = '/Users/choehn/Sandbox/websocket-gateway/social-api/openapi/pipelines.yaml';
+// Repo-relative paths so this works on any developer machine + CI.
+// Script lives at <repo>/scripts/check-types-sync.mjs.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const GATEWAY_TS = resolve(REPO_ROOT, 'frontend/src/types/pipeline.ts');
+// distributed-core is now an npm dep; the published tarball ships dist/
+// only (no src/), so the cross-repo source compare is a local-dev-only
+// nicety. Falls back gracefully when the file isn't present (existsSync
+// gate below).
+const DCORE_TS   = resolve(REPO_ROOT, '../distributed-core/src/applications/pipeline/types.ts');
+const SCHEMA     = resolve(REPO_ROOT, 'schemas/pipeline.schema.json');
+const OPENAPI    = resolve(REPO_ROOT, 'social-api/openapi/pipelines.yaml');
 
 // Kernel/SDK split: dcore keeps LLMProvider as `string`, no UI-only
 // publishedSnapshot, PipelineWireEvent gateway-first.

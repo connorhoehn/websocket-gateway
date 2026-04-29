@@ -36,6 +36,12 @@ jobs:
           # Sanity-check all 4 rules survived the --add calls.
           rule_count=$(git config --global --get-all url."${REWRITE}".insteadOf | wc -l | tr -d ' ')
           [ "$rule_count" -eq 4 ] || (echo "::error::expected 4 git rewrite rules, got $rule_count"; exit 1)
+          # Verify the token can actually read distributed-core BEFORE npm ci
+          # so we get a clear error instead of 20 lines of npm debug output.
+          if ! git ls-remote "${REWRITE}connorhoehn/distributed-core.git" HEAD >/dev/null 2>&1; then
+            echo "::error::Token rejected by connorhoehn/distributed-core. Set DC_REPO_TOKEN repo secret to a PAT with read access. See .planning/handoff/CI-SETUP.md"
+            exit 1
+          fi
       - run: cd frontend && npm ci && npx tsc --noEmit
       - run: cd social-api && npm ci && npx tsc --noEmit
       - run: npm ci && node --check src/server.js # syntax check
@@ -46,6 +52,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Verify the token can read distributed-core BEFORE the long social-api
+      # docker build, so we fail in 1s with a clear message instead of 60s
+      # into a Dockerfile layer.
+      - name: Verify DC token
+        env:
+          DC_TOKEN: ${{ secrets.DC_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$DC_TOKEN" ]; then
+            echo "::error::Neither DC_REPO_TOKEN nor GITHUB_TOKEN is available. See .planning/handoff/CI-SETUP.md"
+            exit 1
+          fi
+          if ! git ls-remote "https://x-access-token:${DC_TOKEN}@github.com/connorhoehn/distributed-core.git" HEAD >/dev/null 2>&1; then
+            echo "::error::Token rejected by connorhoehn/distributed-core. Set DC_REPO_TOKEN repo secret to a PAT with read access. See .planning/handoff/CI-SETUP.md"
+            exit 1
+          fi
       # gateway image is built from src/package*.json (no private deps) —
       # plain build is fine.
       - run: docker build -t gateway:test .
