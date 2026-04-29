@@ -13,6 +13,7 @@ const MessageRouter = require("./core/message-router");
 const Logger = require("./utils/logger");
 const MetricsCollector = require("./utils/metrics-collector");
 const promMetrics = require("./observability/metrics");
+const { handlePostmortem } = require("./observability/postmortem");
 const AuthMiddleware = require("./middleware/auth-middleware");
 const {
     KEEPALIVE_INTERVAL_MS,
@@ -354,6 +355,14 @@ class DistributedWebSocketServer {
                 // Coexists with CloudWatch push from MetricsCollector.
                 res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' });
                 res.end(promMetrics.renderPrometheusText());
+            } else if (req.url === '/internal/postmortem' && req.method === 'GET') {
+                // Postmortem aggregator — surfaces `cluster.snapshot()` for
+                // incident response. Same auth gate as /internal/metrics
+                // (today: open at the app layer; internal/admin-only at the
+                // network layer). Returns 200 + JSON snapshot when wired,
+                // 200 + { wired: false } when ownership routing is disabled,
+                // 500 + { wired: true } when snapshot() throws.
+                handlePostmortem(req, res, { logger: this.logger });
             } else if (req.method === 'POST' && urlPathOnly.startsWith('/hooks/pipeline/')) {
                 // Phase 4-forward: external webhook trigger for pipelines with
                 // triggerBinding.event === 'webhook'. Emits a bus event that the

@@ -267,6 +267,44 @@ specific provider keys / required SDK credentials are owned by that module.
 
 ---
 
+## Internal HTTP endpoints
+
+Operator-facing surfaces exposed by the gateway HTTP server. All `/internal/*`
+routes are intended for the internal/admin scope only — keep them off the
+public ingress at the network layer (today they share a single open auth gate
+at the application layer; if that ever changes, all `/internal/*` routes
+move behind the same gate together).
+
+### `GET /internal/metrics`
+
+Prometheus 0.0.4 text-format scrape of distributed-core's `MetricsRegistry`.
+Coexists with the legacy CloudWatch-push path. No body required.
+
+### `GET /internal/postmortem` *(new in Wave 2)*
+
+| Field | Value |
+|---|---|
+| Auth gate | same as `/internal/metrics` (open at app layer; internal/admin-only at network layer) |
+| Backed by | `cluster.snapshot()` from distributed-core v0.4.0+, resolved via the `RoomOwnershipService` singleton |
+| Content-Type | `application/json` |
+
+Surfaces a one-shot view of cluster state for incident response: membership,
+ownership, locks, inflight rebalances, WAL position, and a metrics snapshot.
+Reading is non-mutating.
+
+| Status | Body | Meaning |
+|---|---|---|
+| `200` | `cluster.snapshot()` result (object with `nodeId`, `timestamp`, `membership`, `ownership`, `locks`, `inflightRebalances`, `walPosition`, `metrics`) | Cluster wired and snapshot succeeded. Sub-fields degrade gracefully — empty arrays / `null` rather than throwing — when an underlying primitive isn't wired (see distributed-core/src/cluster/Cluster.ts:728 docstring). |
+| `200` | `{ "error": "cluster not wired", "wired": false }` | `WSG_ENABLE_OWNERSHIP_ROUTING` is off, or the bootstrap returned null (NullRoomOwnershipService path). Not an error condition — the gateway is operating in single-process mode. |
+| `500` | `{ "error": "<message>", "wired": true }` | `cluster.snapshot()` threw. Genuinely unexpected — file an incident. |
+
+**Example** — capture a snapshot during a stuck-cluster incident:
+```bash
+curl -s http://localhost:8080/internal/postmortem | jq
+```
+
+---
+
 ## Cross-cutting notes
 
 - **Test hermeticity.** `NODE_ENV=test` and `JEST_WORKER_ID` are both treated
