@@ -715,7 +715,7 @@ function AppLayoutInner({
             return (
               <div style={{ position: 'sticky', top: 53, background: '#f8fafc', zIndex: 33, padding: '0 2rem' }}>
                 {/* Main tabs */}
-                <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 4px', borderBottom: '1px solid #e2e8f0' }}>
                   {([
                     ['/previews', 'panels', 'Previews'],
                     ['/social', 'social', 'Social'],
@@ -729,14 +729,22 @@ function AppLayoutInner({
                         key={view}
                         onClick={() => navigate(path)}
                         style={{
-                          padding: '0.5rem 1rem',
+                          padding: '6px 14px',
                           border: 'none',
-                          borderBottom: isActive ? '2px solid #646cff' : '2px solid transparent',
-                          background: 'none',
-                          color: isActive ? '#0f172a' : '#64748b',
-                          fontWeight: isActive ? 600 : 400,
+                          borderRadius: 6,
+                          background: isActive ? '#e0e7ff' : 'transparent',
+                          color: isActive ? '#1e1b4b' : '#64748b',
+                          fontWeight: isActive ? 600 : 500,
                           fontSize: '0.875rem',
                           cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          transition: 'background 120ms ease, color 120ms ease',
+                        }}
+                        onMouseEnter={e => {
+                          if (!isActive) (e.currentTarget as HTMLElement).style.background = '#f1f5f9';
+                        }}
+                        onMouseLeave={e => {
+                          if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
                         }}
                       >
                         {label}
@@ -764,8 +772,8 @@ function AppLayoutInner({
                 {/* Sub-nav — visible when in Documents section */}
                 {inContent && (
                   <div style={{
-                    display: 'flex', alignItems: 'center', gap: 2,
-                    padding: '0 4px',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '6px 4px',
                     borderBottom: '1px solid #e2e8f0',
                     background: '#f8fafc',
                   }}>
@@ -773,33 +781,43 @@ function AppLayoutInner({
                       ['/documents',      'doc-editor',  'Documents'],
                       ['/document-types', 'doc-types',   'Document Types'],
                       ['/field-types',    'field-types', 'Data Types'],
-                    ] as const).map(([path, view, label]) => (
-                      <button
-                        key={view}
-                        onClick={() => navigate(path)}
-                        style={{
-                          padding: '6px 12px',
-                          border: 'none',
-                          borderBottom: activeView === view ? '2px solid #646cff' : '2px solid transparent',
-                          background: 'none',
-                          color: activeView === view ? '#0f172a' : '#64748b',
-                          fontWeight: activeView === view ? 600 : 400,
-                          fontSize: '0.8125rem',
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    ] as const).map(([path, view, label]) => {
+                      const isActive = activeView === view;
+                      return (
+                        <button
+                          key={view}
+                          onClick={() => navigate(path)}
+                          style={{
+                            padding: '5px 12px',
+                            border: 'none',
+                            borderRadius: 6,
+                            background: isActive ? '#e0e7ff' : 'transparent',
+                            color: isActive ? '#1e1b4b' : '#64748b',
+                            fontWeight: isActive ? 600 : 500,
+                            fontSize: '0.8125rem',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                            transition: 'background 120ms ease, color 120ms ease',
+                          }}
+                          onMouseEnter={e => {
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = '#f1f5f9';
+                          }}
+                          onMouseLeave={e => {
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
                 {/* Pipelines sub-nav */}
                 {activeView === 'pipelines' && (
                   <div style={{
-                    display: 'flex', alignItems: 'center', gap: 2,
-                    padding: '0 4px',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '6px 4px',
                     borderBottom: '1px solid #e2e8f0',
                     background: '#f8fafc',
                   }}>
@@ -815,15 +833,22 @@ function AppLayoutInner({
                           onClick={() => navigate(path)}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '6px 12px',
+                            padding: '5px 12px',
                             border: 'none',
-                            borderBottom: isActive ? '2px solid #646cff' : '2px solid transparent',
-                            background: 'none',
-                            color: isActive ? '#0f172a' : '#64748b',
-                            fontWeight: isActive ? 600 : 400,
+                            borderRadius: 6,
+                            background: isActive ? '#e0e7ff' : 'transparent',
+                            color: isActive ? '#1e1b4b' : '#64748b',
+                            fontWeight: isActive ? 600 : 500,
                             fontSize: '0.8125rem',
                             cursor: 'pointer',
                             fontFamily: 'inherit',
+                            transition: 'background 120ms ease, color 120ms ease',
+                          }}
+                          onMouseEnter={e => {
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = '#f1f5f9';
+                          }}
+                          onMouseLeave={e => {
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
                           }}
                         >
                           <span>{label}</span>
