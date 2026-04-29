@@ -52,13 +52,19 @@ class RoomOwnershipService extends EventEmitter {
      *   non-local owner instead of falling back to Redis pub/sub.
      * @param {object} [deps.logger]
      */
-    constructor({ rebalanceManager, registry, router, nodeId, peerMessaging, logger } = {}) {
+    constructor({ rebalanceManager, registry, router, nodeId, peerMessaging, presenceRegistry, logger } = {}) {
         super();
         this.rebalanceManager = rebalanceManager || null;
         this.registry = registry || null;
         this.router = router || null;
         this.nodeId = nodeId || (router && router.nodeId) || null;
         this.peerMessaging = peerMessaging || null;
+        // Optional secondary EntityRegistry used by PresenceService as a
+        // shadow-write target. Constructed by cluster-bootstrap when
+        // WSG_PRESENCE_REGISTRY_ENABLED=true; null otherwise. Surfaced here
+        // so server.js can hand it to PresenceService at startup without
+        // re-bootstrapping anything.
+        this.presenceRegistry = presenceRegistry || null;
         this.logger = logger || new Logger('room-ownership-service');
 
         /** @type {Map<string, string>} resourceId → ownerNodeId */
@@ -267,6 +273,9 @@ class NullRoomOwnershipService extends EventEmitter {
     constructor({ logger } = {}) {
         super();
         this.logger = logger || new Logger('room-ownership-service:null');
+        // Mirrors RoomOwnershipService.presenceRegistry so server.js can read
+        // this property uniformly without an `instanceof` check.
+        this.presenceRegistry = null;
     }
     isEnabled() { return false; }
     getPeerMessaging() { return null; }
@@ -325,6 +334,7 @@ async function getRoomOwnershipService(opts = {}) {
             router: bootstrap.router,
             nodeId: bootstrap.nodeId,
             peerMessaging: bootstrap.peerMessaging || null,
+            presenceRegistry: bootstrap.presenceRegistry || null,
             logger,
         });
         // Attach the shutdown helper so callers can tear down via the service.

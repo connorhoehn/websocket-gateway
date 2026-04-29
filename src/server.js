@@ -152,6 +152,7 @@ class DistributedWebSocketServer {
         // attach is idempotent so a hot-reload or repeated init won't double
         // register handlers.
         this._attachPeerMessagingWhenReady();
+        this._attachPresenceRegistryWhenReady();
 
         // Initialize services
         await this.initializeServices();
@@ -971,6 +972,47 @@ class DistributedWebSocketServer {
      * handlers for channels already locally subscribed at attach time, so
      * any client subscribing during the bootstrap window is covered.
      */
+    /**
+     * If the presence service is enabled AND `WSG_PRESENCE_REGISTRY_ENABLED=true`
+     * caused cluster-bootstrap to construct a secondary EntityRegistry, attach
+     * it to PresenceService as a shadow-write target. Fire-and-forget — the
+     * bootstrap is lazy and may resolve after services are constructed; until
+     * it does, the in-memory presence path is the only path. When the flag is
+     * off, the bootstrap's `presenceRegistry` is null and this is a no-op.
+     */
+    _attachPresenceRegistryWhenReady() {
+        // eslint-disable-next-line global-require
+        const { getRoomOwnershipService } = require('./services/room-ownership-service');
+        Promise.resolve()
+            .then(() => getRoomOwnershipService({ logger: this.logger }))
+            .then((svc) => {
+                const registry = svc && svc.presenceRegistry ? svc.presenceRegistry : null;
+                if (!registry) {
+                    this.logger.debug && this.logger.debug(
+                        'Presence shadow-write registry unavailable (flag off or bootstrap returned null); skipping',
+                    );
+                    return;
+                }
+                const presenceService = this.services && this.services.get
+                    ? this.services.get('presence')
+                    : null;
+                if (!presenceService || typeof presenceService.setPresenceRegistry !== 'function') {
+                    this.logger.debug && this.logger.debug(
+                        'Presence service not present or missing setPresenceRegistry(); skipping',
+                    );
+                    return;
+                }
+                presenceService.setPresenceRegistry(registry);
+                this.logger.info('✅ Presence shadow-write registry attached');
+            })
+            .catch((err) => {
+                this.logger.warn && this.logger.warn(
+                    'Failed to attach presence shadow-write registry',
+                    { error: err && err.message },
+                );
+            });
+    }
+
     _attachPeerMessagingWhenReady() {
         // eslint-disable-next-line global-require
         const { getRoomOwnershipService } = require('./services/room-ownership-service');

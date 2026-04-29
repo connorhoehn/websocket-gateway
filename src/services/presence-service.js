@@ -41,11 +41,30 @@ function validateMetadata(metadata, logger) {
 }
 
 class PresenceService {
-    constructor(messageRouter, nodeManager, logger, metricsCollector = null) {
+    /**
+     * @param {object} messageRouter
+     * @param {object} nodeManager
+     * @param {object} logger
+     * @param {object|null} [metricsCollector]
+     * @param {object} [opts]
+     * @param {object} [opts.presenceRegistry] — optional DC EntityRegistry used as a
+     *   *shadow-write* secondary path. When provided, every set/update/heartbeat
+     *   ALSO writes/refreshes a TTL-bounded entry under `presence:<clientId>`,
+     *   and disconnects ALSO release it. Reads still come from the in-memory
+     *   maps; the registry path is observation-only for now and a follow-up
+     *   PR can flip the read source over after parity is verified. Default:
+     *   undefined (no shadow writes — behaviour is byte-identical to today).
+     */
+    constructor(messageRouter, nodeManager, logger, metricsCollector = null, opts = {}) {
         this.messageRouter = messageRouter;
         this.nodeManager = nodeManager;
         this.logger = logger;
         this.metricsCollector = metricsCollector;
+
+        // Shadow-write secondary path. Optional; undefined means "off" (the
+        // default). Wrapped in try/catch at every call site so registry
+        // failures never affect the live in-memory presence path.
+        this.presenceRegistry = opts.presenceRegistry || null;
 
         // Local state management
         this.clientPresence = new Map(); // clientId -> presence data
@@ -79,6 +98,86 @@ class PresenceService {
             this.cleanupStaleClients();
         }, this.CLEANUP_INTERVAL);
         if (this.cleanupInterval.unref) this.cleanupInterval.unref();
+    }
+
+    /**
+     * Attach (or replace) the optional shadow-write EntityRegistry after
+     * construction. Used by server.js when the lazy cluster bootstrap
+     * finishes after this service was created. Pass `null` to disable.
+     *
+     * @param {object|null} presenceRegistry
+     */
+    setPresenceRegistry(presenceRegistry) {
+        this.presenceRegistry = presenceRegistry || null;
+        this.logger.debug && this.logger.debug(
+            `presence-service: shadow-write registry ${presenceRegistry ? 'attached' : 'detached'}`
+        );
+    }
+
+    // -----------------------------------------------------------------
+     // Shadow-write helpers (TTL-aware EntityRegistry secondary path).
+     //
+     // These wrap the optional `presenceRegistry` in a never-throws envelope:
+     // any error from the registry is logged at warn-level and swallowed so
+     // the live in-memory presence path is unaffected. Disabled (no-op) when
+     // `presenceRegistry` is null/undefined, which is the default.
+     //
+     // proposeEntity is upsert-shaped from our perspective: we try CREATE
+     // first, and on EntityAlreadyExistsError we fall back to updateEntity
+     // (which also resets the TTL via { ttlMs }).
+     // -----------------------------------------------------------------
+    async _shadowWritePresence(clientId, presenceData) {
+        if (!this.presenceRegistry) return;
+
+        const entityId = `presence:${clientId}`;
+        const data = {
+            roomId: Array.isArray(presenceData.channels) && presenceData.channels.length > 0
+                ? presenceData.channels[0]
+                : null,
+            userId: (presenceData.metadata && presenceData.metadata.userId) || presenceData.userId || null,
+            metadata: presenceData.metadata || {},
+            lastHeartbeat: presenceData.lastHeartbeat || Date.now(),
+        };
+
+        try {
+            await this.presenceRegistry.proposeEntity(entityId, data, { ttlMs: PRESENCE_TIMEOUT_MS });
+        } catch (err) {
+            const isAlreadyExists = err && (err.name === 'EntityAlreadyExistsError'
+                || (err.code && err.code === 'ENTITY_ALREADY_EXISTS')
+                || (err.message && /already exists/i.test(err.message)));
+            if (isAlreadyExists && typeof this.presenceRegistry.updateEntity === 'function') {
+                try {
+                    await this.presenceRegistry.updateEntity(entityId, data, { ttlMs: PRESENCE_TIMEOUT_MS });
+                    return;
+                } catch (updateErr) {
+                    this.logger.warn(`presence-service: shadow-write updateEntity failed for ${entityId}`, {
+                        error: updateErr && updateErr.message,
+                    });
+                    return;
+                }
+            }
+            this.logger.warn(`presence-service: shadow-write proposeEntity failed for ${entityId}`, {
+                error: err && err.message,
+            });
+        }
+    }
+
+    async _shadowReleasePresence(clientId) {
+        if (!this.presenceRegistry) return;
+        const entityId = `presence:${clientId}`;
+        try {
+            await this.presenceRegistry.releaseEntity(entityId);
+        } catch (err) {
+            // EntityNotFound is benign — the entry may have already TTL-expired
+            // or been released by an earlier disconnect path.
+            const isNotFound = err && (err.name === 'EntityNotFoundError'
+                || (err.code && err.code === 'ENTITY_NOT_FOUND')
+                || (err.message && /not found/i.test(err.message)));
+            if (isNotFound) return;
+            this.logger.warn(`presence-service: shadow-release failed for ${entityId}`, {
+                error: err && err.message,
+            });
+        }
     }
 
     async handleAction(clientId, action, data) {
@@ -139,6 +238,9 @@ class PresenceService {
 
         // Store presence locally
         this.clientPresence.set(clientId, presenceData);
+
+        // Shadow-write secondary path (no-op when registry is null).
+        await this._shadowWritePresence(clientId, presenceData);
 
         // Update channel presence
         await this.updateChannelPresence(clientId, presenceData, channels);
@@ -251,6 +353,9 @@ class PresenceService {
             presenceData.lastSeen = new Date().toISOString();
             presenceData.lastHeartbeat = Date.now(); // Update lastHeartbeat timestamp
             this.clientPresence.set(clientId, presenceData);
+
+            // Shadow-write secondary path: refreshes the registry entry's TTL.
+            await this._shadowWritePresence(clientId, presenceData);
         }
     }
 
@@ -405,13 +510,17 @@ class PresenceService {
         if (presenceData && presenceData.status !== 'offline') {
             presenceData.status = 'offline';
             presenceData.timestamp = new Date().toISOString();
-            
+
+            // Shadow-write secondary path: refresh the registry entry with the
+            // new (offline) status. This is the "update" call site.
+            await this._shadowWritePresence(clientId, presenceData);
+
             // Update channel presence
             await this.updateChannelPresence(clientId, presenceData, presenceData.channels);
-            
+
             // Broadcast offline status
             await this.broadcastPresenceUpdate(presenceData);
-            
+
             this.logger.debug(`Client ${clientId} marked as offline due to inactivity`);
         }
     }
@@ -490,6 +599,10 @@ class PresenceService {
                 this.clientPresence.delete(clientId);
                 this.removeClientFromAllChannels(clientId);
                 this.disconnectTimers.delete(clientId);
+
+                // Shadow-release secondary path (fire-and-forget; the helper
+                // never throws). No-op when the registry is null.
+                Promise.resolve(this._shadowReleasePresence(clientId)).catch(() => {});
             }, PRESENCE_DISCONNECT_DELAY_MS);
             this.disconnectTimers.set(clientId, timerId);
         }

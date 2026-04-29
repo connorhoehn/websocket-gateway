@@ -344,8 +344,40 @@ async function bootstrapGatewayCluster(opts = {}) {
         // sane; we only override here if the operator asks.
     });
 
+    // -----------------------------------------------------------------
+    // Optional secondary registry for presence shadow-writes.
+    //
+    // When `WSG_PRESENCE_REGISTRY_ENABLED=true`, we construct a *second*
+    // CrdtEntityRegistry pinned to the same nodeId but with a much shorter
+    // tombstone TTL (presence churn is high — clients connect/disconnect
+    // frequently and stale tombstones bloat memory). PresenceService uses
+    // this as a shadow-write secondary path; reads still come from its
+    // in-memory map. Default: undefined (the flag is off and this path
+    // does not execute, preserving byte-identical behaviour).
+    // -----------------------------------------------------------------
+    let presenceRegistry = null;
+    const presenceRegistryEnabled = String(process.env.WSG_PRESENCE_REGISTRY_ENABLED || '').trim().toLowerCase() === 'true';
+    if (presenceRegistryEnabled) {
+        presenceRegistry = EntityRegistryFactory.create({
+            type: 'crdt',
+            nodeId,
+            crdtOptions: { tombstoneTTLMs: 60_000 },
+        });
+    }
+
     await registry.start();
     await router.start();
+    if (presenceRegistry) {
+        try {
+            await presenceRegistry.start();
+            logger.info && logger.info('Presence shadow-write registry started', { nodeId });
+        } catch (err) {
+            logger.warn && logger.warn('presenceRegistry.start() failed; disabling shadow-writes', {
+                error: err && err.message,
+            });
+            presenceRegistry = null;
+        }
+    }
     // M11 (distributed-core v0.4.0): seedOwnership pre-populates the manager's
     // ownerCache from the wired registry on start, so the first observed
     // migration carries a non-null `previousOwnerId`. Without this, router-only
@@ -400,6 +432,11 @@ async function bootstrapGatewayCluster(opts = {}) {
         try { await registry.stop(); } catch (err) {
             logger.warn && logger.warn('registry.stop() failed', { error: err && err.message });
         }
+        if (presenceRegistry) {
+            try { await presenceRegistry.stop(); } catch (err) {
+                logger.warn && logger.warn('presenceRegistry.stop() failed', { error: err && err.message });
+            }
+        }
 
         logger.info && logger.info('Cluster shutdown: phase 3 — full cluster teardown', { nodeId });
         try { await clusterHandle.stop(); } catch (err) {
@@ -414,6 +451,7 @@ async function bootstrapGatewayCluster(opts = {}) {
         clusterHandle,
         nodeId,
         peerMessaging,
+        presenceRegistry,
         shutdown,
     };
 }
