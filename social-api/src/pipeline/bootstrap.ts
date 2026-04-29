@@ -67,6 +67,7 @@ import { buildPipelineModuleConfig } from './config/pipelineModule';
 import { buildAppLayerRegistries } from './config/registries';
 import { resolveStableNodeId } from './config/identity';
 import { verifyWalParentWritable } from './config/walPreflight';
+import { setupHintedHandoffQueue } from './config/hintedHandoffQueue';
 
 // ---------------------------------------------------------------------------
 // Test-mode helpers
@@ -252,6 +253,8 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const cluster = await Cluster.create(clusterConfig);
   await cluster.start();
 
+  const hintedHandoff = await setupHintedHandoffQueue(cluster);
+
   const clusterMgr = cluster.clusterManager;
   const pubsub = cluster.pubsub;
 
@@ -396,6 +399,7 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     } catch (err) {
       console.error('[pipeline] resourceRegistry.stop() failed', err);
     }
+    try { if (hintedHandoff) await hintedHandoff.stop(); } catch (err) { console.error('[pipeline] hintedHandoff.stop() failed', err); }
     try {
       await cluster.stop();
     } catch (err) {
