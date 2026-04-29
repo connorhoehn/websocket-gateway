@@ -1,19 +1,18 @@
 // social-api/src/pipeline/config/pipelineModule.ts
 //
-// Pure builder for `PipelineModuleConfig`. Streams 3, 4, and 5 (BusDLQ,
-// BusCompact, BusMetrics) want to extend this with eventBus-level config —
-// BUT distributed-core's `PipelineModule.onInitialize()` currently only reads
-// `eventBusTopic` and `walFilePath` from `pipelineConfig` when constructing
-// its internal EventBus. The other LocalEventBusConfig fields
-// (deadLetterHandler, metrics, autoCompactIntervalMs, autoCompactOptions)
-// are not threaded through.
+// Pure builder for `PipelineModuleConfig`. distributed-core v0.7.2's
+// `PipelineModule.onInitialize()` now threads the EventBus passthrough fields
+// (deadLetterHandler, metrics, walSyncIntervalMs, autoCompactIntervalMs,
+// autoCompactOptions) from `PipelineModuleConfig` into the constructed
+// EventBus, so Streams 3/4/5 can wire bus-level behavior from the gateway.
 //
-// Until that upstream gap is closed (see .claude-field-notes.md), Streams
-// 3/4/5 cannot wire bus-level behavior from the gateway — the only metrics
-// surface that already works is run-level (`PipelineModuleConfig.metrics`),
-// which produces pipeline.run.{started,completed,failed,cancelled} counters.
+// This file is the seam where each stream extends the constructor config:
+//   - Stream 3 (BusDLQ)     → eventBusDeadLetterHandler
+//   - Stream 4 (BusCompact) → eventBusAutoCompactIntervalMs / Options
+//   - Stream 5 (BusMetrics) → eventBusMetrics
+// All three are additive `?:` fields; merge-back conflicts are trivial.
 
-import type { LLMClient, MetricsRegistry } from 'distributed-core';
+import type { LLMClient, MetricsRegistry, BusEvent } from 'distributed-core';
 
 // PipelineModule's config interface lives in the applications/pipeline
 // barrel; the gateway reaches it through the top-level `distributed-core`
@@ -30,6 +29,13 @@ export interface PipelineModuleConstructorConfig {
   walFilePath?: string;
   /** Run-level metrics: pipeline.run.{started,completed,failed,cancelled}. */
   metrics?: MetricsRegistry;
+  /**
+   * EventBus dead-letter handler — invoked when a subscriber throws or a
+   * publish path fails. Threaded into `EventBusConfig.deadLetterHandler` by
+   * `PipelineModule.onInitialize()` (v0.7.2+). Default: errors are swallowed
+   * silently inside the bus.
+   */
+  eventBusDeadLetterHandler?: (event: BusEvent, error: Error) => void;
 }
 
 export interface BuildPipelineModuleConfigArgs {
@@ -37,6 +43,13 @@ export interface BuildPipelineModuleConfigArgs {
   walFilePath: string | undefined;
   llmClient: LLMClient;
   metricsRegistry: MetricsRegistry;
+  /**
+   * Optional dead-letter handler. When defined, threaded through to the
+   * underlying EventBus so subscriber-throws and publish-failures are
+   * recorded instead of swallowed. Wired by `bootstrap.ts` from the
+   * `PIPELINE_EVENT_BUS_DLQ_ENABLED` env var (default on).
+   */
+  eventBusDeadLetterHandler?: (event: BusEvent, error: Error) => void;
 }
 
 /**
@@ -61,6 +74,9 @@ export function buildPipelineModuleConfig(
   };
   if (args.walFilePath) {
     config.walFilePath = args.walFilePath;
+  }
+  if (args.eventBusDeadLetterHandler) {
+    config.eventBusDeadLetterHandler = args.eventBusDeadLetterHandler;
   }
   return config;
 }

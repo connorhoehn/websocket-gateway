@@ -36,6 +36,16 @@ const pipelineApprovalsTotal = registry.counter('pipeline_approvals_total', BASE
 const pipelineCancelsTotal = registry.counter('pipeline_cancels_total', BASE_LABELS, 'Pipeline runs explicitly cancelled by an operator.');
 const pipelineErrorsTotal = registry.counter('pipeline_errors_total', BASE_LABELS, 'Pipeline operations that failed (bridge throw, probe timeout, etc).');
 
+// EventBus dead-letter counter (Stream 3 — BusDLQ). Incremented every time a
+// subscriber throws or a publish path fails inside the pipeline EventBus.
+// `reason` carries the error's `name` (e.g., 'Error', 'TypeError', custom
+// classes) so dashboards can break down DLQs by error class without
+// unbounded label cardinality from full messages. Pre-registered at module
+// load with reason='_init' so a Prometheus scrape sees the metric at zero
+// before the first dead letter fires; per-reason counters are minted lazily
+// in `incrementBusDeadLetter`.
+registry.counter('pipeline_event_bus_dead_letters_total', { ...BASE_LABELS, reason: '_init' }, 'Pipeline EventBus dead letters (subscriber throw or publish failure), labeled by error.name.');
+
 export function recordConnection(delta: number): void {
   if (delta > 0) activeConnections.inc(delta);
   else if (delta < 0) activeConnections.dec(-delta);
@@ -75,6 +85,17 @@ export function recordPipelineCancel(): void {
 
 export function recordPipelineError(): void {
   pipelineErrorsTotal.inc();
+}
+
+/**
+ * Increment the EventBus dead-letter counter, labeled by `reason`. The caller
+ * is expected to pass the error's `name` (e.g., `error.name` — typically
+ * 'Error', 'TypeError', or a custom subclass name) so cardinality stays
+ * bounded. Full messages are intentionally NOT used as labels; a small fixed
+ * set of error classes is the correct shape for a Prometheus counter.
+ */
+export function incrementBusDeadLetter(reason: string): void {
+  registry.counter('pipeline_event_bus_dead_letters_total', { ...BASE_LABELS, reason }).inc();
 }
 
 // Renders the registry snapshot as Prometheus 0.0.4 text format.

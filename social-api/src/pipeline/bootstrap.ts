@@ -58,11 +58,14 @@
 // getMetrics, getPendingApprovals, pipeline.run.reassigned) into WebSockets.
 
 import { Cluster, PipelineModule } from 'distributed-core';
-import type { LLMClient } from 'distributed-core';
+import type { BusEvent, LLMClient } from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
 import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
-import { getRegistry as getMetricsRegistry } from '../observability/metrics';
+import {
+  getRegistry as getMetricsRegistry,
+  incrementBusDeadLetter,
+} from '../observability/metrics';
 import {
   buildClusterConfig,
   resolveRegistryMode,
@@ -428,12 +431,35 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
 
   // --- PipelineModule construction ---
   const llmClient = opts.llmClient ?? createLLMClient();
+
+  // EventBus dead-letter handler (Stream 3 — BusDLQ). On by default — the
+  // reasonable failure mode in production is to ALWAYS record dead letters
+  // so subscriber bugs and publish failures don't disappear silently. Set
+  // PIPELINE_EVENT_BUS_DLQ_ENABLED=false to opt out.
+  const dlqRaw = process.env.PIPELINE_EVENT_BUS_DLQ_ENABLED ?? 'true';
+  const dlqEnabled = dlqRaw.trim().toLowerCase() !== 'false';
+  const eventBusDeadLetterHandler = dlqEnabled
+    ? (event: BusEvent, error: Error): void => {
+        incrementBusDeadLetter(error.name);
+        // BusEvent (v0.7.2) does not carry a `topic` field — that lives on
+        // the EventBus instance, not the envelope. Surface `type` (the
+        // user-facing event name) and `sourceNodeId` (which node emitted it)
+        // so operators can correlate dead letters with publishers.
+        console.error('[pipeline] event bus dead letter', {
+          type: event.type,
+          sourceNodeId: event.sourceNodeId,
+          error,
+        });
+      }
+    : undefined;
+
   const module = new PipelineModule(
     buildPipelineModuleConfig({
       nodeId,
       walFilePath,
       llmClient,
       metricsRegistry,
+      ...(eventBusDeadLetterHandler ? { eventBusDeadLetterHandler } : {}),
     }),
   );
 
