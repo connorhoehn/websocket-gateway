@@ -182,7 +182,10 @@ const SAMPLE_ROWS: PendingApprovalRow[] = [
     runId: 'run-1',
     stepId: 'approval-A',
     pipelineId: 'pipe-1',
-    approvers: [{ userId: 'alice' }, { userId: 'bob', role: 'lead' }],
+    approvers: [
+      { type: 'user', value: 'alice', userId: 'alice' },
+      { type: 'user', value: 'bob', userId: 'bob', role: 'lead' },
+    ],
     message: 'Ship it?',
     requestedAt: '2026-04-25T12:00:00.000Z',
   },
@@ -190,7 +193,7 @@ const SAMPLE_ROWS: PendingApprovalRow[] = [
     runId: 'run-2',
     stepId: 'approval-B',
     pipelineId: 'pipe-1',
-    approvers: [{ userId: 'carol' }],
+    approvers: [{ type: 'user', value: 'carol', userId: 'carol' }],
     requestedAt: '2026-04-25T12:05:00.000Z',
   },
 ];

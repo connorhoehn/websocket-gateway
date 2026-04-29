@@ -314,31 +314,15 @@ export interface PipelineBridgeMetrics {
 /**
  * Pending-approval row consumed by the social-api approvals route.
  *
- * distributed-core v0.5.7 exports a public `PendingApprovalRow` shape
- * (`runId`, `stepId`, `approvers: Approver[]`, `requiredCount`,
- * `recordedApprovals`, `requestedAt`, `timeoutAt?`). The runtime data
- * actually returned by `PipelineModule.getPendingApprovals()` carries
- * additional fields the public type omits (`pipelineId`, `message`) and
- * the social-api UI filter relies on `approvers[i].userId`. This local
- * extension intersects DC's public shape with the extra fields callers
- * depend on so we keep DC as the source-of-truth for the overlapping
- * fields without losing the social-api-specific surface.
+ * distributed-core v0.6.x converged the public `PendingApprovalRow` shape
+ * (FR-4) to match what `PipelineModule.getPendingApprovals()` actually
+ * returns at runtime — `{ runId, stepId, pipelineId, approvers, message?,
+ * requestedAt }` with `Approver = { type, value, userId?, role?, teamId? }`.
+ * The local extension we previously needed (intersecting the broken public
+ * shape with the runtime fields) is no longer required — the upstream type
+ * carries everything the social-api filter depends on.
  */
-export interface PendingApprovalRow
-  extends Omit<Partial<DCPendingApprovalRow>, 'approvers'> {
-  runId: string;
-  stepId: string;
-  pipelineId: string;
-  /**
-   * Approvers the route filters on. Carries `userId` for the
-   * `?userId=` filter; `teamId`/`role` are optional metadata the
-   * dashboard renders.
-   */
-  approvers: Array<{ userId: string; teamId?: string; role?: string }>;
-  message?: string;
-  /** ISO 8601. */
-  requestedAt: string;
-}
+export type PendingApprovalRow = DCPendingApprovalRow;
 
 let bridge: PipelineBridge | null = null;
 

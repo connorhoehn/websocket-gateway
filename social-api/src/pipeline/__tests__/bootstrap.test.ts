@@ -5,11 +5,11 @@
 // Anthropic key needed), verifies the module is RUNNING, and confirms
 // shutdown() cleanly stops cluster + module.
 
-// `distributed-core/testing` is a real subpath export (v0.3.0) — Jest resolves
-// it correctly. tsc with our current `module: commonjs` (classic resolver)
-// doesn't honor package `exports` fields. Suppressing here rather than flipping
-// the project to `moduleResolution: nodenext`, which would require explicit
-// `.js` extensions across the codebase. Tracked as a follow-up.
+// `distributed-core/testing` is a real subpath export — Jest resolves
+// it via package `exports`. tsc with our current `module: commonjs`
+// (classic resolver) doesn't honor `exports`. Suppressing here rather
+// than flipping the project to `moduleResolution: nodenext`, which
+// would require explicit `.js` extensions across the codebase.
 // @ts-expect-error TS2307: module resolution doesn't see subpath exports
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { bootstrapPipeline } from '../bootstrap';

@@ -46,7 +46,7 @@
     "amazon-ivs-chat-messaging": "latest",
     "aws-cdk-lib": "2.195.0",
     "constructs": "^10.0.0",
-    "distributed-core": "github:connorhoehn/distributed-core#v0.6.4",
+    "distributed-core": "github:connorhoehn/distributed-core#v0.6.5",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
     "lib0": "^0.2.117",
