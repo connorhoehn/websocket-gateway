@@ -12,21 +12,18 @@
 // is additive and side-effect-free w.r.t. existing dashboards.
 
 import os from 'os';
-import { MetricsRegistry, MetricsExporter } from 'distributed-core';
+import { MetricsRegistry } from 'distributed-core';
+// `formatPrometheus` is exported from the metrics sub-module of distributed-core
+// but is not re-exported from the top-level barrel as of v0.6.7. The wildcard
+// `./dist/*` mapping in distributed-core's package.json exports makes this
+// deep path a stable, supported entry point.
+import { formatPrometheus } from 'distributed-core/dist/monitoring/metrics/PrometheusExporter';
 
 const SERVICE = process.env.WSG_SERVICE_NAME || 'social-api';
 const NODE_ID = process.env.WSG_NODE_ID || os.hostname();
 const BASE_LABELS = { service: SERVICE, node_id: NODE_ID };
 
 const registry = new MetricsRegistry(NODE_ID);
-// MetricsExporter's TS surface advertises a config-shaped constructor and
-// a private formatPrometheusMetrics(); the underlying JS doesn't enforce
-// either. The gateway shadow uses the same runtime pattern (instantiated
-// off the registry, formatter called directly). Cast through `any` to keep
-// strict-mode TS happy without reimplementing the formatter — when the
-// distributed-core .d.ts surfaces this properly we can drop the cast.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const exporter: any = new (MetricsExporter as any)(registry);
 
 // Connection / message / reconnect shadows — same names as gateway
 // so dashboards can union both services on a single panel.
@@ -88,8 +85,7 @@ export function recordPipelineError(): void {
 // Renders the registry snapshot as Prometheus 0.0.4 text format.
 // Suitable for `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
 export function renderPrometheusText(): string {
-  const snapshot = registry.getSnapshot();
-  return exporter.formatPrometheusMetrics(snapshot.metrics);
+  return formatPrometheus(registry.getSnapshot());
 }
 
 // Returns the singleton MetricsRegistry for callers that want to
