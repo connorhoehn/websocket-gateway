@@ -754,6 +754,7 @@ function AppLayoutInner({
                   {/* New Document button */}
                   {activeView === 'doc-editor' && location.pathname === '/documents' && (
                     <button
+                      data-testid="new-document-btn"
                       onClick={() => setShowNewDocModal(true)}
                       style={{
                         marginLeft: 'auto',

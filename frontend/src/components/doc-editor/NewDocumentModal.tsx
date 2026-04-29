@@ -174,6 +174,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
                 </label>
                 <input
                   ref={titleRef}
+                  data-testid="new-doc-title"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -195,6 +196,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
                   Description <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span>
                 </label>
                 <textarea
+                  data-testid="new-doc-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Brief description of this document…"
@@ -221,6 +223,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
             background: '#ffffff', flexShrink: 0,
           }}>
             <button
+              data-testid="new-doc-cancel"
               onClick={onClose}
               style={{
                 padding: '8px 16px', fontSize: 14, fontWeight: 500,
@@ -232,6 +235,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
               Cancel
             </button>
             <button
+              data-testid="new-doc-submit"
               onClick={handleSubmit}
               disabled={!canSubmit}
               style={{

@@ -499,7 +499,7 @@ function IdlePanel({ onCreateNew }: { onCreateNew: () => void }) {
         Create custom types to give sections distinct labels and display configuration.
       </div>
       <button
-        data-testid="new-data-type-button"
+        data-testid="new-data-type-empty-btn"
         type="button"
         onClick={onCreateNew}
         style={btn('primary')}

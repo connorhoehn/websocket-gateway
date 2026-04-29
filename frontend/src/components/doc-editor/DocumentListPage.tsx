@@ -293,6 +293,7 @@ export default function DocumentListPage({
       {/* Document cards */}
       {documents.length === 0 ? (
         <div
+          data-testid="documents-empty"
           style={{
             textAlign: 'center',
             padding: '48px 16px',
@@ -311,6 +312,7 @@ export default function DocumentListPage({
             return (
               <div
                 key={doc.id}
+                data-testid={`document-card-${doc.id}`}
                 onClick={() => onOpenDocument(doc.id)}
                 onMouseEnter={() => setHoveredCard(doc.id)}
                 onMouseLeave={() => setHoveredCard(null)}

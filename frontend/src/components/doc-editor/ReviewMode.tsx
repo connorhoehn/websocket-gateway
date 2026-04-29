@@ -99,12 +99,12 @@ export default function ReviewMode({
   }
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto' }}>
+    <div data-testid="review-mode" style={{ maxWidth: 800, margin: '0 auto' }}>
       {/* Progress bar */}
-      <div style={{ marginBottom: '1.5rem' }}>
+      <div data-testid="review-progress" style={{ marginBottom: '1.5rem' }}>
         <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
-          <span>{reviewedByMe} of {sections.length} sections reviewed by you</span>
-          <span>{pct}%</span>
+          <span data-testid="review-progress-text">{reviewedByMe} of {sections.length} sections reviewed by you</span>
+          <span data-testid="review-progress-pct">{pct}%</span>
         </div>
         <div style={{ height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{
@@ -132,6 +132,7 @@ export default function ReviewMode({
             <div
               key={section.id}
               id={`section-${section.id}`}
+              data-testid={`review-section-${section.id}`}
               style={{
                 background: '#fff',
                 border: '1px solid #e5e7eb',
@@ -256,6 +257,7 @@ export default function ReviewMode({
                 {(!myReview || isChanging) ? (
                   <>
                     <ReviewButton
+                      testid={`section-${section.id}-review-reviewed`}
                       label="Mark Reviewed"
                       bg="#f3f4f6"
                       color="#374151"
@@ -266,6 +268,7 @@ export default function ReviewMode({
                       }}
                     />
                     <ReviewButton
+                      testid={`section-${section.id}-review-approved`}
                       label="Approve"
                       bg="#dcfce7"
                       color="#166534"
@@ -276,6 +279,7 @@ export default function ReviewMode({
                       }}
                     />
                     <ReviewButton
+                      testid={`section-${section.id}-review-changes-requested`}
                       label="Request Changes"
                       bg="#fef3c7"
                       color="#92400e"
@@ -287,6 +291,7 @@ export default function ReviewMode({
                     />
                     {isChanging && (
                       <button
+                        data-testid={`section-${section.id}-cancel-change`}
                         onClick={() => setChangingReview((prev) => ({ ...prev, [section.id]: false }))}
                         style={{
                           background: 'none',
@@ -303,17 +308,20 @@ export default function ReviewMode({
                   </>
                 ) : (
                   <>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      padding: '4px 10px',
-                      borderRadius: 6,
-                      background: statusConfig[myReview.status].bg,
-                      color: statusConfig[myReview.status].color,
-                    }}>
+                    <span
+                      data-testid={`section-${section.id}-status`}
+                      data-status={myReview.status}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: '4px 10px',
+                        borderRadius: 6,
+                        background: statusConfig[myReview.status].bg,
+                        color: statusConfig[myReview.status].color,
+                      }}>
                       <span style={{ fontSize: 14 }}>{statusConfig[myReview.status].icon}</span>
                       {statusConfig[myReview.status].label}
                     </span>
@@ -323,6 +331,7 @@ export default function ReviewMode({
                       })}
                     </span>
                     <button
+                      data-testid={`section-${section.id}-change-review`}
                       onClick={() => setChangingReview((prev) => ({ ...prev, [section.id]: true }))}
                       style={{
                         background: 'none',
@@ -415,13 +424,16 @@ export default function ReviewMode({
 
       {/* Document review summary */}
       {allReviewers.size > 0 && (
-        <div style={{
-          marginTop: 32,
-          padding: '1rem 1.25rem',
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: 8,
-        }}>
+        <div
+          data-testid="review-summary"
+          style={{
+            marginTop: 32,
+            padding: '1rem 1.25rem',
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 8,
+          }}
+        >
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#475569' }}>
             Document Review Summary
           </h4>
@@ -467,16 +479,18 @@ export default function ReviewMode({
 // Review button sub-component
 // ---------------------------------------------------------------------------
 
-function ReviewButton({ label, bg, color, hoverBg, onClick }: {
+function ReviewButton({ label, bg, color, hoverBg, onClick, testid }: {
   label: string;
   bg: string;
   color: string;
   hoverBg: string;
   onClick: () => void;
+  testid?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
     <button
+      data-testid={testid}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
