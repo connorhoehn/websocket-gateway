@@ -74,13 +74,22 @@ async function run(
   opts: RunOpts = {},
 ): Promise<MockRes> {
   const res = mockRes();
+  // Parse the URL's query string into an object — Express's built-in query
+  // parser would normally do this, but we feed the mock req directly to the
+  // app handler and bypass that step.
+  const qIdx = url.indexOf('?');
+  const query: Record<string, string> = {};
+  if (qIdx >= 0) {
+    const params = new URLSearchParams(url.slice(qIdx + 1));
+    for (const [k, v] of params.entries()) query[k] = v;
+  }
   const req = {
     method: method.toUpperCase(),
     url,
     originalUrl: url,
-    path: url.split('?')[0],
+    path: qIdx >= 0 ? url.slice(0, qIdx) : url,
     headers: { 'content-type': 'application/json' },
-    query: {},
+    query,
     body: opts.body,
     user: opts.userId ? { sub: opts.userId } : { sub: 'tester' },
     ip: '127.0.0.1',
@@ -190,7 +199,12 @@ describe('POST /api/pipelines/dlq/redrive — preview mode', () => {
     };
     expect(body.preview).toBe(true);
     expect(body.resetAttempts).toBe(true);
-    expect(body.wouldRedrive).toEqual([e1, e2]);
+    // Entries are enriched with `errorKind` (null here — the fixture
+    // `lastError: 'boom'` has no `class:` prefix).
+    expect(body.wouldRedrive).toEqual([
+      { ...e1, errorKind: null },
+      { ...e2, errorKind: null },
+    ]);
     expect(body.notFound).toEqual([]);
   });
 
@@ -211,7 +225,7 @@ describe('POST /api/pipelines/dlq/redrive — preview mode', () => {
       wouldRedrive: unknown[];
       notFound: { id: string }[];
     };
-    expect(body.wouldRedrive).toEqual([e1]);
+    expect(body.wouldRedrive).toEqual([{ ...e1, errorKind: null }]);
     expect(body.notFound).toEqual([{ id: 'missing-id' }]);
   });
 
@@ -253,7 +267,7 @@ describe('POST /api/pipelines/dlq/purge — preview mode', () => {
       wouldPurge: unknown[];
       notFound: { id: string }[];
     };
-    expect(body.wouldPurge).toEqual([e1]);
+    expect(body.wouldPurge).toEqual([{ ...e1, errorKind: null }]);
     expect(body.notFound).toEqual([{ id: 'missing' }]);
   });
 });
@@ -261,6 +275,85 @@ describe('POST /api/pipelines/dlq/purge — preview mode', () => {
 // ---------------------------------------------------------------------------
 // Write rate limit — shared 10/min/user bucket across both POST routes.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// errorKind filter + enrichment
+// ---------------------------------------------------------------------------
+
+describe('GET /api/pipelines/dlq — errorKind filter + enrichment', () => {
+  test('?errorKind=NetworkError translates to a failureKindMatches RegExp anchored to ^NetworkError:', async () => {
+    const dlq = makeFakeDLQ();
+    // Override list to capture the options the route passed through.
+    let captured: { failureKindMatches?: RegExp } | null = null;
+    dlq.list = jest.fn(async (opts: { failureKindMatches?: RegExp } = {}) => {
+      captured = opts;
+      return { items: [], nextCursor: null };
+    });
+    wireBridgeWithDLQ(dlq);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/api/pipelines/dlq?errorKind=NetworkError');
+
+    expect(res.statusCode).toBe(200);
+    expect(captured).not.toBeNull();
+    expect(captured!.failureKindMatches).toBeInstanceOf(RegExp);
+    expect(captured!.failureKindMatches!.source).toBe('^NetworkError:');
+    // Sanity: the regex matches what bootstrap actually stores.
+    expect(captured!.failureKindMatches!.test('NetworkError: ECONNREFUSED')).toBe(true);
+    expect(captured!.failureKindMatches!.test('Error: something else')).toBe(false);
+  });
+
+  test('rejects malformed errorKind with 400 (operator typo must not silently drop the filter)', async () => {
+    const dlq = makeFakeDLQ();
+    wireBridgeWithDLQ(dlq);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/api/pipelines/dlq?errorKind=bad%20kind');
+
+    expect(res.statusCode).toBe(400);
+    expect(dlq.list).not.toHaveBeenCalled();
+    const body = res.body as { error: string };
+    expect(body.error).toMatch(/errorKind/);
+  });
+
+  test('list response items carry derived errorKind (parsed from the lastError prefix)', async () => {
+    const dlq = makeFakeDLQ();
+    dlq.list = jest.fn(async () => ({
+      items: [
+        { envelope: { id: 'a' }, lastError: 'NetworkError: ECONNREFUSED', failedAtMs: 1, totalAttempts: 1, attemptHistory: [] },
+        { envelope: { id: 'b' }, lastError: 'TimeoutError: peer slow',     failedAtMs: 2, totalAttempts: 1, attemptHistory: [] },
+        { envelope: { id: 'c' }, lastError: 'no prefix here',              failedAtMs: 3, totalAttempts: 1, attemptHistory: [] },
+      ],
+      nextCursor: null,
+    }));
+    wireBridgeWithDLQ(dlq);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/api/pipelines/dlq');
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { items: { errorKind: string | null }[] };
+    expect(body.items.map((i) => i.errorKind)).toEqual([
+      'NetworkError',
+      'TimeoutError',
+      null,
+    ]);
+  });
+
+  test('peek response is enriched with errorKind too', async () => {
+    const e1 = { envelope: { id: 'e1' }, lastError: 'RegistryConflictError: dup', failedAtMs: 1, totalAttempts: 1, attemptHistory: [] };
+    const dlq = makeFakeDLQ({ e1 });
+    wireBridgeWithDLQ(dlq);
+
+    const app = buildApp();
+    const res = await run(app, 'GET', '/api/pipelines/dlq/peek/e1');
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { errorKind: string | null; lastError: string };
+    expect(body.errorKind).toBe('RegistryConflictError');
+    expect(body.lastError).toBe('RegistryConflictError: dup');
+  });
+});
 
 describe('pipeline:write rate limit on DLQ POST routes', () => {
   test('11 rapid POSTs against /redrive triggers at least one 429 with Retry-After', async () => {

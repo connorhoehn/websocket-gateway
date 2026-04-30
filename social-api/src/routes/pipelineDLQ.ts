@@ -8,7 +8,7 @@
 // targeted redrive.
 //
 // Endpoints:
-//   GET  /api/pipelines/dlq                       → paginated list (filters: sinceMs, failureKindMatches)
+//   GET  /api/pipelines/dlq?errorKind=…           → paginated list (filters: sinceMs, errorKind)
 //   GET  /api/pipelines/dlq/peek/:id              → single envelope by id
 //   POST /api/pipelines/dlq/redrive               → re-publish selected entries via the EventBus
 //   POST /api/pipelines/dlq/purge                 → drop selected entries
@@ -17,6 +17,13 @@
 // returns `{wouldRedrive,notFound}` / `{wouldPurge,notFound}` summaries
 // without mutating the DLQ or re-publishing to the bus. This lets an
 // operator verify the id list matches what they intend before committing.
+//
+// Error-taxonomy filter: every entry response is enriched with a derived
+// `errorKind` field (the `Error`/`NetworkError`/etc. class prefix parsed
+// from `lastError`). The list endpoint accepts `?errorKind=<class>` to
+// filter server-side via distributed-core's `failureKindMatches` regex —
+// the gateway escapes the input and anchors it as `^<kind>:` so callers
+// can not inject arbitrary regex.
 //
 // Auth: requireAuth (mounted in app.ts) + pipelineReadRateLimit GET budget
 // (also in app.ts). The two POST routes attach `pipelineWriteRateLimit`
@@ -70,6 +77,42 @@ function parseSinceMs(raw: unknown): number | undefined {
   return n;
 }
 
+// Conservative shape: an error class name (e.g. `Error`, `NetworkError`,
+// `RegistryConflictError`). Bounded length to keep the regex compile cheap;
+// the inner whitelist also keeps the escape step a no-op for valid input.
+const ERROR_KIND_RE = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
+
+function parseErrorKind(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  return ERROR_KIND_RE.test(raw) ? raw : null;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Pull the error-class prefix out of a `lastError` formatted as
+ * `${error.name}: ${error.message}` (the shape stored by
+ * `eventBusDeadLetterHandler` in bootstrap.ts). Returns null when no
+ * prefix is parseable so callers can render "unknown" without crashing.
+ */
+function deriveErrorKind(lastError: unknown): string | null {
+  if (typeof lastError !== 'string') return null;
+  const m = /^([A-Za-z][A-Za-z0-9_]{0,79}):/.exec(lastError);
+  return m ? m[1] : null;
+}
+
+interface EnrichedDLQEntry {
+  errorKind: string | null;
+  [k: string]: unknown;
+}
+
+function enrichEntry(entry: unknown): EnrichedDLQEntry {
+  const e = entry as { lastError?: unknown };
+  return { ...(entry as object), errorKind: deriveErrorKind(e.lastError) };
+}
+
 function parseIdsBody(body: unknown): string[] | { error: string } {
   if (typeof body !== 'object' || body === null) {
     return { error: 'body.ids must be an array of strings' };
@@ -88,8 +131,33 @@ pipelineDLQRouter.get('/', asyncHandler(async (req, res) => {
   const limit = parseLimit(query.limit);
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
   const sinceMs = parseSinceMs(query.sinceMs);
-  const page = await dlq.list({ limit, cursor, ...(sinceMs !== undefined ? { sinceMs } : {}) });
-  res.status(200).json(page);
+
+  // ?errorKind=<class> — translates into a server-side regex against the
+  // `lastError` prefix (the `${error.name}: ${error.message}` shape stored
+  // by bootstrap). Reject malformed input rather than silently dropping the
+  // filter, otherwise an operator typo returns the unfiltered firehose.
+  let failureKindMatches: RegExp | undefined;
+  if (typeof query.errorKind === 'string') {
+    const kind = parseErrorKind(query.errorKind);
+    if (!kind) {
+      res.status(400).json({
+        error: 'errorKind must match /^[A-Za-z][A-Za-z0-9_]{0,79}$/',
+      });
+      return;
+    }
+    failureKindMatches = new RegExp(`^${escapeRegex(kind)}:`);
+  }
+
+  const page = await dlq.list({
+    limit,
+    cursor,
+    ...(sinceMs !== undefined ? { sinceMs } : {}),
+    ...(failureKindMatches ? { failureKindMatches } : {}),
+  });
+  res.status(200).json({
+    ...page,
+    items: page.items.map((e) => enrichEntry(e)),
+  });
 }));
 
 pipelineDLQRouter.get('/peek/:id', asyncHandler(async (req, res) => {
@@ -101,7 +169,7 @@ pipelineDLQRouter.get('/peek/:id', asyncHandler(async (req, res) => {
     res.status(404).json({ error: 'dlq entry not found', id: params.id });
     return;
   }
-  res.status(200).json(entry);
+  res.status(200).json(enrichEntry(entry));
 }));
 
 pipelineDLQRouter.post('/redrive', writeLimiter, asyncHandler(async (req, res) => {
@@ -119,7 +187,7 @@ pipelineDLQRouter.post('/redrive', writeLimiter, asyncHandler(async (req, res) =
     const peeks = await Promise.all(parsed.map(async (id) => ({ id, entry: await dlq.peek(id) })));
     const wouldRedrive = peeks
       .filter((p) => p.entry !== null)
-      .map((p) => p.entry);
+      .map((p) => enrichEntry(p.entry));
     const notFound = peeks
       .filter((p) => p.entry === null)
       .map((p) => ({ id: p.id }));
@@ -145,7 +213,7 @@ pipelineDLQRouter.post('/purge', writeLimiter, asyncHandler(async (req, res) => 
     const peeks = await Promise.all(parsed.map(async (id) => ({ id, entry: await dlq.peek(id) })));
     const wouldPurge = peeks
       .filter((p) => p.entry !== null)
-      .map((p) => p.entry);
+      .map((p) => enrichEntry(p.entry));
     const notFound = peeks
       .filter((p) => p.entry === null)
       .map((p) => ({ id: p.id }));

@@ -578,7 +578,12 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
           // swallow dead letters.
           void dlq
             .put(busEventAsEnvelope(event), {
-              lastError:     error.message,
+              // Standard `${name}: ${message}` shape so the DLQ filter
+              // (failureKindMatches RegExp at the library level) and the
+              // route-side `?errorKind=` query param can match the error
+              // class prefix. Falls back to `Error:` if the throwable has
+              // no `name` (defensive — Error subclasses always set one).
+              lastError:     `${error.name || 'Error'}: ${error.message}`,
               failedAtMs:    Date.now(),
               totalAttempts: 1,
             })

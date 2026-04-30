@@ -45,7 +45,9 @@ describe('Pipeline EventBus DLQ — T9 inspect/redrive surface', () => {
         e.envelope.body.type === 'dlq-probe-event',
       );
       expect(probeEntries.length).toBe(1);
-      expect(probeEntries[0].lastError).toBe('probe-throw-message');
+      // bootstrap stores `${error.name}: ${error.message}` so the
+      // failureKindMatches filter has a class prefix to anchor on.
+      expect(probeEntries[0].lastError).toBe('Error: probe-throw-message');
       expect(probeEntries[0].failedAtMs).toBeGreaterThan(0);
     } finally {
       await shutdown();
@@ -67,7 +69,7 @@ describe('Pipeline EventBus DLQ — T9 inspect/redrive surface', () => {
       const miss = await dlq!.peek('does-not-exist');
       const hit  = await dlq!.peek(published.id);
       expect(miss).toBeNull();
-      expect(hit?.lastError).toBe('peek-throw');
+      expect(hit?.lastError).toBe('Error: peek-throw');
     } finally {
       await shutdown();
     }
