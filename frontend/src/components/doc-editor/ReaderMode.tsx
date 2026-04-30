@@ -49,6 +49,17 @@ const gridLayout: React.CSSProperties = {
   margin: '0 auto',
 };
 
+// Phase 51 / hub#60 — adds a left-sticky TOC column when the doc has
+// 2+ navigable sections. Single-section docs keep the original
+// 2-column layout to avoid empty TOC noise.
+const gridLayoutWithToc: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '200px 1fr 280px',
+  gap: 16,
+  maxWidth: 1300,
+  margin: '0 auto',
+};
+
 const sidebarCard: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #e2e8f0',
@@ -105,6 +116,67 @@ const MODE_LABELS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Sidebar sub-components
 // ---------------------------------------------------------------------------
+
+// Phase 51 / hub#60 — sticky-left table of contents.
+// Renders one anchor link per section that scrolls to
+// `#section-${section.id}` (added in ReaderSectionCard). Sticky so it
+// remains visible while the operator scrolls long documents.
+function TocCard({ sections }: { sections: Section[] }) {
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string): void => {
+    // Smooth-scroll without disturbing browser history with a hash fragment.
+    e.preventDefault();
+    const target = document.getElementById(`section-${id}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <aside
+      data-testid="reader-toc"
+      style={{
+        position: 'sticky',
+        top: 16,
+        alignSelf: 'start',
+        ...sidebarCard,
+      }}
+    >
+      <h3 style={sectionHeader}>Contents</h3>
+      <nav>
+        <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {sections.map((s, i) => (
+            <li key={s.id}>
+              <a
+                href={`#section-${s.id}`}
+                data-testid={`toc-link-${s.id}`}
+                onClick={(e) => handleClick(e, s.id)}
+                style={{
+                  display: 'block',
+                  padding: '4px 6px',
+                  fontSize: 13,
+                  color: '#475569',
+                  textDecoration: 'none',
+                  borderRadius: 4,
+                  borderLeft: '2px solid transparent',
+                  transition: 'background 80ms, border-left-color 80ms',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f1f5f9';
+                  e.currentTarget.style.borderLeftColor = '#646cff';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderLeftColor = 'transparent';
+                }}
+              >
+                <span style={{ fontWeight: 500, color: '#0f172a' }}>{i + 1}.</span>{' '}
+                {s.title || `Section ${i + 1}`}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    </aside>
+  );
+}
 
 function ProgressCard({
   reviewed,
@@ -310,11 +382,15 @@ export default function ReaderMode({
   ).length;
 
   const summaryBullets = generateSummaryBullets(allItems, sections);
+  const showToc = sections.length >= 2;
 
   return (
-    <div style={gridLayout}>
-      {/* Header spanning both columns */}
+    <div style={showToc ? gridLayoutWithToc : gridLayout}>
+      {/* Header spanning all columns */}
       <HeaderBanner meta={meta} participantCount={participants.length} />
+
+      {/* Phase 51 / hub#60 — sticky-left TOC when 2+ sections exist. */}
+      {showToc && <TocCard sections={sections} />}
 
       {/* Main content column */}
       <div>

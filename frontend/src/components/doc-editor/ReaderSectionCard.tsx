@@ -383,7 +383,11 @@ export function SectionSummariesCard({
             const hasContent = sectionContent.trim().length > 0;
 
             return (
-              <div key={section.id}>
+              <div
+                key={section.id}
+                id={`section-${section.id}`}
+                data-testid={`reader-section-${section.id}`}
+              >
                 <button
                   onClick={() => toggle(section.id)}
                   style={{
