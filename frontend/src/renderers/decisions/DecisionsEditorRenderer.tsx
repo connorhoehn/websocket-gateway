@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import type { SectionRendererProps } from '../types';
 import type { TaskItem } from '../../types/document';
 import TiptapEditor from '../../components/doc-editor/TiptapEditor';
+import { postApproval, mapStatusToDecision } from './approvalSync';
 
 const DECISION_META: Record<string, { label: string; icon: string; color: string; bg: string }> = {
   pending:  { label: 'Open',    icon: '○', color: '#92400e', bg: '#fef3c7' },
@@ -157,7 +158,23 @@ export default function DecisionsEditorRenderer({
               editable={editable}
               autoFocus={shouldFocus}
               onDidAutoFocus={shouldFocus ? () => { focusLastRef.current = false; } : undefined}
-              onUpdate={(patch) => onUpdateItem?.(item.id, patch)}
+              onUpdate={(patch) => {
+                const prevStatus = item.status;
+                onUpdateItem?.(item.id, patch);
+                // Phase 51 / hub#80 — mirror terminal status transitions
+                // to the server-side approval log (POST /api/approvals).
+                // Best-effort; CRDT update above stays source of truth.
+                if (patch.status && patch.status !== prevStatus) {
+                  const decision = mapStatusToDecision(patch.status);
+                  if (decision) {
+                    void postApproval({
+                      sectionId: section.id,
+                      decision,
+                      reviewerName: user?.name,
+                    });
+                  }
+                }
+              }}
               onRemove={() => onRemoveItem?.(item.id)}
             />
           );
