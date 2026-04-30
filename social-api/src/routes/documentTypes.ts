@@ -28,8 +28,12 @@ export const documentTypesRouter = Router();
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-const VALID_FIELD_TYPES = new Set<DocumentTypeFieldKind>(['text', 'long_text']);
-const VALID_WIDGETS = new Set<DocumentTypeFieldWidget>(['text_field', 'textarea']);
+const VALID_FIELD_TYPES = new Set<DocumentTypeFieldKind>([
+  'text', 'long_text', 'number', 'date', 'boolean',
+]);
+const VALID_WIDGETS = new Set<DocumentTypeFieldWidget>([
+  'text_field', 'textarea', 'number_input', 'date_picker', 'checkbox',
+]);
 
 function parseField(raw: unknown): DocumentTypeFieldItem {
   if (typeof raw !== 'object' || raw === null) {

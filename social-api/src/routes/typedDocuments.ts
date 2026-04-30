@@ -25,32 +25,78 @@ export const typedDocumentsRouter = Router();
 // Schema-aware value validation
 // ---------------------------------------------------------------------------
 
+// Permissive ISO-8601 date or date-time parser — accepts "YYYY-MM-DD" or any
+// string Date.parse() can read. Returns the canonical ISO string for storage.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}(T.*)?$/;
+function parseDate(raw: string, fieldName: string): string {
+  if (!DATE_RE.test(raw) || Number.isNaN(Date.parse(raw))) {
+    throw new ValidationError(`field "${fieldName}" expects an ISO date (YYYY-MM-DD or ISO datetime)`);
+  }
+  return raw;
+}
+
+function validatePrimitive(
+  field: DocumentTypeFieldItem,
+  raw: unknown,
+): string | number | boolean {
+  switch (field.fieldType) {
+    case 'text':
+    case 'long_text':
+      if (typeof raw !== 'string') {
+        throw new ValidationError(`field "${field.name}" expects a string value`);
+      }
+      return raw;
+    case 'number':
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        throw new ValidationError(`field "${field.name}" expects a finite number`);
+      }
+      return raw;
+    case 'date':
+      if (typeof raw !== 'string') {
+        throw new ValidationError(`field "${field.name}" expects a string ISO date`);
+      }
+      return parseDate(raw, field.name);
+    case 'boolean':
+      if (typeof raw !== 'boolean') {
+        throw new ValidationError(`field "${field.name}" expects a boolean`);
+      }
+      return raw;
+  }
+}
+
 function validateValueAgainstField(
   field: DocumentTypeFieldItem,
   raw: unknown,
 ): TypedDocumentValue {
   if (field.cardinality === 1) {
-    if (typeof raw !== 'string') {
-      throw new ValidationError(`field "${field.name}" expects a string value`);
-    }
-    if (field.required && raw.length === 0) {
+    const v = validatePrimitive(field, raw);
+    // Required-empty check applies to strings; numbers/booleans/dates are
+    // present-or-absent. (Booleans defaulting to false are "set", which is
+    // the right semantics — operator can model "must be checked" via a
+    // separate validation rule in Phase D.)
+    if (field.required && typeof v === 'string' && v.length === 0) {
       throw new ValidationError(`field "${field.name}" is required`);
     }
-    return raw;
+    return v;
   }
   // cardinality === 'unlimited'
+  if (field.fieldType === 'boolean') {
+    throw new ValidationError(
+      `field "${field.name}": boolean fields cannot have unlimited cardinality`,
+    );
+  }
   if (!Array.isArray(raw)) {
     throw new ValidationError(`field "${field.name}" expects an array of values`);
   }
-  for (const v of raw) {
-    if (typeof v !== 'string') {
-      throw new ValidationError(`field "${field.name}" array entries must be strings`);
-    }
+  const out: (string | number)[] = [];
+  for (const item of raw) {
+    const v = validatePrimitive(field, item);
+    out.push(v as string | number);
   }
-  if (field.required && raw.length === 0) {
+  if (field.required && out.length === 0) {
     throw new ValidationError(`field "${field.name}" is required (at least one value)`);
   }
-  return raw as string[];
+  return out as string[] | number[];
 }
 
 function validateValuesAgainstSchema(

@@ -1,43 +1,86 @@
-// Phase 51 Phase A — auto-generated form for an API-shaped DocumentType.
+// Phase 51 Phase A + B — auto-generated form for an API-shaped DocumentType.
 //
-// Given an ApiDocumentType, render an input per field:
+// Widget mapping:
 //   - text + cardinality=1       → <input type="text">
 //   - long_text + cardinality=1  → <textarea>
-//   - text + cardinality=unlimited → list of <input>s with + / − controls
+//   - number + cardinality=1     → <input type="number">
+//   - date + cardinality=1       → <input type="date">
+//   - boolean + cardinality=1    → <input type="checkbox">
+//   - text/number/date + cardinality=unlimited → list of inputs with + / −
+//   - boolean + unlimited is REJECTED at the backend (semantically meaningless)
 //
-// Submit: validates required fields are non-empty, then calls onSubmit with
-// values keyed by fieldId. Submit errors surface inline at the top of the
-// form (no toast — the page wires error handling separately).
+// Form internal state stores text-shaped values as strings; numbers are
+// coerced via Number() at submit time, dates pass through as ISO strings,
+// booleans live as actual booleans tied to checkbox state.
 
 import { useState } from 'react';
-import type { ApiDocumentType, ApiDocumentTypeField } from '../../hooks/useTypedDocuments';
+import type { ApiDocumentType, ApiDocumentTypeField, TypedDocumentValue } from '../../hooks/useTypedDocuments';
 
-interface FormValue {
-  [fieldId: string]: string | string[];
+// Form state per field. Booleans are stored natively; everything else is a
+// string (or string array for unlimited) for clean input wiring.
+type SingleStored = string | boolean;
+type FieldStored = SingleStored | string[];
+
+interface FormState {
+  [fieldId: string]: FieldStored;
 }
 
 export interface TypedDocumentFormProps {
   type: ApiDocumentType;
-  onSubmit: (values: Record<string, string | string[]>) => Promise<void>;
+  onSubmit: (values: Record<string, TypedDocumentValue>) => Promise<void>;
   /** Reset to defaults after a successful submit (default true). */
   resetOnSubmit?: boolean;
 }
 
-function defaultValueForField(field: ApiDocumentTypeField): string | string[] {
-  return field.cardinality === 'unlimited' ? [''] : '';
+function defaultForField(field: ApiDocumentTypeField): FieldStored {
+  if (field.cardinality === 'unlimited') return [''];
+  if (field.fieldType === 'boolean') return false;
+  return '';
+}
+
+function coerceSingle(field: ApiDocumentTypeField, raw: SingleStored): TypedDocumentValue | null {
+  switch (field.fieldType) {
+    case 'text':
+    case 'long_text':
+      return typeof raw === 'string' && raw !== '' ? raw : null;
+    case 'date':
+      return typeof raw === 'string' && raw !== '' ? raw : null;
+    case 'number': {
+      if (typeof raw !== 'string' || raw.trim() === '') return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    }
+    case 'boolean':
+      return typeof raw === 'boolean' ? raw : null;
+  }
+}
+
+function coerceUnlimited(field: ApiDocumentTypeField, arr: string[]): TypedDocumentValue | null {
+  const out: (string | number)[] = [];
+  for (const entry of arr) {
+    if (entry.trim() === '') continue;
+    if (field.fieldType === 'number') {
+      const n = Number(entry);
+      if (!Number.isFinite(n)) return null; // signal a coercion error
+      out.push(n);
+    } else {
+      out.push(entry);
+    }
+  }
+  return out.length > 0 ? (out as string[] | number[]) : null;
 }
 
 export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: TypedDocumentFormProps): JSX.Element {
-  const [values, setValues] = useState<FormValue>(() => {
-    const init: FormValue = {};
-    for (const f of type.fields) init[f.fieldId] = defaultValueForField(f);
+  const [values, setValues] = useState<FormState>(() => {
+    const init: FormState = {};
+    for (const f of type.fields) init[f.fieldId] = defaultForField(f);
     return init;
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successKey, setSuccessKey] = useState(0);
 
-  const setSingle = (fieldId: string, v: string): void => {
+  const setField = (fieldId: string, v: FieldStored): void => {
     setValues((prev) => ({ ...prev, [fieldId]: v }));
   };
   const setArrayAt = (fieldId: string, idx: number, v: string): void => {
@@ -65,38 +108,42 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: Type
     e.preventDefault();
     setError(null);
 
+    // Required-field check + per-type coercion in one pass.
+    const cleaned: Record<string, TypedDocumentValue> = {};
     for (const field of type.fields) {
-      const v = values[field.fieldId];
-      if (field.required) {
-        if (Array.isArray(v)) {
-          if (v.every((s) => s.trim() === '')) {
-            setError(`${field.name} is required`);
-            return;
-          }
-        } else if (!v || v.trim() === '') {
-          setError(`${field.name} is required`);
+      const stored = values[field.fieldId];
+      let coerced: TypedDocumentValue | null;
+      if (field.cardinality === 'unlimited') {
+        coerced = coerceUnlimited(field, Array.isArray(stored) ? stored : []);
+        if (coerced === null && Array.isArray(stored) && stored.some((s) => s.trim() !== '')) {
+          // Some entries present but coercion failed — number parse error.
+          setError(`${field.name}: invalid value for ${field.fieldType}`);
           return;
         }
+      } else {
+        coerced = coerceSingle(field, stored as SingleStored);
       }
-    }
 
-    const cleaned: Record<string, string | string[]> = {};
-    for (const field of type.fields) {
-      const v = values[field.fieldId];
-      if (Array.isArray(v)) {
-        const filtered = v.filter((s) => s.trim() !== '');
-        if (filtered.length > 0) cleaned[field.fieldId] = filtered;
-      } else if (v.trim() !== '') {
-        cleaned[field.fieldId] = v;
+      if (field.required && (coerced === null || (typeof coerced === 'boolean' && !coerced && field.fieldType !== 'boolean'))) {
+        // boolean fields don't have a "missing" state — false is a valid
+        // present value. The (typeof === 'boolean' && !coerced) clause is
+        // guarded by field.fieldType !== 'boolean' so an unchecked required
+        // boolean still passes through (Phase D will add a "must-be-true"
+        // validation rule if operators need it).
+        setError(`${field.name} is required`);
+        return;
       }
+      // Boolean false IS a valid coerced value — coerceSingle returns it
+      // explicitly. Skip null-coerced (i.e. truly empty) optional fields.
+      if (coerced !== null) cleaned[field.fieldId] = coerced;
     }
 
     setSubmitting(true);
     try {
       await onSubmit(cleaned);
       if (resetOnSubmit) {
-        const reset: FormValue = {};
-        for (const f of type.fields) reset[f.fieldId] = defaultValueForField(f);
+        const reset: FormState = {};
+        for (const f of type.fields) reset[f.fieldId] = defaultForField(f);
         setValues(reset);
       }
       setSuccessKey((k) => k + 1);
@@ -138,7 +185,7 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: Type
               <textarea
                 data-testid={`input-${field.fieldId}`}
                 value={typeof v === 'string' ? v : ''}
-                onChange={(e) => setSingle(field.fieldId, e.target.value)}
+                onChange={(e) => setField(field.fieldId, e.target.value)}
                 rows={4}
                 style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}
               />
@@ -149,8 +196,38 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: Type
                 data-testid={`input-${field.fieldId}`}
                 type="text"
                 value={typeof v === 'string' ? v : ''}
-                onChange={(e) => setSingle(field.fieldId, e.target.value)}
+                onChange={(e) => setField(field.fieldId, e.target.value)}
                 style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}
+              />
+            )}
+
+            {field.cardinality === 1 && field.widget === 'number_input' && (
+              <input
+                data-testid={`input-${field.fieldId}`}
+                type="number"
+                value={typeof v === 'string' ? v : ''}
+                onChange={(e) => setField(field.fieldId, e.target.value)}
+                style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}
+              />
+            )}
+
+            {field.cardinality === 1 && field.widget === 'date_picker' && (
+              <input
+                data-testid={`input-${field.fieldId}`}
+                type="date"
+                value={typeof v === 'string' ? v : ''}
+                onChange={(e) => setField(field.fieldId, e.target.value)}
+                style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}
+              />
+            )}
+
+            {field.cardinality === 1 && field.widget === 'checkbox' && (
+              <input
+                data-testid={`input-${field.fieldId}`}
+                type="checkbox"
+                checked={typeof v === 'boolean' ? v : false}
+                onChange={(e) => setField(field.fieldId, e.target.checked)}
+                style={{ alignSelf: 'flex-start' }}
               />
             )}
 
@@ -160,7 +237,7 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: Type
                   <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input
                       data-testid={`input-${field.fieldId}-${idx}`}
-                      type="text"
+                      type={field.widget === 'number_input' ? 'number' : field.widget === 'date_picker' ? 'date' : 'text'}
                       value={entry}
                       onChange={(e) => setArrayAt(field.fieldId, idx, e.target.value)}
                       style={{ flex: 1, fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 }}

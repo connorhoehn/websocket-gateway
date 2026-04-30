@@ -6,7 +6,15 @@
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
 
-export type TypedDocumentValue = string | string[];
+// Value shapes Phase B understands. Stored verbatim in DDB; the route
+// layer enforces (fieldType, cardinality) → value-shape correspondence
+// before persisting.
+export type TypedDocumentValue =
+  | string
+  | string[]
+  | number
+  | number[]
+  | boolean;
 
 export interface TypedDocumentItem {
   documentId: string;

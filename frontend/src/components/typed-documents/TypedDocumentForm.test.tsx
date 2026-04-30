@@ -126,3 +126,102 @@ describe('TypedDocumentForm', () => {
     expect(screen.queryByTestId('form-success')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase B — number / date / boolean widget coverage
+// ---------------------------------------------------------------------------
+
+function makePhaseBType(): ApiDocumentType {
+  return {
+    typeId: 'type-b',
+    name: 'Mixed',
+    description: '',
+    icon: '🧪',
+    fields: [
+      { fieldId: 'f-count',   name: 'count',     fieldType: 'number',  widget: 'number_input', cardinality: 1,           required: true,  helpText: '' },
+      { fieldId: 'f-when',    name: 'when',      fieldType: 'date',    widget: 'date_picker',  cardinality: 1,           required: false, helpText: '' },
+      { fieldId: 'f-done',    name: 'completed', fieldType: 'boolean', widget: 'checkbox',     cardinality: 1,           required: false, helpText: '' },
+      { fieldId: 'f-scores',  name: 'scores',    fieldType: 'number',  widget: 'number_input', cardinality: 'unlimited', required: false, helpText: '' },
+    ],
+    createdBy: 'admin',
+    createdAt: '2026-04-30T00:00:00Z',
+    updatedAt: '2026-04-30T00:00:00Z',
+  };
+}
+
+describe('TypedDocumentForm — Phase B widgets', () => {
+  it('renders number_input as <input type="number">', () => {
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={vi.fn()} />);
+    const input = screen.getByTestId('input-f-count') as HTMLInputElement;
+    expect(input.type).toBe('number');
+  });
+
+  it('renders date_picker as <input type="date">', () => {
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={vi.fn()} />);
+    const input = screen.getByTestId('input-f-when') as HTMLInputElement;
+    expect(input.type).toBe('date');
+  });
+
+  it('renders checkbox widget as <input type="checkbox">', () => {
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={vi.fn()} />);
+    const input = screen.getByTestId('input-f-done') as HTMLInputElement;
+    expect(input.type).toBe('checkbox');
+    expect(input.checked).toBe(false);
+  });
+
+  it('coerces number string "42" to numeric 42 on submit', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByTestId('input-f-count'), { target: { value: '42' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted['f-count']).toBe(42);
+  });
+
+  it('checkbox toggle submits boolean true (and the false default is dropped as null-coerced)', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByTestId('input-f-count'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTestId('input-f-done'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted['f-done']).toBe(true);
+  });
+
+  it('blocks submit when number coerces to NaN (e.g. via tampered input value)', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={onSubmit} />);
+
+    // Number inputs in jsdom permit setting non-numeric values via the
+    // change event; we use that to simulate a coercion failure.
+    const countInput = screen.getByTestId('input-f-count') as HTMLInputElement;
+    fireEvent.change(countInput, { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/count is required/i);
+  });
+
+  it('unlimited number array submits coerced numeric values, drops empties', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseBType()} onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByTestId('input-f-count'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTestId('add-f-scores'));
+    fireEvent.click(screen.getByTestId('add-f-scores'));
+    fireEvent.change(screen.getByTestId('input-f-scores-0'), { target: { value: '10' } });
+    fireEvent.change(screen.getByTestId('input-f-scores-1'), { target: { value: '' } });
+    fireEvent.change(screen.getByTestId('input-f-scores-2'), { target: { value: '20' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted['f-scores']).toEqual([10, 20]);
+  });
+});

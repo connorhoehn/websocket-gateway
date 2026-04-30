@@ -152,12 +152,18 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
                       {selectedType.fields.map((f) => {
                         const v = doc.values[f.fieldId];
                         if (v === undefined) return null;
+                        let display: string;
+                        if (Array.isArray(v)) {
+                          display = v.join(', ');
+                        } else if (typeof v === 'boolean') {
+                          display = v ? '✓' : '—';
+                        } else {
+                          display = String(v);
+                        }
                         return (
                           <div key={f.fieldId} style={{ fontSize: 13 }}>
                             <span style={{ fontWeight: 500, color: '#374151' }}>{f.name}: </span>
-                            <span style={{ color: '#0f172a' }}>
-                              {Array.isArray(v) ? v.join(', ') : v}
-                            </span>
+                            <span style={{ color: '#0f172a' }}>{display}</span>
                           </div>
                         );
                       })}

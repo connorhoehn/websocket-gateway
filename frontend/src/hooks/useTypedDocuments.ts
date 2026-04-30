@@ -7,15 +7,32 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export type TypedDocumentValue = string | string[];
+// Phase B value shapes — match the social-api `TypedDocumentValue`. The
+// route layer enforces (fieldType, cardinality) → value-shape correspondence.
+export type TypedDocumentValue =
+  | string
+  | string[]
+  | number
+  | number[]
+  | boolean;
 
 // API-side shapes — these mirror the social-api contract for the new
 // document-types feature. Distinct from the existing localStorage-backed
 // `DocumentType` in `types/documentType.ts` (which uses a renderer-driven
 // `sectionType` model). Phase A.5 will unify; for now they live in parallel.
 
-export type ApiFieldKind = 'text' | 'long_text';
-export type ApiFieldWidget = 'text_field' | 'textarea';
+export type ApiFieldKind =
+  | 'text'
+  | 'long_text'
+  | 'number'
+  | 'date'
+  | 'boolean';
+export type ApiFieldWidget =
+  | 'text_field'
+  | 'textarea'
+  | 'number_input'
+  | 'date_picker'
+  | 'checkbox';
 export type ApiFieldCardinality = 1 | 'unlimited';
 
 export interface ApiDocumentTypeField {

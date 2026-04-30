@@ -8,8 +8,20 @@
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
 
-export type DocumentTypeFieldKind = 'text' | 'long_text';
-export type DocumentTypeFieldWidget = 'text_field' | 'textarea';
+export type DocumentTypeFieldKind =
+  | 'text'
+  | 'long_text'
+  | 'number'
+  | 'date'
+  | 'boolean';
+
+export type DocumentTypeFieldWidget =
+  | 'text_field'
+  | 'textarea'
+  | 'number_input'
+  | 'date_picker'
+  | 'checkbox';
+
 export type DocumentTypeFieldCardinality = 1 | 'unlimited';
 
 export interface DocumentTypeFieldItem {

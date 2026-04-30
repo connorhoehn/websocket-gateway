@@ -311,6 +311,131 @@ describe('typed-documents schema validation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase B — number / date / boolean field types
+// ---------------------------------------------------------------------------
+
+describe('Phase B field types: number / date / boolean', () => {
+  beforeEach(() => {
+    typeStore['type-b'] = {
+      typeId: 'type-b',
+      name: 'Phase B Sample',
+      fields: [
+        { fieldId: 'f-num',  name: 'count',     fieldType: 'number',  widget: 'number_input', cardinality: 1, required: true,  helpText: '' },
+        { fieldId: 'f-date', name: 'when',      fieldType: 'date',    widget: 'date_picker',  cardinality: 1, required: false, helpText: '' },
+        { fieldId: 'f-bool', name: 'completed', fieldType: 'boolean', widget: 'checkbox',     cardinality: 1, required: true,  helpText: '' },
+        { fieldId: 'f-nums', name: 'scores',    fieldType: 'number',  widget: 'number_input', cardinality: 'unlimited', required: false, helpText: '' },
+      ],
+    };
+  });
+
+  test('POST creates a type that uses every Phase B field type', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Mix',
+        fields: [
+          { name: 'count',     fieldType: 'number',  widget: 'number_input', cardinality: 1, required: true },
+          { name: 'when',      fieldType: 'date',    widget: 'date_picker',  cardinality: 1, required: false },
+          { name: 'completed', fieldType: 'boolean', widget: 'checkbox',     cardinality: 1, required: false },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  test('POST rejects non-number for a number field', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-b', values: { 'f-num': 'not-a-number', 'f-bool': true } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST rejects non-finite (NaN/Infinity) numbers — would arrive as string in JSON', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-b', values: { 'f-num': 'NaN', 'f-bool': true } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST rejects non-ISO date strings', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-b', values: { 'f-num': 1, 'f-bool': true, 'f-date': 'last Tuesday' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST rejects non-boolean for a boolean field (e.g. string "true")', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-b', values: { 'f-num': 1, 'f-bool': 'true' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST rejects boolean field with unlimited cardinality at the type-creation step', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'flags', fieldType: 'boolean', widget: 'checkbox', cardinality: 'unlimited', required: false },
+        ],
+      },
+    });
+    // Type creation accepts the shape (the field-type/widget/cardinality
+    // tuple is permissive at the API level); rejection happens at instance
+    // creation. This test pins that expectation so a future tightening of
+    // type-creation validation is a deliberate decision.
+    expect(res.statusCode).toBe(201);
+  });
+
+  test('POST 201 with all valid Phase B values; coerces correctly through GET', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: {
+        typeId: 'type-b',
+        values: {
+          'f-num':  42,
+          'f-date': '2026-04-30',
+          'f-bool': false,
+          'f-nums': [1, 2, 3],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const created = res.body as { documentId: string; values: Record<string, unknown> };
+    expect(created.values['f-num']).toBe(42);
+    expect(created.values['f-date']).toBe('2026-04-30');
+    expect(created.values['f-bool']).toBe(false);
+    expect(created.values['f-nums']).toEqual([1, 2, 3]);
+
+    // GET round-trip preserves values verbatim
+    const fetched = await run(buildApp(), 'GET', `/api/typed-documents/${created.documentId}`);
+    expect(fetched.statusCode).toBe(200);
+    const got = fetched.body as { values: Record<string, unknown> };
+    expect(got.values['f-num']).toBe(42);
+    expect(got.values['f-bool']).toBe(false);
+  });
+
+  test('POST 201 when required boolean is explicitly false (false is a valid present value)', async () => {
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-b', values: { 'f-num': 1, 'f-bool': false } },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  test('POST rejects unlimited boolean (caught at value-shape validation)', async () => {
+    typeStore['type-bool-bad'] = {
+      typeId: 'type-bool-bad',
+      name: 'BadBool',
+      fields: [
+        { fieldId: 'f-flags', name: 'flags', fieldType: 'boolean', widget: 'checkbox', cardinality: 'unlimited', required: false, helpText: '' },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-bool-bad', values: { 'f-flags': [true, false] } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase A acceptance test — full create-type → post-doc → retrieve loop
 // ---------------------------------------------------------------------------
 
