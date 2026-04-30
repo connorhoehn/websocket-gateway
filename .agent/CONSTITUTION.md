@@ -211,12 +211,19 @@ repo's source.
 
 ## Daily cap
 
-**Up to 10 self-driven tasks per UTC day per agent session.** Tracked
-via the hub: count `task.done` activity rows where `agent_name=self`
-AND `detail` contains `[self-driven]` over the last 24 hours.
+**Default: up to 30 self-driven tasks per UTC day per agent session.**
+Tracked via the hub: count `task.done` activity rows where
+`agent_name=self` AND `detail` contains `[self-driven]` over the last
+24 hours.
+
+**Operator override:** if `$AGENT_HUB_ROOT/.budget-websocket-gateway`
+exists, read its integer as today's cap (overrides this default).
+This is the operator's per-agent dial — read every `/clear` cycle so
+changes take effect on the next task. The Anthropic weekly limit is
+handled separately via `.cooldown_until` (see worker-template.md).
 
 When the cap is reached:
-1. `append_log("daily cap reached; idling until next UTC day")`.
+1. `append_log("daily cap reached at <N>; idling until next UTC day")`.
 2. Optionally file a "daily summary" handoff to operator.
 3. `/clear` and stop.
 
