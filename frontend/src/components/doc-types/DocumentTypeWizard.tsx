@@ -5,13 +5,15 @@
 // Step 2: Fields — Drupal-style section-type picker + reorderable field list
 // Step 3: View modes — per-field visibility and renderer overrides
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ViewMode } from '../../types/document';
 import type {
   DocumentType,
   DocumentTypeField,
+  DocumentTypePage,
+  DocumentTypePageConfig,
 } from '../../types/documentType';
-import { makeEmptyField } from '../../types/documentType';
+import { makeEmptyField, getPagesView, getPageConfig } from '../../types/documentType';
 // Trigger side-effect registrations so getFieldTypes() / getFieldType() are populated
 import '../../renderers';
 import { getFieldTypes, getFieldType } from '../../renderers/registry';
@@ -234,66 +236,281 @@ function FieldRow({
   );
 }
 
-function Step2Fields({ fields, setFields }: {
+function Step2Fields({
+  fields, setFields, pages, setPages, pageConfig, setPageConfig,
+}: {
   fields: DocumentTypeField[];
   setFields: (f: DocumentTypeField[]) => void;
+  pages: DocumentTypePage[];
+  setPages: (p: DocumentTypePage[]) => void;
+  pageConfig: DocumentTypePageConfig;
+  setPageConfig: (c: DocumentTypePageConfig) => void;
 }) {
+  // The currently-selected page (where new sections land). Defaults to
+  // the first (and only) page until the operator adds a second page.
+  const [activePageId, setActivePageId] = useState<string>(pages[0]?.id ?? 'page-default');
+
+  // If `pages` reshapes such that the active page is gone, snap back
+  // to the first remaining page. Done in an effect, not during render.
+  useEffect(() => {
+    if (pages.length > 0 && !pages.find((p) => p.id === activePageId)) {
+      setActivePageId(pages[0].id);
+    }
+  }, [pages, activePageId]);
+
   const addField = (type: string) => {
-    setFields([...fields, makeEmptyField(type)]);
+    const f = makeEmptyField(type);
+    setFields([...fields, f]);
+    // Append to the active page so the operator sees it land where they expect.
+    setPages(pages.map((p) =>
+      p.id === activePageId ? { ...p, sectionIds: [...p.sectionIds, f.id] } : p
+    ));
   };
 
   const update = (id: string, patch: Partial<DocumentTypeField>) => {
     setFields(fields.map(f => f.id === id ? { ...f, ...patch } : f));
   };
 
-  const remove = (id: string) => setFields(fields.filter(f => f.id !== id));
-
-  const moveUp = (i: number) => {
-    if (i === 0) return;
-    const next = [...fields];
-    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-    setFields(next);
+  const remove = (id: string) => {
+    setFields(fields.filter(f => f.id !== id));
+    setPages(pages.map((p) => ({ ...p, sectionIds: p.sectionIds.filter((s) => s !== id) })));
   };
 
-  const moveDown = (i: number) => {
-    if (i === fields.length - 1) return;
-    const next = [...fields];
-    [next[i], next[i + 1]] = [next[i + 1], next[i]];
-    setFields(next);
+  // Move a section within its page (up/down by one slot).
+  const moveSectionInPage = (pageId: string, sectionId: string, dir: -1 | 1) => {
+    setPages(pages.map((p) => {
+      if (p.id !== pageId) return p;
+      const idx = p.sectionIds.indexOf(sectionId);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= p.sectionIds.length) return p;
+      const next = [...p.sectionIds];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return { ...p, sectionIds: next };
+    }));
+  };
+
+  // Move a section to a different page (append to that page's list).
+  const moveSectionToPage = (sectionId: string, fromPageId: string, toPageId: string) => {
+    if (fromPageId === toPageId) return;
+    setPages(pages.map((p) => {
+      if (p.id === fromPageId) return { ...p, sectionIds: p.sectionIds.filter((s) => s !== sectionId) };
+      if (p.id === toPageId)   return { ...p, sectionIds: [...p.sectionIds, sectionId] };
+      return p;
+    }));
+  };
+
+  const movePage = (pageId: string, dir: -1 | 1) => {
+    const idx = pages.findIndex((p) => p.id === pageId);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= pages.length) return;
+    const next = [...pages];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setPages(next);
+  };
+
+  const addPage = () => {
+    const id = `page-${(typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10)}`;
+    setPages([...pages, { id, sectionIds: [] }]);
+    setActivePageId(id);
+  };
+
+  const renamePage = (pageId: string, title: string) => {
+    setPages(pages.map((p) => p.id === pageId ? { ...p, title: title || undefined } : p));
+  };
+
+  const removePage = (pageId: string) => {
+    if (pages.length <= 1) return; // always keep at least one page
+    // Move sections from removed page to the first remaining page so we
+    // don't orphan fields.
+    const removed = pages.find((p) => p.id === pageId);
+    const orphaned = removed?.sectionIds ?? [];
+    const remaining = pages.filter((p) => p.id !== pageId);
+    if (orphaned.length > 0 && remaining.length > 0) {
+      remaining[0] = { ...remaining[0], sectionIds: [...remaining[0].sectionIds, ...orphaned] };
+    }
+    setPages(remaining);
+    if (activePageId === pageId) setActivePageId(remaining[0]?.id ?? '');
+  };
+
+  // Lookup helper — section id → field. The wizard's `fields` array is
+  // the source of truth for individual section properties; pages just
+  // reference fields by id.
+  const fieldsById = new Map(fields.map((f) => [f.id, f]));
+
+  // Backwards-compat: when there's only ONE page, render the section list
+  // exactly as the pre-#66 wizard did so the 37 existing tests don't
+  // observe a structural change. Page UI (headers, between-page move,
+  // page reorder, page-level config) only kicks in once a second page
+  // is added.
+  const isSinglePage = pages.length === 1;
+
+  // Render a single FieldRow given its position within a page. Reused
+  // by both the single-page legacy path and the multi-page path.
+  const renderRow = (sectionId: string, page: DocumentTypePage, idx: number) => {
+    const f = fieldsById.get(sectionId);
+    if (!f) return null;
+    return (
+      <FieldRow
+        key={f.id}
+        field={f}
+        index={idx}
+        total={page.sectionIds.length}
+        onRename={(name) => update(f.id, { name })}
+        onChangeType={(sectionType) => update(f.id, { sectionType, rendererOverrides: {} })}
+        onRemove={() => remove(f.id)}
+        onMoveUp={() => moveSectionInPage(page.id, f.id, -1)}
+        onMoveDown={() => moveSectionInPage(page.id, f.id, +1)}
+        onToggleRequired={() => update(f.id, { required: !f.required })}
+        onToggleCollapsed={() => update(f.id, { defaultCollapsed: !f.defaultCollapsed })}
+      />
+    );
   };
 
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-      {/* Left — added fields */}
+      {/* Left — pages of sections */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10, letterSpacing: '0.02em' }}>
-          SECTIONS {fields.length > 0 && <span style={{ color: '#646cff' }}>({fields.length})</span>}
+          SECTIONS {fields.length > 0 && <span style={{ color: '#646cff' }}>({fields.length}{!isSinglePage ? ` across ${pages.length} pages` : ''})</span>}
         </div>
-        {fields.length === 0 ? (
-          <div style={{
-            ...card, textAlign: 'center', padding: '32px 16px',
-            color: '#94a3b8', fontSize: 13, borderStyle: 'dashed',
-          }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
-            No sections yet — pick a section type →
-          </div>
+
+        {isSinglePage ? (
+          // Legacy single-page rendering — preserves the existing
+          // `fields-list` testid contract for the 37 existing tests.
+          fields.length === 0 ? (
+            <div style={{
+              ...card, textAlign: 'center', padding: '32px 16px',
+              color: '#94a3b8', fontSize: 13, borderStyle: 'dashed',
+            }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+              No sections yet — pick a section type →
+            </div>
+          ) : (
+            <div data-testid="fields-list">
+              {pages[0].sectionIds.map((sid, idx) => renderRow(sid, pages[0], idx))}
+            </div>
+          )
         ) : (
-          <div data-testid="fields-list">
-            {fields.map((f, i) => (
-              <FieldRow
-                key={f.id}
-                field={f}
-                index={i}
-                total={fields.length}
-                onRename={name => update(f.id, { name })}
-                onChangeType={sectionType => update(f.id, { sectionType, rendererOverrides: {} })}
-                onRemove={() => remove(f.id)}
-                onMoveUp={() => moveUp(i)}
-                onMoveDown={() => moveDown(i)}
-                onToggleRequired={() => update(f.id, { required: !f.required })}
-                onToggleCollapsed={() => update(f.id, { defaultCollapsed: !f.defaultCollapsed })}
+          // Multi-page rendering. Each page gets its own card with a
+          // header, a sortable section list, and per-page controls.
+          pages.map((p, pageIdx) => (
+            <div
+              key={p.id}
+              data-testid={`wizard-page-${p.id}`}
+              style={{
+                ...card,
+                marginBottom: 12,
+                background: p.id === activePageId ? '#faf5ff' : '#fff',
+                borderColor: p.id === activePageId ? '#c4b5fd' : '#e2e8f0',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <button
+                  type="button"
+                  data-testid={`page-up-${p.id}`}
+                  disabled={pageIdx === 0}
+                  onClick={() => movePage(p.id, -1)}
+                  style={{ ...btn('ghost', pageIdx === 0), padding: '2px 6px', fontSize: 11 }}
+                >▲</button>
+                <button
+                  type="button"
+                  data-testid={`page-down-${p.id}`}
+                  disabled={pageIdx === pages.length - 1}
+                  onClick={() => movePage(p.id, +1)}
+                  style={{ ...btn('ghost', pageIdx === pages.length - 1), padding: '2px 6px', fontSize: 11 }}
+                >▼</button>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', minWidth: 56 }}>
+                  Page {pageIdx + 1}
+                </span>
+                <input
+                  data-testid={`page-title-${p.id}`}
+                  value={p.title ?? ''}
+                  placeholder={`Page ${pageIdx + 1}`}
+                  onChange={(e) => renamePage(p.id, e.target.value)}
+                  style={{ ...input, flex: 1, padding: '4px 8px', fontSize: 13 }}
+                  onFocus={() => setActivePageId(p.id)}
+                />
+                <button
+                  type="button"
+                  data-testid={`page-remove-${p.id}`}
+                  disabled={pages.length <= 1}
+                  onClick={() => removePage(p.id)}
+                  style={{ ...btn('ghost', pages.length <= 1), padding: '2px 8px', fontSize: 13, color: '#ef4444' }}
+                  title="Remove page (sections move to first page)"
+                >✕</button>
+              </div>
+
+              {p.sectionIds.length === 0 ? (
+                <div
+                  data-testid={`page-empty-${p.id}`}
+                  style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 12, fontStyle: 'italic' }}
+                >
+                  No sections on this page yet — click the page header to make it active, then pick a section type.
+                </div>
+              ) : (
+                <div data-testid={`page-sections-${p.id}`}>
+                  {p.sectionIds.map((sid, idx) => {
+                    const f = fieldsById.get(sid);
+                    if (!f) return null;
+                    return (
+                      <div key={sid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ flex: 1 }}>{renderRow(sid, p, idx)}</div>
+                        {pages.length > 1 && (
+                          <select
+                            data-testid={`section-move-page-${sid}`}
+                            value={p.id}
+                            onChange={(e) => moveSectionToPage(sid, p.id, e.target.value)}
+                            style={{
+                              fontSize: 11, padding: '4px 6px', borderRadius: 4,
+                              fontFamily: 'inherit', cursor: 'pointer',
+                              background: '#f8fafc', border: '1px solid #e2e8f0',
+                            }}
+                            title="Move section to another page"
+                          >
+                            {pages.map((pp, pi) => (
+                              <option key={pp.id} value={pp.id}>
+                                {pp.title || `Page ${pi + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+
+        {/* + Add Page — always available; multi-page UI only kicks in
+            once the operator clicks this. */}
+        <button
+          type="button"
+          data-testid="add-page"
+          onClick={addPage}
+          style={{
+            ...btn('ghost'), marginTop: 8, fontSize: 12, padding: '6px 12px',
+            border: '1px dashed #c4b5fd', color: '#646cff', borderRadius: 6,
+          }}
+        >
+          + Add Page
+        </button>
+
+        {/* Page-level config — only visible when 2+ pages exist. */}
+        {pages.length > 1 && (
+          <div
+            data-testid="page-config-toc"
+            style={{ marginTop: 16, padding: 10, background: '#f8fafc', borderRadius: 6, fontSize: 13 }}
+          >
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={pageConfig.showTableOfContents}
+                onChange={(e) => setPageConfig({ ...pageConfig, showTableOfContents: e.target.checked })}
               />
-            ))}
+              <span>Show table of contents (multi-page documents only)</span>
+            </label>
           </div>
         )}
       </div>
@@ -491,6 +708,17 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
   // 📄 unless an existing type already had one set (preserved on edit).
   const icon = initialType?.icon ?? '📄';
   const [fields,      setFields]      = useState<DocumentTypeField[]>(initialType?.fields    ?? []);
+  // Phase 51 / hub#66 — pages layer above fields. When the wizard is
+  // opened on a legacy single-page type, getPagesView derives a single
+  // page wrapping all fields so the wizard logic can read uniformly.
+  const [pages, setPages] = useState<DocumentTypePage[]>(() => (
+    initialType
+      ? getPagesView(initialType)
+      : [{ id: 'page-default', sectionIds: [] }]
+  ));
+  const [pageConfig, setPageConfig] = useState<DocumentTypePageConfig>(() => (
+    initialType ? getPageConfig(initialType) : { showTableOfContents: false }
+  ));
 
   const [nameError, setNameError] = useState('');
 
@@ -510,7 +738,7 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
   };
 
   const handleSave = () => {
-    onSave({ name: name.trim(), description, icon, fields });
+    onSave({ name: name.trim(), description, icon, fields, pages, pageConfig });
   };
 
   return (
@@ -526,7 +754,16 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
             description={description} setDescription={setDescription}
           />
         )}
-        {step === 2 && <Step2Fields fields={fields} setFields={setFields} />}
+        {step === 2 && (
+          <Step2Fields
+            fields={fields}
+            setFields={setFields}
+            pages={pages}
+            setPages={setPages}
+            pageConfig={pageConfig}
+            setPageConfig={setPageConfig}
+          />
+        )}
         {step === 3 && <Step3ViewModes fields={fields} setFields={setFields} />}
 
         {nameError && (

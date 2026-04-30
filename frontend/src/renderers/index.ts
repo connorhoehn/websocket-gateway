@@ -8,6 +8,9 @@ import tasksDef from './tasks/definition';
 import richTextDef from './rich-text/definition';
 import decisionsDef from './decisions/definition';
 import checklistDef from './checklist/definition';
+import fileUploadDef from './file-upload/definition';
+import diagramDef from './diagram/definition';
+import linkBlockDef from './link-block/definition';
 
 import DefaultRenderer from './default/DefaultRenderer';
 import RichTextEditorRenderer from './rich-text/RichTextEditorRenderer';
@@ -24,6 +27,12 @@ registerFieldType(tasksDef);
 registerFieldType(richTextDef);
 registerFieldType(decisionsDef);
 registerFieldType(checklistDef);
+// Phase 51 / hub#66 — new section types. Renderers fall through to
+// DefaultRenderer (registered with the '*' wildcard above) until
+// dedicated editor/reader components ship as follow-ups.
+registerFieldType(fileUploadDef);
+registerFieldType(diagramDef);
+registerFieldType(linkBlockDef);
 
 // Renderer components per (sectionType × viewMode)
 registerRenderer('*', '*', DefaultRenderer);

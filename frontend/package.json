@@ -14,6 +14,9 @@
     "token": "bash ../scripts/refresh-dev-token.sh"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@tiptap/extension-collaboration": "^3.22.3",
     "@tiptap/extension-collaboration-cursor": "^3.0.0",
     "@tiptap/extension-mention": "^3.22.3",
