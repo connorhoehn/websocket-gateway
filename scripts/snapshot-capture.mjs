@@ -347,6 +347,30 @@ async function main() {
     await writeIndex(runTimestamp, captured, errored);
 
     log(`run complete: ${captured.length} captured, ${errored.length} errored`);
+
+    // Run journeys (hub#54). Same lifecycle window — frontend + social-api
+    // are still up. Failures inside individual journeys don't fail the
+    // whole snapshot run.
+    log('starting journey runner');
+    try {
+      const { spawnSync } = await import('node:child_process');
+      const journeyResult = spawnSync(
+        process.execPath,
+        [join(REPO_ROOT, 'scripts', 'snapshot-journeys.mjs')],
+        {
+          cwd: REPO_ROOT,
+          env: { ...process.env, JOURNEY_RUN_ID: runTimestamp },
+          stdio: 'inherit',
+        },
+      );
+      if (journeyResult.status === 0) {
+        log('journeys: all passed');
+      } else {
+        log(`journeys: completed with exit code ${journeyResult.status} (some failed; see journeys/index.json)`);
+      }
+    } catch (e) {
+      err(`journey runner spawn failed: ${e?.message ?? e}`);
+    }
   } catch (e) {
     err(`run failed: ${e?.message ?? e}`);
     exitCode = 1;

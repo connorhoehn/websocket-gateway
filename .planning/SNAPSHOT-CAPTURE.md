@@ -175,6 +175,85 @@ existing slugs without an operator decision (renaming orphans the
 existing snapshot history under the old slug). Don't add `/api/*`
 URLs — capture user-facing UI only, per handoff #34.
 
+## UI journeys (hub#54)
+
+Beyond per-page snapshots, the capture run ALSO executes named UI
+journeys — multi-step Playwright flows that exercise real
+configuration paths and capture a screenshot at every step. Operator
+can step through the carousel ("click create → fill form → save →
+populated") to verify the feature actually works end-to-end, not just
+that the page renders.
+
+Output:
+
+```
+$AGENT_HUB_ROOT/journeys/<journey-slug>/<run-ts>/<NN>-<step-name>.png
+$AGENT_HUB_ROOT/journeys/index.json
+```
+
+The manifest records every run (passed or failed) with started_at,
+ended_at, commit_sha, status, failure-text-on-error, and the per-step
+list. Failed journeys still produce screenshots up to the failing
+step for triage.
+
+### Current journeys
+
+Defined in `scripts/snapshot-journeys.mjs` as inline JS objects:
+
+| slug | what it exercises |
+|------|-------------------|
+| `create-document-type-basic` | Empty state → wizard → name + add a section field → save → populated list |
+| `edit-document-type-name` | Pre-seed a type via localStorage → click Edit → rename → save |
+| `delete-document-type-with-confirmation` | Pre-seed a type → click × → confirm modal → confirm delete |
+
+The edit and delete journeys seed `localStorage` directly via
+`page.evaluate()` rather than driving the wizard inline — that
+isolates each journey's flow from cross-journey state and removes
+race conditions on wizard mount/unmount.
+
+### Running journeys standalone
+
+```bash
+# Frontend must be running on :5174 (e.g. `cd frontend && npm run dev`).
+node scripts/snapshot-journeys.mjs
+```
+
+The capture script (`snapshot-capture.mjs`) invokes this runner
+automatically after page captures complete, in the same lifecycle so
+servers don't need to be restarted.
+
+### Adding a new journey
+
+Add an entry to the `JOURNEYS` array in `scripts/snapshot-journeys.mjs`:
+
+```js
+{
+  slug: 'my-new-journey',
+  title: 'Operator-readable title',
+  description: 'One-line description for the dashboard.',
+  async run(page, step) {
+    await step('step-name', 'Step description', async () => {
+      // Playwright actions here. Screenshot is taken automatically at
+      // the end of the step.
+    });
+    // ...more steps...
+  },
+}
+```
+
+Slug rules: kebab-case, deterministic. Don't rename existing slugs
+(orphans the historical run directory). Step names are also
+kebab-cased for filesystem safety.
+
+### Known issue
+
+The `create-document-type-basic` and `edit-document-type-name`
+journeys can race on wizard mount-after-click in headless runs
+depending on machine load. The runner records the failure text and
+the screenshots up to the failing step so the operator can triage. A
+follow-up task tracks tightening the selectors / replacing
+inline-create with seeded localStorage where applicable.
+
 ## What's deliberately out of scope
 
 - Scheduled re-runs (cron). v1 is manual; the orchestrator has the
