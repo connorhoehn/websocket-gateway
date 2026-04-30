@@ -15,6 +15,8 @@ import { useIdentityContext } from '../contexts/IdentityContext';
 import { usePresenceContext } from '../contexts/PresenceContext';
 
 import { ConnectionStatus } from './ConnectionStatus';
+import { ApiDegradedBanner } from './ApiDegradedBanner';
+import { useApiHealth } from '../hooks/useApiHealth';
 import { CollapsibleSidebar } from './CollapsibleSidebar';
 import { CollapsedIconStrip } from './CollapsedIconStrip';
 import { ReactionsOverlay } from './ReactionsOverlay';
@@ -199,6 +201,7 @@ function AppLayoutInner({
   const { presenceUsers, currentClientId } = usePresenceContext();
   const navigate = useNavigate();
   const location = useLocation();
+  const apiHealth = useApiHealth();
 
   // Derive active view from URL path
   const activeView: 'panels' | 'social' | 'dashboard' | 'doc-editor' | 'doc-types' | 'field-types' | 'pipelines' | 'observability' =
@@ -925,6 +928,7 @@ function AppLayoutInner({
               padded container so the tab bar above stays flush to the
               header but the page content below has breathing room. */}
           <div style={{ padding: '1rem 2rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, minHeight: 0 }}>
+            <ApiDegradedBanner health={apiHealth} />
             <ErrorBoundary name="RouteContent">
               <Suspense fallback={<div>Loading...</div>}>
                 <Outlet context={{ dockedVideoDocId, setDockedVideoDocId } satisfies DockVideoContext} />
