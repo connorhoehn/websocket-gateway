@@ -29,6 +29,8 @@ import {
 import { pipelineValidationRouter } from './pipelineValidation';
 import { pipelineInspectorRouter } from './pipelineInspector';
 import { pipelineDLQRouter } from './pipelineDLQ';
+import { documentTypesRouter } from './documentTypes';
+import { typedDocumentsRouter } from './typedDocuments';
 
 const router = Router();
 
@@ -93,5 +95,9 @@ router.use('/pipelines/:runId/cancel', pipelineCancelRouter);
 router.use('/pipelines/:runId/approvals', pipelineApprovalsRouter);
 // Observability — GET /api/observability/dashboard, /api/observability/metrics.
 router.use('/observability', observabilityRouter);
+
+// Phase 51 Phase A — document type schemas + typed document instances.
+router.use('/document-types', documentTypesRouter);
+router.use('/typed-documents', typedDocumentsRouter);
 
 export default router;
