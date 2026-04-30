@@ -761,6 +761,71 @@ describe('Phase D — instance-creation enforcement', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase E — display modes (full / teaser / list)
+// ---------------------------------------------------------------------------
+
+describe('Phase E — displayModes round-trip + parse rejection', () => {
+  test('POST type 201 with displayModes echoes back exactly', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Article',
+        fields: [
+          { name: 'title', fieldType: 'text', widget: 'text_field', cardinality: 1, required: true,
+            displayModes: { full: true, teaser: true, list: true } },
+          { name: 'body', fieldType: 'long_text', widget: 'textarea', cardinality: 1, required: false },
+          { name: 'tagline', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            displayModes: { teaser: true } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.body as { fields: { name: string; displayModes?: Record<string, boolean> }[] };
+    expect(body.fields.find((f) => f.name === 'title')!.displayModes).toEqual({ full: true, teaser: true, list: true });
+    expect(body.fields.find((f) => f.name === 'body')!.displayModes).toBeUndefined();
+    expect(body.fields.find((f) => f.name === 'tagline')!.displayModes).toEqual({ teaser: true });
+  });
+
+  test('POST type rejects non-boolean entry in displayModes', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'x', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            displayModes: { full: 'yes' } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects unknown key in displayModes', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'x', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            displayModes: { full: true, gallery: true } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects non-object displayModes (e.g. array)', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'x', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            displayModes: ['full'] },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase A acceptance test — full create-type → post-doc → retrieve loop
 // ---------------------------------------------------------------------------
 

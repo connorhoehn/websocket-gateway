@@ -55,6 +55,15 @@ export interface ApiFieldShowWhen {
   equals: string | number | boolean;
 }
 
+/** Phase E — opt-in visibility per display context. Absent ⇒ visible in `full` only. */
+export interface ApiFieldDisplayModes {
+  full?: boolean;
+  teaser?: boolean;
+  list?: boolean;
+}
+
+export type ApiDisplayMode = 'full' | 'teaser' | 'list';
+
 export interface ApiDocumentTypeField {
   fieldId: string;
   name: string;
@@ -71,6 +80,8 @@ export interface ApiDocumentTypeField {
   validation?: ApiFieldValidation;
   /** Phase D — only show this field when another field equals a value. */
   showWhen?: ApiFieldShowWhen;
+  /** Phase E — per-context visibility (full / teaser / list). */
+  displayModes?: ApiFieldDisplayModes;
 }
 
 export interface ApiDocumentType {

@@ -8,8 +8,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { TypedDocumentForm, type ReferenceOption } from './TypedDocumentForm';
+import { ALL_DISPLAY_MODES, visibleFieldsForMode } from './displayMode';
 import {
   useTypedDocuments,
+  type ApiDisplayMode,
   type ApiDocumentType,
   type TypedDocument,
 } from '../../hooks/useTypedDocuments';
@@ -27,6 +29,7 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
   const [typesLoading, setTypesLoading] = useState(true);
   const [typesError, setTypesError] = useState<string | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<ApiDisplayMode>('full');
 
   // Fetch the list of document types from the backend.
   useEffect(() => {
@@ -169,8 +172,23 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
             />
 
             <section data-testid="documents-list">
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>
-                {selectedType.name} documents ({documents.length})
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                  {selectedType.name} documents ({documents.length})
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
+                  Display:
+                  <select
+                    data-testid="display-mode-picker"
+                    value={displayMode}
+                    onChange={(e) => setDisplayMode(e.target.value as ApiDisplayMode)}
+                    style={{ fontFamily: 'inherit', fontSize: 12, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff' }}
+                  >
+                    {ALL_DISPLAY_MODES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
               {docsLoading && <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading…</div>}
               {docsError && (
@@ -194,7 +212,7 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
                       {doc.createdAt} · by {doc.createdBy}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {selectedType.fields.map((f) => {
+                      {visibleFieldsForMode(selectedType, displayMode).map((f) => {
                         const v = doc.values[f.fieldId];
                         if (v === undefined) return null;
                         let display: string;

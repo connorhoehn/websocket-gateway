@@ -44,6 +44,14 @@ export interface DocumentTypeFieldShowWhen {
   equals: string | number | boolean;
 }
 
+/** Phase E — opt-in visibility per display context.
+ *  Default semantics when absent (or `full` unset): visible in full only. */
+export interface DocumentTypeFieldDisplayModes {
+  full?: boolean;
+  teaser?: boolean;
+  list?: boolean;
+}
+
 export interface DocumentTypeFieldItem {
   fieldId: string;
   name: string;
@@ -60,6 +68,8 @@ export interface DocumentTypeFieldItem {
   validation?: DocumentTypeFieldValidation;
   /** Phase D — only show this field when another field on the type equals a value. */
   showWhen?: DocumentTypeFieldShowWhen;
+  /** Phase E — per-context visibility (full / teaser / list). */
+  displayModes?: DocumentTypeFieldDisplayModes;
 }
 
 export interface DocumentTypeItem {

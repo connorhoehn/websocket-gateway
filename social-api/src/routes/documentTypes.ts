@@ -21,6 +21,7 @@ import type {
   DocumentTypeFieldCardinality,
   DocumentTypeFieldValidation,
   DocumentTypeFieldShowWhen,
+  DocumentTypeFieldDisplayModes,
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
 
@@ -87,6 +88,7 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
   // optional; absent ⇒ no constraints / always-visible (legacy behavior).
   const validation = parseValidation(r.validation, r.name as string);
   const showWhen = parseShowWhen(r.showWhen, r.name as string);
+  const displayModes = parseDisplayModes(r.displayModes, r.name as string);
 
   return {
     fieldId: typeof r.fieldId === 'string' && r.fieldId ? r.fieldId : randomUUID(),
@@ -100,7 +102,30 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
     ...(referenceTypeId !== undefined ? { referenceTypeId } : {}),
     ...(validation !== undefined ? { validation } : {}),
     ...(showWhen !== undefined ? { showWhen } : {}),
+    ...(displayModes !== undefined ? { displayModes } : {}),
   };
+}
+
+function parseDisplayModes(raw: unknown, fieldName: string): DocumentTypeFieldDisplayModes | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new ValidationError(`field "${fieldName}" displayModes must be an object`);
+  }
+  const r = raw as Record<string, unknown>;
+  const out: DocumentTypeFieldDisplayModes = {};
+  for (const key of ['full', 'teaser', 'list'] as const) {
+    if (r[key] === undefined) continue;
+    if (typeof r[key] !== 'boolean') {
+      throw new ValidationError(`field "${fieldName}" displayModes.${key} must be a boolean`);
+    }
+    out[key] = r[key] as boolean;
+  }
+  for (const key of Object.keys(r)) {
+    if (key !== 'full' && key !== 'teaser' && key !== 'list') {
+      throw new ValidationError(`field "${fieldName}" displayModes has unknown key "${key}"`);
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function parseValidation(raw: unknown, fieldName: string): DocumentTypeFieldValidation | undefined {
