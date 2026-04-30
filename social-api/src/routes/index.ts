@@ -27,6 +27,7 @@ import {
   pipelinePendingApprovalsRouter,
 } from './pipelineTriggers';
 import { pipelineValidationRouter } from './pipelineValidation';
+import { pipelineInspectorRouter } from './pipelineInspector';
 
 const router = Router();
 
@@ -73,6 +74,9 @@ router.use('/pipelines/runs/active', pipelineActiveRunsRouter);
 // mount below — otherwise `approvals` would be captured as a `:runId`
 // param and dispatched to the POST-approval handler (which 405s on GET).
 router.use('/pipelines/approvals', pipelinePendingApprovalsRouter);
+// T13 inspector (lib-expansion-3) — operator introspection over the
+// run-queue. Static segment, must precede the `:pipelineId` mount.
+router.use('/pipelines/inspector', pipelineInspectorRouter);
 // Per-pipeline run trigger. Mounted AFTER the static `/metrics`, `/defs`,
 // `/health`, `/validate`, `/runs/active`, and `/approvals` segments so
 // their specific paths match first (Express resolves mounts in

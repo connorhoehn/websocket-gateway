@@ -25,7 +25,15 @@
 // is consumed via `module.getEventBus().subscribe(...)` from the gateway-side
 // bridge in src/pipeline-bridge/pipeline-bridge.js — not here.
 
-import type { PipelineModule, PublicBusEvent } from 'distributed-core';
+import type {
+  PipelineModule,
+  PublicBusEvent,
+  Envelope,
+  LeaseLike,
+  DLQEntryLike,
+  QueueInspector,
+} from 'distributed-core';
+import { wrap, InMemoryQueueInspector } from 'distributed-core';
 import type {
   BusEvent,
   PipelineBridge,
@@ -33,6 +41,51 @@ import type {
   PipelineRunSnapshot,
   PendingApprovalRow,
 } from '../routes/pipelineTriggers';
+
+// ---------------------------------------------------------------------------
+// T1 (lib-expansion-3) boundary adapters — keep the wider pipeline shape
+// untouched. We wrap PipelineRunSnapshot only at the Inspector / DLQ surfaces
+// where operator-grade introspection wants the standard Envelope contract.
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap a `PipelineRunSnapshot` in a T1 `Envelope` for inspector consumption.
+ * The envelope id is the run id (stable, lexicographically reasonable). The
+ * `enqueuedAtMs` is derived from `startedAt` when present so age-of-oldest
+ * pending matches the dashboard expectation; falls back to `Date.now()` when
+ * absent (a snapshot without a startedAt is effectively just-now).
+ */
+export function asEnvelope(run: PipelineRunSnapshot): Envelope<PipelineRunSnapshot> {
+  const startedAtRaw = typeof run.startedAt === 'string' ? run.startedAt : undefined;
+  const startedAtMs = startedAtRaw ? new Date(startedAtRaw).getTime() : NaN;
+  const enqueuedAtMs = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+  return wrap(run, {
+    id: run.runId,
+    now: () => enqueuedAtMs,
+    attemptCount: 0,
+  });
+}
+
+/**
+ * Adapt a hypothetical lease (PipelineRunSnapshot + lease metadata) to the
+ * T13 LeaseLike shape. We don't actually have leases for the in-process
+ * single-node executor today — this exists for symmetry with the inspector
+ * contract and as the seam Phase 4 multi-node will wire through. Until then
+ * the inspector's `inflight` provider returns an empty array.
+ */
+export function leaseAsLeaseLike(
+  run: PipelineRunSnapshot,
+  workerId: string,
+  leasedAtMs: number,
+  leaseExpiresAtMs: number,
+): LeaseLike<PipelineRunSnapshot> {
+  return {
+    envelope: asEnvelope(run),
+    workerId,
+    leasedAtMs,
+    leaseExpiresAtMs,
+  };
+}
 
 /** Coerce a value to a finite number, or return `undefined` (so the route
  *  surfaces it as `null`). Strings/NaN/Infinity are NOT silently parsed — the
@@ -53,6 +106,26 @@ function toRunSnapshot(run: unknown): PipelineRunSnapshot | null {
 }
 
 export function createBridge(module: PipelineModule): PipelineBridge {
+  // Snapshot helper for the inspector — same shape the route's
+  // `listActiveRuns` returns, but extracted here so the inspector closure
+  // and the bridge method stay in sync.
+  function listActiveRunSnapshots(): PipelineRunSnapshot[] {
+    const resources = module.listActiveRuns();
+    const out: PipelineRunSnapshot[] = [];
+    for (const r of resources) {
+      const ad = (r as { applicationData?: unknown }).applicationData;
+      const snap = toRunSnapshot(ad);
+      if (snap) out.push(snap);
+    }
+    return out;
+  }
+
+  // Inspector is a singleton over the bridge — providers are called fresh on
+  // every inspector method so it always sees current state. `inflight` and
+  // `dlq` providers return empty until the matching wiring (single-node has
+  // no leases today; the DLQ wiring lands in the next adoption step).
+  let inspector: QueueInspector<PipelineRunSnapshot> | null = null;
+
   return {
     async trigger({ pipelineId, definition, triggerPayload, triggeredBy }) {
       const resource = await module.createResource({
@@ -91,16 +164,7 @@ export function createBridge(module: PipelineModule): PipelineBridge {
     },
 
     listActiveRuns(): PipelineRunSnapshot[] {
-      // PipelineModule returns `PipelineRunResource[]`; flatten each to a snapshot.
-      const resources = module.listActiveRuns();
-      const snapshots: PipelineRunSnapshot[] = [];
-      for (const r of resources) {
-        // The applicationData on each resource holds the live run object.
-        const ad = (r as { applicationData?: unknown }).applicationData;
-        const snap = toRunSnapshot(ad);
-        if (snap) snapshots.push(snap);
-      }
-      return snapshots;
+      return listActiveRunSnapshots();
     },
 
     cancelRun(runId: string): void {
@@ -144,6 +208,20 @@ export function createBridge(module: PipelineModule): PipelineBridge {
       const asOf = m['asOf'];
       if (typeof asOf === 'string') out.asOf = asOf;
       return out;
+    },
+
+    getInspector(): QueueInspector<PipelineRunSnapshot> {
+      if (inspector) return inspector;
+      inspector = new InMemoryQueueInspector<
+        PipelineRunSnapshot,
+        LeaseLike<PipelineRunSnapshot>,
+        DLQEntryLike<PipelineRunSnapshot>
+      >({
+        pending:  () => listActiveRunSnapshots().map(asEnvelope),
+        inflight: () => [],
+        dlq:      () => [],
+      });
+      return inspector;
     },
   };
 }

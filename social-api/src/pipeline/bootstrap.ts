@@ -603,13 +603,13 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const runQueueMetrics = getQueueMetrics('run-queue');
   const eventBus = module.getEventBus();
   const runQueueSubIds: string[] = [];
-  runQueueSubIds.push(eventBus.subscribe('pipeline:run:started', () => {
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:started', async () => {
     runQueueMetrics.recordEnqueued();
   }));
-  runQueueSubIds.push(eventBus.subscribe('pipeline:run:completed', () => {
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:completed', async () => {
     runQueueMetrics.recordCompleted();
   }));
-  runQueueSubIds.push(eventBus.subscribe('pipeline:run:failed', () => {
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:failed', async () => {
     runQueueMetrics.recordFailed();
   }));
 

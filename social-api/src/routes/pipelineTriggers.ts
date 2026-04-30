@@ -56,6 +56,7 @@ import type {
   PipelineRunSnapshot as DCPipelineRunSnapshot,
   PendingApprovalRow as DCPendingApprovalRow,
   PublicBusEvent,
+  QueueInspector,
 } from 'distributed-core';
 import { asyncHandler, NotFoundError, ValidationError } from '../middleware/error-handler';
 import { idempotency } from '../middleware/idempotency';
@@ -287,6 +288,15 @@ export interface PipelineBridge {
    * absent here and surfaces as `null` to clients.
    */
   getMetrics?(): Promise<PipelineBridgeMetrics> | PipelineBridgeMetrics;
+  /**
+   * (Phase 50, T13 — lib-expansion-3) Operator introspection over the
+   * run-queue. Pending entries are derived from
+   * `PipelineModule.listActiveRuns()` mapped through a `T1` Envelope
+   * adapter at this boundary only — the wider pipeline state machine is
+   * unchanged. Optional: when absent, the route returns 503 so callers
+   * fall back gracefully if the bridge isn't wired yet.
+   */
+  getInspector?(): QueueInspector<PipelineRunSnapshot>;
 }
 
 /**
