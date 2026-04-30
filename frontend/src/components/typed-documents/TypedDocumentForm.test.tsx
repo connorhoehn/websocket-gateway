@@ -280,6 +280,7 @@ describe('TypedDocumentForm — Phase C widgets', () => {
     expect(screen.getByTestId('reference-empty-f-author')).toBeInTheDocument();
   });
 
+  // Phase D coverage lives in its own describe block below.
   it('reference picker: populates from referenceOptions and submits the selected documentId', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const referenceOptions = {
@@ -305,5 +306,121 @@ describe('TypedDocumentForm — Phase C widgets', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
     expect(submitted['f-author']).toBe('doc-bob');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase D — validation rules + showWhen conditional
+// ---------------------------------------------------------------------------
+
+describe('TypedDocumentForm — Phase D validation rules', () => {
+  function makeWithValidation(): ApiDocumentType {
+    return {
+      typeId: 'type-d', name: 'WithValidation', description: '', icon: '🔒',
+      fields: [
+        { fieldId: 'f-sku',   name: 'sku',     fieldType: 'text',    widget: 'text_field',   cardinality: 1, required: true,  helpText: '',
+          validation: { min: 5, max: 10, regex: '^[A-Z]+$' } },
+        { fieldId: 'f-pct',   name: 'percent', fieldType: 'number',  widget: 'number_input', cardinality: 1, required: false, helpText: '',
+          validation: { min: 0, max: 100 } },
+        { fieldId: 'f-tos',   name: 'agree',   fieldType: 'boolean', widget: 'checkbox',     cardinality: 1, required: false, helpText: '',
+          validation: { requireTrue: true } },
+      ],
+      createdBy: 'admin', createdAt: '2026-04-30T00:00:00Z', updatedAt: '2026-04-30T00:00:00Z',
+    };
+  }
+
+  it('blocks submit when text is below min length', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithValidation()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-sku'), { target: { value: 'AB' } });
+    fireEvent.click(screen.getByTestId('input-f-tos'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/at least 5 characters/i);
+  });
+
+  it('blocks submit when text fails regex', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithValidation()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-sku'), { target: { value: 'lower' } });
+    fireEvent.click(screen.getByTestId('input-f-tos'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/required pattern/i);
+  });
+
+  it('blocks submit when number exceeds max', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithValidation()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-sku'), { target: { value: 'ABCDE' } });
+    fireEvent.change(screen.getByTestId('input-f-pct'), { target: { value: '150' } });
+    fireEvent.click(screen.getByTestId('input-f-tos'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/at most 100/i);
+  });
+
+  it('blocks submit when requireTrue boolean is unchecked', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithValidation()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-sku'), { target: { value: 'ABCDE' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/agree must be checked/i);
+  });
+
+  it('passes when all validation rules are satisfied', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithValidation()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-sku'), { target: { value: 'ABCDE' } });
+    fireEvent.change(screen.getByTestId('input-f-pct'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('input-f-tos'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted).toEqual({ 'f-sku': 'ABCDE', 'f-pct': 50, 'f-tos': true });
+  });
+});
+
+describe('TypedDocumentForm — Phase D showWhen conditional', () => {
+  function makeWithShowWhen(): ApiDocumentType {
+    return {
+      typeId: 'type-sw', name: 'Conditional', description: '', icon: '🔀',
+      fields: [
+        { fieldId: 'f-toggle', name: 'override', fieldType: 'boolean', widget: 'checkbox', cardinality: 1, required: false, helpText: '' },
+        { fieldId: 'f-why',    name: 'why',      fieldType: 'long_text', widget: 'textarea', cardinality: 1, required: true,  helpText: '',
+          showWhen: { fieldId: 'f-toggle', equals: true } },
+      ],
+      createdBy: 'admin', createdAt: '2026-04-30T00:00:00Z', updatedAt: '2026-04-30T00:00:00Z',
+    };
+  }
+
+  it('hides the dependent field initially (toggle=false)', () => {
+    render(<TypedDocumentForm type={makeWithShowWhen()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId('input-f-why')).not.toBeInTheDocument();
+  });
+
+  it('reveals the dependent field once the toggle equals true', () => {
+    render(<TypedDocumentForm type={makeWithShowWhen()} onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('input-f-toggle'));
+    expect(screen.getByTestId('input-f-why')).toBeInTheDocument();
+  });
+
+  it('skips required-check on hidden dependent and drops it from the payload', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithShowWhen()} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted).not.toHaveProperty('f-why');
+  });
+
+  it('enforces required-check once the dependent becomes visible', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makeWithShowWhen()} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByTestId('input-f-toggle'));
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/why is required/i);
   });
 });

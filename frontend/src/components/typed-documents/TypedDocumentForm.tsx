@@ -34,6 +34,58 @@ interface FormState {
   [fieldId: string]: FieldStored;
 }
 
+// Phase D — observed value for showWhen comparison. Maps the form's stored
+// shape to what an `equals` predicate would compare against. Numbers stored
+// as strings (number widget) coerce to Number for the comparison; empty
+// strings stay strings so an unset text field can't accidentally equal 0.
+function observedFor(field: ApiDocumentTypeField, stored: FieldStored): string | number | boolean | undefined {
+  if (Array.isArray(stored)) return undefined; // unlimited fields aren't valid showWhen sources
+  if (field.fieldType === 'boolean') return typeof stored === 'boolean' ? stored : undefined;
+  if (field.fieldType === 'number') {
+    if (typeof stored !== 'string' || stored.trim() === '') return undefined;
+    const n = Number(stored);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return typeof stored === 'string' ? stored : undefined;
+}
+
+function isVisible(field: ApiDocumentTypeField, type: ApiDocumentType, values: FormState): boolean {
+  if (!field.showWhen) return true;
+  const source = type.fields.find((f) => f.fieldId === field.showWhen!.fieldId);
+  if (!source) return true; // bad reference — show the field rather than silently hiding
+  const observed = observedFor(source, values[source.fieldId]);
+  return observed === field.showWhen.equals;
+}
+
+function applyClientValidation(field: ApiDocumentTypeField, coerced: TypedDocumentValue): string | null {
+  const v = field.validation;
+  if (!v) return null;
+  const check = (val: string | number | boolean): string | null => {
+    if (typeof val === 'string') {
+      if (v.min !== undefined && val.length < v.min) return `${field.name}: must be at least ${v.min} characters`;
+      if (v.max !== undefined && val.length > v.max) return `${field.name}: must be at most ${v.max} characters`;
+      if (v.regex !== undefined) {
+        try { if (!new RegExp(v.regex).test(val)) return `${field.name}: does not match required pattern`; }
+        catch { /* malformed regex from server — defer to server-side check */ }
+      }
+    } else if (typeof val === 'number') {
+      if (v.min !== undefined && val < v.min) return `${field.name}: must be at least ${v.min}`;
+      if (v.max !== undefined && val > v.max) return `${field.name}: must be at most ${v.max}`;
+    } else if (typeof val === 'boolean') {
+      if (v.requireTrue && !val) return `${field.name} must be checked`;
+    }
+    return null;
+  };
+  if (Array.isArray(coerced)) {
+    for (const it of coerced) {
+      const e = check(it as string | number);
+      if (e) return e;
+    }
+    return null;
+  }
+  return check(coerced);
+}
+
 export interface TypedDocumentFormProps {
   type: ApiDocumentType;
   onSubmit: (values: Record<string, TypedDocumentValue>) => Promise<void>;
@@ -127,9 +179,11 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true, refere
     e.preventDefault();
     setError(null);
 
-    // Required-field check + per-type coercion in one pass.
+    // Required-field check + per-type coercion in one pass. Hidden fields
+    // (showWhen unmet) are skipped entirely and dropped from the payload.
     const cleaned: Record<string, TypedDocumentValue> = {};
     for (const field of type.fields) {
+      if (!isVisible(field, type, values)) continue;
       const stored = values[field.fieldId];
       let coerced: TypedDocumentValue | null;
       if (field.cardinality === 'unlimited') {
@@ -143,18 +197,20 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true, refere
         coerced = coerceSingle(field, stored as SingleStored);
       }
 
-      if (field.required && (coerced === null || (typeof coerced === 'boolean' && !coerced && field.fieldType !== 'boolean'))) {
-        // boolean fields don't have a "missing" state — false is a valid
-        // present value. The (typeof === 'boolean' && !coerced) clause is
-        // guarded by field.fieldType !== 'boolean' so an unchecked required
-        // boolean still passes through (Phase D will add a "must-be-true"
-        // validation rule if operators need it).
+      if (field.required && coerced === null) {
         setError(`${field.name} is required`);
         return;
       }
       // Boolean false IS a valid coerced value — coerceSingle returns it
       // explicitly. Skip null-coerced (i.e. truly empty) optional fields.
-      if (coerced !== null) cleaned[field.fieldId] = coerced;
+      if (coerced !== null) {
+        const validationError = applyClientValidation(field, coerced);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        cleaned[field.fieldId] = coerced;
+      }
     }
 
     setSubmitting(true);
@@ -191,6 +247,7 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true, refere
       )}
 
       {type.fields.map((field) => {
+        if (!isVisible(field, type, values)) return null;
         const v = values[field.fieldId];
 
         return (

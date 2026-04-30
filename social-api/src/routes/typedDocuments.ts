@@ -140,6 +140,56 @@ async function assertReferencesExist(
   }
 }
 
+// Phase D — fields whose showWhen precondition is not met are treated as
+// absent: required check is skipped and any provided value is silently
+// dropped from the saved payload. The check uses the pre-coerced raw value
+// of the referenced field so it works for booleans, numbers, and strings
+// before primitive validation runs.
+function isVisible(
+  field: DocumentTypeFieldItem,
+  rawValues: Record<string, unknown>,
+): boolean {
+  if (!field.showWhen) return true;
+  return rawValues[field.showWhen.fieldId] === field.showWhen.equals;
+}
+
+// Phase D — additive validation rules applied after primitive shape
+// validation. Throws ValidationError with a field-named, constraint-named
+// message so the operator + frontend get an actionable error.
+function applyValidation(field: DocumentTypeFieldItem, coerced: TypedDocumentValue): void {
+  const v = field.validation;
+  if (!v) return;
+  const checkOne = (val: string | number | boolean): void => {
+    if (typeof val === 'string') {
+      if (v.min !== undefined && val.length < v.min) {
+        throw new ValidationError(`field "${field.name}": value length ${val.length} is below min ${v.min}`);
+      }
+      if (v.max !== undefined && val.length > v.max) {
+        throw new ValidationError(`field "${field.name}": value length ${val.length} is above max ${v.max}`);
+      }
+      if (v.regex !== undefined && !new RegExp(v.regex).test(val)) {
+        throw new ValidationError(`field "${field.name}": value does not match required pattern`);
+      }
+    } else if (typeof val === 'number') {
+      if (v.min !== undefined && val < v.min) {
+        throw new ValidationError(`field "${field.name}": value ${val} is below min ${v.min}`);
+      }
+      if (v.max !== undefined && val > v.max) {
+        throw new ValidationError(`field "${field.name}": value ${val} is above max ${v.max}`);
+      }
+    } else if (typeof val === 'boolean') {
+      if (v.requireTrue && !val) {
+        throw new ValidationError(`field "${field.name}" must be checked`);
+      }
+    }
+  };
+  if (Array.isArray(coerced)) {
+    for (const item of coerced) checkOne(item as string | number);
+  } else {
+    checkOne(coerced);
+  }
+}
+
 function validateValuesAgainstSchema(
   fields: DocumentTypeFieldItem[],
   rawValues: unknown,
@@ -158,6 +208,7 @@ function validateValuesAgainstSchema(
 
   const out: Record<string, TypedDocumentValue> = {};
   for (const field of fields) {
+    if (!isVisible(field, valuesObj)) continue;
     const raw = valuesObj[field.fieldId];
     if (raw === undefined) {
       if (field.required) {
@@ -165,7 +216,9 @@ function validateValuesAgainstSchema(
       }
       continue;
     }
-    out[field.fieldId] = validateValueAgainstField(field, raw);
+    const coerced = validateValueAgainstField(field, raw);
+    applyValidation(field, coerced);
+    out[field.fieldId] = coerced;
   }
   return out;
 }

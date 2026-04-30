@@ -28,6 +28,22 @@ export type DocumentTypeFieldWidget =
 
 export type DocumentTypeFieldCardinality = 1 | 'unlimited';
 
+export interface DocumentTypeFieldValidation {
+  /** Numbers: minimum value. Strings: minimum length (per entry, including each entry of an unlimited array). */
+  min?: number;
+  /** Numbers: maximum value. Strings: maximum length. */
+  max?: number;
+  /** text/long_text only: each value must match. Server validates regex parses at type-creation time. */
+  regex?: string;
+  /** boolean only: value must be true. Resolves the "must be checked" use case. */
+  requireTrue?: boolean;
+}
+
+export interface DocumentTypeFieldShowWhen {
+  fieldId: string;
+  equals: string | number | boolean;
+}
+
 export interface DocumentTypeFieldItem {
   fieldId: string;
   name: string;
@@ -40,6 +56,10 @@ export interface DocumentTypeFieldItem {
   options?: string[];
   /** Phase C — target DocumentType for fieldType='reference'. Required when fieldType='reference'. */
   referenceTypeId?: string;
+  /** Phase D — additive constraints applied after primitive shape validation. */
+  validation?: DocumentTypeFieldValidation;
+  /** Phase D — only show this field when another field on the type equals a value. */
+  showWhen?: DocumentTypeFieldShowWhen;
 }
 
 export interface DocumentTypeItem {

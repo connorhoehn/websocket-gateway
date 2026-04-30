@@ -573,6 +573,194 @@ describe('Phase C field types: enum + reference', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase D — validation rules + showWhen conditional
+// ---------------------------------------------------------------------------
+
+describe('Phase D — validation rules at type-creation time', () => {
+  test('POST type rejects validation.regex that does not compile', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'sku', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            validation: { regex: '[unclosed' } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects validation.min > validation.max', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'count', fieldType: 'number', widget: 'number_input', cardinality: 1, required: false,
+            validation: { min: 10, max: 5 } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects showWhen.fieldId pointing at a non-existent field', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'why',  fieldType: 'text', widget: 'text_field', cardinality: 1, required: false,
+            showWhen: { fieldId: 'does-not-exist', equals: true } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type 201 with valid validation + showWhen, echoes them back', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'OK',
+        fields: [
+          { fieldId: 'f-toggle', name: 'override', fieldType: 'boolean', widget: 'checkbox', cardinality: 1, required: false },
+          { name: 'why', fieldType: 'long_text', widget: 'textarea', cardinality: 1, required: true,
+            validation: { min: 10, max: 200 },
+            showWhen: { fieldId: 'f-toggle', equals: true } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.body as { fields: { name: string; validation?: object; showWhen?: object }[] };
+    const why = body.fields.find((f) => f.name === 'why')!;
+    expect(why.validation).toEqual({ min: 10, max: 200 });
+    expect(why.showWhen).toEqual({ fieldId: 'f-toggle', equals: true });
+  });
+});
+
+describe('Phase D — instance-creation enforcement', () => {
+  test('POST instance rejects text below min-length', async () => {
+    typeStore['type-d1'] = {
+      typeId: 'type-d1', name: 'D1', fields: [
+        { fieldId: 'f-name', name: 'name', fieldType: 'text', widget: 'text_field', cardinality: 1, required: true, helpText: '',
+          validation: { min: 5 } },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d1', values: { 'f-name': 'abc' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST instance rejects number above max', async () => {
+    typeStore['type-d2'] = {
+      typeId: 'type-d2', name: 'D2', fields: [
+        { fieldId: 'f-pct', name: 'percent', fieldType: 'number', widget: 'number_input', cardinality: 1, required: false, helpText: '',
+          validation: { min: 0, max: 100 } },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d2', values: { 'f-pct': 150 } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST instance rejects regex mismatch', async () => {
+    typeStore['type-d3'] = {
+      typeId: 'type-d3', name: 'D3', fields: [
+        { fieldId: 'f-sku', name: 'sku', fieldType: 'text', widget: 'text_field', cardinality: 1, required: true, helpText: '',
+          validation: { regex: '^[A-Z]{3}-\\d{3}$' } },
+      ],
+    };
+    const ko = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d3', values: { 'f-sku': 'lowercase' } },
+    });
+    expect(ko.statusCode).toBe(400);
+    const ok = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d3', values: { 'f-sku': 'ABC-123' } },
+    });
+    expect(ok.statusCode).toBe(201);
+  });
+
+  test('POST instance rejects unchecked boolean when validation.requireTrue=true', async () => {
+    typeStore['type-d4'] = {
+      typeId: 'type-d4', name: 'D4', fields: [
+        { fieldId: 'f-tos', name: 'agree', fieldType: 'boolean', widget: 'checkbox', cardinality: 1, required: true, helpText: '',
+          validation: { requireTrue: true } },
+      ],
+    };
+    const ko = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d4', values: { 'f-tos': false } },
+    });
+    expect(ko.statusCode).toBe(400);
+    const ok = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d4', values: { 'f-tos': true } },
+    });
+    expect(ok.statusCode).toBe(201);
+  });
+
+  test('POST instance: hidden-by-showWhen field skips required-check and drops the value', async () => {
+    typeStore['type-d5'] = {
+      typeId: 'type-d5', name: 'D5', fields: [
+        { fieldId: 'f-toggle', name: 'override', fieldType: 'boolean', widget: 'checkbox', cardinality: 1, required: false, helpText: '' },
+        { fieldId: 'f-why',    name: 'why',      fieldType: 'long_text', widget: 'textarea', cardinality: 1, required: true,  helpText: '',
+          showWhen: { fieldId: 'f-toggle', equals: true } },
+      ],
+    };
+    // Toggle off ⇒ "why" is hidden ⇒ required check skipped
+    const hidden = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d5', values: { 'f-toggle': false } },
+    });
+    expect(hidden.statusCode).toBe(201);
+    const hiddenBody = hidden.body as { values: Record<string, unknown> };
+    expect(hiddenBody.values['f-why']).toBeUndefined();
+
+    // Toggle on ⇒ "why" required check fires
+    const required = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d5', values: { 'f-toggle': true } },
+    });
+    expect(required.statusCode).toBe(400);
+
+    // Toggle on with value ⇒ accepted
+    const ok = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d5', values: { 'f-toggle': true, 'f-why': 'because' } },
+    });
+    expect(ok.statusCode).toBe(201);
+  });
+
+  test('POST instance: hidden field value silently dropped even if provided', async () => {
+    typeStore['type-d6'] = {
+      typeId: 'type-d6', name: 'D6', fields: [
+        { fieldId: 'f-toggle', name: 'mode', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, helpText: '', options: ['simple', 'advanced'] },
+        { fieldId: 'f-extra',  name: 'extra detail', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false, helpText: '',
+          showWhen: { fieldId: 'f-toggle', equals: 'advanced' } },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d6', values: { 'f-toggle': 'simple', 'f-extra': 'should-be-dropped' } },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.body as { values: Record<string, unknown> };
+    expect(body.values['f-extra']).toBeUndefined();
+  });
+
+  test('POST instance: validation applies per-entry on unlimited cardinality', async () => {
+    typeStore['type-d7'] = {
+      typeId: 'type-d7', name: 'D7', fields: [
+        { fieldId: 'f-scores', name: 'scores', fieldType: 'number', widget: 'number_input', cardinality: 'unlimited', required: false, helpText: '',
+          validation: { min: 0, max: 100 } },
+      ],
+    };
+    const ko = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d7', values: { 'f-scores': [50, 200, 75] } },
+    });
+    expect(ko.statusCode).toBe(400);
+    const ok = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-d7', values: { 'f-scores': [10, 20, 30] } },
+    });
+    expect(ok.statusCode).toBe(201);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase A acceptance test — full create-type → post-doc → retrieve loop
 // ---------------------------------------------------------------------------
 

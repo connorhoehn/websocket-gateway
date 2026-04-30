@@ -19,6 +19,8 @@ import type {
   DocumentTypeFieldKind,
   DocumentTypeFieldWidget,
   DocumentTypeFieldCardinality,
+  DocumentTypeFieldValidation,
+  DocumentTypeFieldShowWhen,
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
 
@@ -81,6 +83,11 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
     referenceTypeId = r.referenceTypeId;
   }
 
+  // Phase D — additive validation rules + showWhen conditional. Both are
+  // optional; absent ⇒ no constraints / always-visible (legacy behavior).
+  const validation = parseValidation(r.validation, r.name as string);
+  const showWhen = parseShowWhen(r.showWhen, r.name as string);
+
   return {
     fieldId: typeof r.fieldId === 'string' && r.fieldId ? r.fieldId : randomUUID(),
     name: r.name,
@@ -91,13 +98,82 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
     helpText: typeof r.helpText === 'string' ? r.helpText : '',
     ...(options !== undefined ? { options } : {}),
     ...(referenceTypeId !== undefined ? { referenceTypeId } : {}),
+    ...(validation !== undefined ? { validation } : {}),
+    ...(showWhen !== undefined ? { showWhen } : {}),
   };
+}
+
+function parseValidation(raw: unknown, fieldName: string): DocumentTypeFieldValidation | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new ValidationError(`field "${fieldName}" validation must be an object`);
+  }
+  const r = raw as Record<string, unknown>;
+  const v: DocumentTypeFieldValidation = {};
+  if (r.min !== undefined) {
+    if (typeof r.min !== 'number' || !Number.isFinite(r.min)) {
+      throw new ValidationError(`field "${fieldName}" validation.min must be a finite number`);
+    }
+    v.min = r.min;
+  }
+  if (r.max !== undefined) {
+    if (typeof r.max !== 'number' || !Number.isFinite(r.max)) {
+      throw new ValidationError(`field "${fieldName}" validation.max must be a finite number`);
+    }
+    v.max = r.max;
+  }
+  if (v.min !== undefined && v.max !== undefined && v.min > v.max) {
+    throw new ValidationError(`field "${fieldName}" validation: min (${v.min}) > max (${v.max})`);
+  }
+  if (r.regex !== undefined) {
+    if (typeof r.regex !== 'string') {
+      throw new ValidationError(`field "${fieldName}" validation.regex must be a string`);
+    }
+    try { new RegExp(r.regex); } catch (e) {
+      throw new ValidationError(`field "${fieldName}" validation.regex did not compile: ${(e as Error).message}`);
+    }
+    v.regex = r.regex;
+  }
+  if (r.requireTrue !== undefined) {
+    if (typeof r.requireTrue !== 'boolean') {
+      throw new ValidationError(`field "${fieldName}" validation.requireTrue must be a boolean`);
+    }
+    v.requireTrue = r.requireTrue;
+  }
+  return Object.keys(v).length > 0 ? v : undefined;
+}
+
+function parseShowWhen(raw: unknown, fieldName: string): DocumentTypeFieldShowWhen | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new ValidationError(`field "${fieldName}" showWhen must be an object`);
+  }
+  const r = raw as Record<string, unknown>;
+  if (typeof r.fieldId !== 'string' || r.fieldId.length === 0) {
+    throw new ValidationError(`field "${fieldName}" showWhen.fieldId must be a non-empty string`);
+  }
+  if (typeof r.equals !== 'string' && typeof r.equals !== 'number' && typeof r.equals !== 'boolean') {
+    throw new ValidationError(`field "${fieldName}" showWhen.equals must be a string, number, or boolean`);
+  }
+  return { fieldId: r.fieldId, equals: r.equals };
 }
 
 function parseFields(raw: unknown): DocumentTypeFieldItem[] {
   if (!Array.isArray(raw)) throw new ValidationError('fields must be an array');
   if (raw.length > 100) throw new ValidationError('fields cap is 100 per type');
-  return raw.map(parseField);
+  const fields = raw.map(parseField);
+  // Phase D — showWhen.fieldId must reference a real field on this type.
+  // Caller must pass an explicit fieldId on the source field if dependents
+  // reference it; otherwise the auto-generated UUID won't match.
+  const ids = new Set(fields.map((f) => f.fieldId));
+  for (const f of fields) {
+    if (f.showWhen && !ids.has(f.showWhen.fieldId)) {
+      throw new ValidationError(
+        `field "${f.name}" showWhen.fieldId "${f.showWhen.fieldId}" is not a field on this type`,
+      );
+    }
+  }
+  return fields;
 }
 
 // ---------------------------------------------------------------------------
