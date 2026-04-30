@@ -7,29 +7,16 @@
 // ResourceTopologyManager / ApplicationRegistry sit ABOVE the cluster
 // substrate.
 //
-// Mode mirrors the cluster's registry config so the WAL-on/off decision is
+// Mode mirrors the cluster's registry config so the durability decision is
 // consistent across substrate and resource layers:
 //   - 'memory' → entityRegistryType: 'memory'
 //   - 'wal'    → entityRegistryType: 'wal' (requires registryWalFilePath)
-//   - 'raft'   → DOWNGRADED. See note below.
+//   - 'raft'   → entityRegistry: cluster.registry (the cluster's
+//                RaftEntityRegistry, shared via the v0.10.0 injection slot)
 //
-// === ResourceRegistry × Raft: known upstream gap ===
-//
-// `EntityRegistryFactory.create({ type: 'raft' })` THROWS:
-//
-//     "Raft registries must be created via EntityRegistryFactory.createRaft()
-//      with injected dependencies"
-//
-// `ResourceRegistry`'s constructor calls `EntityRegistryFactory.create()` with
-// the requested `entityRegistryType`. There is no constructor surface to inject
-// the pre-built `RaftEntityRegistry` from `cluster.registry`, so
-// `entityRegistryType: 'raft'` is unreachable from a consumer.
-//
-// Practical fallback: when callers ask for 'raft', this builder downgrades
-// the resource-side entity registry to 'wal' (when a wal path is available)
-// or 'memory' (when none) and surfaces the downgrade via a returned warning
-// so bootstrap can log it. The cluster-side registry IS fully Raft when
-// PIPELINE_REGISTRY_MODE=raft is set — only the resource-side is downgraded.
+// The pre-v0.10.0 downgrade-with-warning shim that fell back to wal-or-
+// memory in raft mode has been removed; ResourceRegistry now directly
+// adopts the cluster's RaftEntityRegistry per techdebt 5.2.
 
 import {
   ApplicationRegistry,
@@ -39,7 +26,7 @@ import {
   ResourceTypeRegistry,
   StateAggregator,
 } from 'distributed-core';
-import type { ClusterManager } from 'distributed-core';
+import type { ClusterManager, EntityRegistry } from 'distributed-core';
 import type { PipelineRegistryMode } from './cluster';
 
 export interface BuildAppLayerRegistriesArgs {
@@ -47,18 +34,23 @@ export interface BuildAppLayerRegistriesArgs {
   clusterMgr: ClusterManager;
   /**
    * Resolved registry mode (same value passed into `buildClusterConfig`).
-   * Drives the `entityRegistryType` used by the resource-side
-   * `ResourceRegistry`, with the 'raft' → wal-or-memory downgrade described
-   * above.
+   * Drives the `entityRegistry*` slot used by the resource-side
+   * `ResourceRegistry`.
    */
   mode: PipelineRegistryMode;
   /**
-   * WAL file path. Required when `mode === 'wal'`. When `mode === 'raft'`
-   * and a WAL path is available, the resource-side registry is downgraded
-   * to 'wal' (rather than 'memory') so resource records still survive
-   * restart even though the resource-side can't run full Raft.
+   * WAL file path. Required when `mode === 'wal'`. Ignored for 'memory'
+   * and 'raft' modes.
    */
   registryWalFilePath: string | undefined;
+  /**
+   * Cluster's `EntityRegistry` instance — `cluster.registry` from
+   * `Cluster.create()`. Required when `mode === 'raft'` (v0.10.0+);
+   * `ResourceRegistry` adopts the same `RaftEntityRegistry` via the
+   * `entityRegistry?` injection slot so resource-typed records share
+   * Raft durability with the cluster's substrate state.
+   */
+  clusterEntityRegistry?: EntityRegistry;
 }
 
 export interface AppLayerRegistries {
@@ -67,9 +59,9 @@ export interface AppLayerRegistries {
   topologyManager: ResourceTopologyManager;
   moduleRegistry: ApplicationRegistry;
   /**
-   * Non-fatal warnings produced while resolving the config. Bootstrap
-   * surfaces these through its logger so operators see WHY their requested
-   * mode landed where it did (e.g. the raft → wal downgrade above).
+   * Non-fatal warnings produced while resolving the config. Empty in the
+   * v0.10.0+ codepaths; retained so bootstrap doesn't have to special-case
+   * the absence of warnings.
    */
   warnings: string[];
 }
@@ -77,11 +69,13 @@ export interface AppLayerRegistries {
 /**
  * Construct + start the application-layer registries. Caller is responsible
  * for stopping them in the correct order during shutdown:
- *   1. moduleRegistry.stop()    (or module.stop() in test/fast-timers mode)
+ *   1. moduleRegistry.stop()
  *   2. resourceRegistry.stop()
  *
  * (The cluster's substrate registries — `cluster.registry`, etc. — are torn
- * down by `cluster.stop()`.)
+ * down by `cluster.stop()`. When `mode === 'raft'` the same `cluster.registry`
+ * is injected into ResourceRegistry, but ResourceRegistry's `stop()` does NOT
+ * tear down the underlying entity registry — that stays with the cluster.)
  *
  * Note: `resourceTypeRegistry`, `stateAggregator`, and `metricsTracker` are
  * constructor-only collaborators here. We deliberately do NOT call
@@ -92,18 +86,18 @@ export interface AppLayerRegistries {
 export async function buildAppLayerRegistries(
   args: BuildAppLayerRegistriesArgs,
 ): Promise<AppLayerRegistries> {
-  const { nodeId, clusterMgr, mode, registryWalFilePath } = args;
+  const { nodeId, clusterMgr, mode, registryWalFilePath, clusterEntityRegistry } = args;
 
   const warnings: string[] = [];
 
-  // Resolve the entity registry mode for the resource-side registry. Mirrors
-  // the cluster-side mode for 'memory' and 'wal'; 'raft' is downgraded.
-  let entityMode: 'memory' | 'wal';
-  let walPathForRegistry: string | undefined;
+  let resourceRegistry: ResourceRegistry;
 
   switch (mode) {
     case 'memory':
-      entityMode = 'memory';
+      resourceRegistry = new ResourceRegistry({
+        nodeId,
+        entityRegistryType: 'memory',
+      });
       break;
     case 'wal':
       if (!registryWalFilePath) {
@@ -112,33 +106,28 @@ export async function buildAppLayerRegistries(
           + `Either set PIPELINE_REGISTRY_WAL_PATH or switch PIPELINE_REGISTRY_MODE to 'memory'.`,
         );
       }
-      entityMode = 'wal';
-      walPathForRegistry = registryWalFilePath;
+      resourceRegistry = new ResourceRegistry({
+        nodeId,
+        entityRegistryType: 'wal',
+        entityRegistryConfig: { walConfig: { filePath: registryWalFilePath } },
+      });
       break;
     case 'raft': {
-      // Downgrade — see file-level note. Pick wal-or-memory based on what's
-      // available, surface a warning so operators see the downgrade.
-      if (registryWalFilePath) {
-        warnings.push(
-          `[pipeline:config] PIPELINE_REGISTRY_MODE='raft' was requested but `
-          + `ResourceRegistry does not yet support 'raft' as of distributed-core HEAD. `
-          + `The CLUSTER's entity registry IS using Raft (writes are linearizable through consensus); `
-          + `the RESOURCE-side entity registry has been downgraded to 'wal' at ${registryWalFilePath}. `
-          + `Track upstream: ResourceRegistryConfig needs an entityRegistry-injection slot or a raft-aware factory.`,
+      if (!clusterEntityRegistry) {
+        throw new Error(
+          `[pipeline:config] buildAppLayerRegistries: 'raft' mode requires clusterEntityRegistry `
+          + `(the Cluster's RaftEntityRegistry from cluster.registry). `
+          + `Bootstrap should pass it after cluster.start() returns.`,
         );
-        entityMode = 'wal';
-        walPathForRegistry = registryWalFilePath;
-      } else {
-        warnings.push(
-          `[pipeline:config] PIPELINE_REGISTRY_MODE='raft' was requested but `
-          + `ResourceRegistry does not yet support 'raft' as of distributed-core HEAD. `
-          + `The CLUSTER's entity registry IS using Raft; the RESOURCE-side entity registry `
-          + `has been downgraded to 'memory' (no PIPELINE_REGISTRY_WAL_PATH was set). `
-          + `Pipeline-run resource records will NOT survive process restart on this node — `
-          + `set PIPELINE_REGISTRY_WAL_PATH to upgrade to 'wal' until upstream lands raft support.`,
-        );
-        entityMode = 'memory';
       }
+      // v0.10.0 (techdebt 5.2): ResourceRegistry adopts the cluster's
+      // RaftEntityRegistry directly via the entityRegistry injection slot.
+      // Resource-typed records share Raft durability with the rest of the
+      // cluster's entity state — no more downgrade.
+      resourceRegistry = new ResourceRegistry({
+        nodeId,
+        entityRegistry: clusterEntityRegistry,
+      });
       break;
     }
     default: {
@@ -147,18 +136,6 @@ export async function buildAppLayerRegistries(
     }
   }
 
-  const resourceRegistry = new ResourceRegistry(
-    entityMode === 'wal' && walPathForRegistry
-      ? {
-          nodeId,
-          entityRegistryType: 'wal',
-          entityRegistryConfig: { walConfig: { filePath: walPathForRegistry } },
-        }
-      : {
-          nodeId,
-          entityRegistryType: 'memory',
-        },
-  );
   await resourceRegistry.start();
 
   const resourceTypeRegistry = new ResourceTypeRegistry();

@@ -15,6 +15,7 @@
 
 import type {
   ClusterConfig,
+  ClusterPubSubConfig,
   ClusterTransportConfig,
   MetricsRegistry,
   RegistryConfig,
@@ -23,13 +24,6 @@ import type {
   RaftRpcSigner,
 } from 'distributed-core';
 import { DEFAULT_RAFT_CONFIG } from 'distributed-core';
-
-// `PubSubConfig` is exported from two places in distributed-core
-// (gateway/pubsub/types and cluster/Cluster) with different shapes — the
-// top-level barrel re-exports the gateway one. We need the cluster-facade
-// variant here, so we read it off `ClusterConfig['pubsub']` to bypass the
-// name collision. Tracked in the upstream tech-debt doc.
-type ClusterPubSubConfig = ClusterConfig['pubsub'];
 
 export type PipelineTransportKind = 'in-memory' | 'websocket' | 'tcp' | 'udp' | 'http';
 
@@ -42,11 +36,10 @@ export type PipelineTransportKind = 'in-memory' | 'websocket' | 'tcp' | 'udp' | 
  *               path is configured.
  *  - 'raft'   — cluster's entity registry is `RaftEntityRegistry`; writes
  *               are linearizable through consensus. Requires `raftDataDir`.
- *               Note: ResourceRegistry's *resource-side* registry is
- *               downgraded to wal-or-memory because the consumer-facing
- *               ResourceRegistry constructor in distributed-core HEAD does
- *               not yet expose a slot to inject the cluster's
- *               RaftEntityRegistry. See config/registries.ts.
+ *               As of distributed-core v0.10.0 the resource-side registry
+ *               can also adopt the cluster's RaftEntityRegistry directly
+ *               via the new `ResourceRegistryConfig.entityRegistry?` slot
+ *               (techdebt 5.2). See config/registries.ts.
  */
 export type PipelineRegistryMode = 'memory' | 'wal' | 'raft';
 

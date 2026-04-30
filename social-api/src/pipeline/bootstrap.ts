@@ -426,6 +426,10 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const pubsub = cluster.pubsub;
 
   // --- App-layer registries (sit ABOVE the cluster substrate) ---
+  // When registryMode === 'raft' (v0.10.0+), ResourceRegistry adopts the
+  // cluster's RaftEntityRegistry directly via the entityRegistry injection
+  // slot — resource-typed records share Raft durability with the rest of
+  // the cluster's entity state.
   const {
     resourceRegistry,
     topologyManager,
@@ -436,6 +440,7 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     clusterMgr,
     mode: registryMode,
     registryWalFilePath,
+    clusterEntityRegistry: registryMode === 'raft' ? cluster.registry : undefined,
   });
 
   // --- Bootstrap-level logger (separate from the per-module logger below) ---
