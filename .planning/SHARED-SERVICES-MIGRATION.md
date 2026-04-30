@@ -79,6 +79,26 @@ bearing for production deploy validation. Dropping it for local-dev
 ergonomics gains is a separate decision; conflating it with the
 shared-services migration adds risk without proportional benefit.
 
+## Probe results (2026-04-30)
+
+Operator picked Path α via blocker #10. The gating question for 1A
+(ExternalName) is whether `host.docker.internal` resolves from inside
+k3s-on-colima. A throwaway busybox pod was run via `kubectl run` and
+reported:
+
+| Probe | Result |
+|-------|--------|
+| `nslookup host.docker.internal` | ✅ resolves to `192.168.5.2` (colima VM gateway IP) |
+| TCP `host.docker.internal:8000` | refused — expected, shared DDB not running |
+| TCP `host.docker.internal:6379` | refused — expected, shared Redis not running |
+| Pod default route | `10.42.0.1` via `eth0` (k3s flannel) |
+
+**Conclusion:** 1A ExternalName approach is viable. Cluster DNS
+correctly resolves the host shim. End-to-end TCP reachability will be
+validated as part of α-2 when shared services are first brought up;
+fallback to 1B (Service + Endpoints with the literal `192.168.5.2` IP)
+is preserved as a backup if a routing-level issue surfaces then.
+
 ## Recommended composite paths
 
 The 3 sub-decisions interact. Three coherent end-to-end paths:
