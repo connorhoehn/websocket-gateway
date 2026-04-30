@@ -225,3 +225,85 @@ describe('TypedDocumentForm — Phase B widgets', () => {
     expect(submitted['f-scores']).toEqual([10, 20]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase C — enum + reference widget coverage
+// ---------------------------------------------------------------------------
+
+function makePhaseCType(): ApiDocumentType {
+  return {
+    typeId: 'type-c',
+    name: 'PhaseC',
+    description: '',
+    icon: '🎯',
+    fields: [
+      { fieldId: 'f-status', name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, helpText: '', options: ['draft', 'review', 'published'] },
+      { fieldId: 'f-author', name: 'author', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: false, helpText: '', referenceTypeId: 'people-type' },
+    ],
+    createdBy: 'admin',
+    createdAt: '2026-04-30T00:00:00Z',
+    updatedAt: '2026-04-30T00:00:00Z',
+  };
+}
+
+describe('TypedDocumentForm — Phase C widgets', () => {
+  it('renders an enum widget as <select> with the configured options', () => {
+    render(<TypedDocumentForm type={makePhaseCType()} onSubmit={vi.fn()} />);
+    const select = screen.getByTestId('input-f-status') as HTMLSelectElement;
+    expect(select.tagName).toBe('SELECT');
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    expect(optionValues).toEqual(['', 'draft', 'review', 'published']);
+  });
+
+  it('blocks submit when a required enum field is left at "— select —"', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseCType()} onSubmit={onSubmit} />);
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-error')).toHaveTextContent(/status is required/i);
+  });
+
+  it('submits the chosen enum value as a string', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TypedDocumentForm type={makePhaseCType()} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByTestId('input-f-status'), { target: { value: 'published' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted['f-status']).toBe('published');
+  });
+
+  it('reference picker: shows empty hint and disabled select when no options supplied', () => {
+    render(<TypedDocumentForm type={makePhaseCType()} onSubmit={vi.fn()} />);
+    const select = screen.getByTestId('input-f-author') as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(screen.getByTestId('reference-empty-f-author')).toBeInTheDocument();
+  });
+
+  it('reference picker: populates from referenceOptions and submits the selected documentId', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const referenceOptions = {
+      'people-type': [
+        { value: 'doc-alice', label: 'Alice' },
+        { value: 'doc-bob', label: 'Bob' },
+      ],
+    };
+    render(
+      <TypedDocumentForm
+        type={makePhaseCType()}
+        onSubmit={onSubmit}
+        referenceOptions={referenceOptions}
+      />,
+    );
+    const select = screen.getByTestId('input-f-author') as HTMLSelectElement;
+    expect(select.disabled).toBe(false);
+    expect(select.options.length).toBe(3); // empty placeholder + 2 references
+
+    fireEvent.change(screen.getByTestId('input-f-status'), { target: { value: 'draft' } });
+    fireEvent.change(select, { target: { value: 'doc-bob' } });
+    fireEvent.click(screen.getByTestId('submit-typed-document'));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted['f-author']).toBe('doc-bob');
+  });
+});

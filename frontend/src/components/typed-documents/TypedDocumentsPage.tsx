@@ -6,8 +6,8 @@
 // Phase A.5 will unify the type-creation surface; until then this page
 // simply consumes whatever types the backend has.
 
-import { useEffect, useState } from 'react';
-import { TypedDocumentForm } from './TypedDocumentForm';
+import { useEffect, useMemo, useState } from 'react';
+import { TypedDocumentForm, type ReferenceOption } from './TypedDocumentForm';
 import {
   useTypedDocuments,
   type ApiDocumentType,
@@ -65,6 +65,50 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
     typeId: selectedTypeId,
   });
 
+  // Phase C — pre-fetch instances of any DocumentType referenced by the
+  // selected type's `reference`-kind fields so the picker has a populated
+  // option list. Keyed by referenced typeId. Best-effort: failed fetches
+  // leave the picker disabled with the "no options" hint.
+  const referencedTypeIds = useMemo<string[]>(() => {
+    if (!selectedType) return [];
+    const ids = new Set<string>();
+    for (const f of selectedType.fields) {
+      if (f.fieldType === 'reference' && f.referenceTypeId) ids.add(f.referenceTypeId);
+    }
+    return Array.from(ids);
+  }, [selectedType]);
+
+  const [referenceOptions, setReferenceOptions] = useState<Record<string, ReferenceOption[]>>({});
+
+  useEffect(() => {
+    if (!idToken || referencedTypeIds.length === 0) {
+      setReferenceOptions({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      referencedTypeIds.map(async (refTypeId) => {
+        const res = await fetch(
+          `${getBaseUrl()}/api/typed-documents?typeId=${encodeURIComponent(refTypeId)}`,
+          { headers: { Authorization: `Bearer ${idToken}` } },
+        );
+        if (!res.ok) return [refTypeId, []] as const;
+        const data = (await res.json()) as { items: TypedDocument[] };
+        const refTypeMeta = types.find((t) => t.typeId === refTypeId);
+        const labelField = refTypeMeta?.fields.find((f) => f.fieldType === 'text');
+        const opts: ReferenceOption[] = (data.items ?? []).map((d) => ({
+          value: d.documentId,
+          label: (labelField && (d.values[labelField.fieldId] as string)) || d.documentId,
+        }));
+        return [refTypeId, opts] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setReferenceOptions(Object.fromEntries(entries));
+    });
+    return () => { cancelled = true; };
+  }, [idToken, referencedTypeIds, types]);
+
   return (
     <div data-testid="typed-documents-page" style={{ display: 'flex', height: '100%', overflow: 'hidden', fontFamily: 'inherit' }}>
 
@@ -121,6 +165,7 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
               key={selectedType.typeId}
               type={selectedType}
               onSubmit={async (values) => { await createDocument(values); }}
+              referenceOptions={referenceOptions}
             />
 
             <section data-testid="documents-list">

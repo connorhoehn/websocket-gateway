@@ -13,14 +13,18 @@ export type DocumentTypeFieldKind =
   | 'long_text'
   | 'number'
   | 'date'
-  | 'boolean';
+  | 'boolean'
+  | 'enum'
+  | 'reference';
 
 export type DocumentTypeFieldWidget =
   | 'text_field'
   | 'textarea'
   | 'number_input'
   | 'date_picker'
-  | 'checkbox';
+  | 'checkbox'
+  | 'select'
+  | 'reference_picker';
 
 export type DocumentTypeFieldCardinality = 1 | 'unlimited';
 
@@ -32,6 +36,10 @@ export interface DocumentTypeFieldItem {
   cardinality: DocumentTypeFieldCardinality;
   required: boolean;
   helpText: string;
+  /** Phase C — controlled vocabulary for fieldType='enum'. Required when fieldType='enum'. */
+  options?: string[];
+  /** Phase C — target DocumentType for fieldType='reference'. Required when fieldType='reference'. */
+  referenceTypeId?: string;
 }
 
 export interface DocumentTypeItem {

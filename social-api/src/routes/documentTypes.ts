@@ -29,10 +29,10 @@ export const documentTypesRouter = Router();
 // ---------------------------------------------------------------------------
 
 const VALID_FIELD_TYPES = new Set<DocumentTypeFieldKind>([
-  'text', 'long_text', 'number', 'date', 'boolean',
+  'text', 'long_text', 'number', 'date', 'boolean', 'enum', 'reference',
 ]);
 const VALID_WIDGETS = new Set<DocumentTypeFieldWidget>([
-  'text_field', 'textarea', 'number_input', 'date_picker', 'checkbox',
+  'text_field', 'textarea', 'number_input', 'date_picker', 'checkbox', 'select', 'reference_picker',
 ]);
 
 function parseField(raw: unknown): DocumentTypeFieldItem {
@@ -60,6 +60,27 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
     throw new ValidationError('field.name is required');
   }
 
+  // Phase C — enum + reference carry extra schema-level config that the
+  // value-shape validator depends on. Reject malformed config at type-creation
+  // so instance writes don't fail later with a stale schema.
+  let options: string[] | undefined;
+  let referenceTypeId: string | undefined;
+  if (fieldType === 'enum') {
+    if (!Array.isArray(r.options) || r.options.length === 0) {
+      throw new ValidationError(`field "${r.name}" (enum) requires a non-empty options array`);
+    }
+    if (!r.options.every((o) => typeof o === 'string' && o.length > 0)) {
+      throw new ValidationError(`field "${r.name}" (enum) options must be non-empty strings`);
+    }
+    options = r.options as string[];
+  }
+  if (fieldType === 'reference') {
+    if (typeof r.referenceTypeId !== 'string' || r.referenceTypeId.length === 0) {
+      throw new ValidationError(`field "${r.name}" (reference) requires referenceTypeId`);
+    }
+    referenceTypeId = r.referenceTypeId;
+  }
+
   return {
     fieldId: typeof r.fieldId === 'string' && r.fieldId ? r.fieldId : randomUUID(),
     name: r.name,
@@ -68,6 +89,8 @@ function parseField(raw: unknown): DocumentTypeFieldItem {
     cardinality,
     required: r.required === true,
     helpText: typeof r.helpText === 'string' ? r.helpText : '',
+    ...(options !== undefined ? { options } : {}),
+    ...(referenceTypeId !== undefined ? { referenceTypeId } : {}),
   };
 }
 

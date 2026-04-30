@@ -26,13 +26,17 @@ export type ApiFieldKind =
   | 'long_text'
   | 'number'
   | 'date'
-  | 'boolean';
+  | 'boolean'
+  | 'enum'
+  | 'reference';
 export type ApiFieldWidget =
   | 'text_field'
   | 'textarea'
   | 'number_input'
   | 'date_picker'
-  | 'checkbox';
+  | 'checkbox'
+  | 'select'
+  | 'reference_picker';
 export type ApiFieldCardinality = 1 | 'unlimited';
 
 export interface ApiDocumentTypeField {
@@ -43,6 +47,10 @@ export interface ApiDocumentTypeField {
   cardinality: ApiFieldCardinality;
   required: boolean;
   helpText: string;
+  /** Phase C — controlled vocabulary, set when fieldType='enum'. */
+  options?: string[];
+  /** Phase C — target DocumentType, set when fieldType='reference'. */
+  referenceTypeId?: string;
 }
 
 export interface ApiDocumentType {

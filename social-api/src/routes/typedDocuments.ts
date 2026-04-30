@@ -61,6 +61,21 @@ function validatePrimitive(
         throw new ValidationError(`field "${field.name}" expects a boolean`);
       }
       return raw;
+    case 'enum':
+      if (typeof raw !== 'string') {
+        throw new ValidationError(`field "${field.name}" expects a string value`);
+      }
+      if (!field.options || !field.options.includes(raw)) {
+        throw new ValidationError(`field "${field.name}": "${raw}" is not in the configured options`);
+      }
+      return raw;
+    case 'reference':
+      if (typeof raw !== 'string' || raw.length === 0) {
+        throw new ValidationError(`field "${field.name}" expects a referenced documentId`);
+      }
+      // Cross-document existence check happens in a separate async pass after
+      // shape validation completes (see assertReferencesExist below).
+      return raw;
   }
 }
 
@@ -97,6 +112,32 @@ function validateValueAgainstField(
     throw new ValidationError(`field "${field.name}" is required (at least one value)`);
   }
   return out as string[] | number[];
+}
+
+// Phase C — second-pass async check that every reference value points at an
+// existing typed-document of the configured target type. Sync shape validation
+// has already run; this only resolves cross-document references.
+async function assertReferencesExist(
+  fields: DocumentTypeFieldItem[],
+  values: Record<string, TypedDocumentValue>,
+): Promise<void> {
+  for (const field of fields) {
+    if (field.fieldType !== 'reference') continue;
+    const v = values[field.fieldId];
+    if (v === undefined) continue;
+    const ids: string[] = Array.isArray(v) ? (v as string[]) : [v as string];
+    for (const id of ids) {
+      const referenced = await typedDocumentRepo.get(id);
+      if (!referenced) {
+        throw new ValidationError(`field "${field.name}": referenced document ${id} not found`);
+      }
+      if (field.referenceTypeId && referenced.typeId !== field.referenceTypeId) {
+        throw new ValidationError(
+          `field "${field.name}": referenced document ${id} is type ${referenced.typeId}, expected ${field.referenceTypeId}`,
+        );
+      }
+    }
+  }
 }
 
 function validateValuesAgainstSchema(
@@ -143,6 +184,7 @@ typedDocumentsRouter.post('/', asyncHandler(async (req: Request, res: Response) 
   if (!type) throw new NotFoundError(`document type ${typeId} not found`);
 
   const values = validateValuesAgainstSchema(type.fields, body.values ?? {});
+  await assertReferencesExist(type.fields, values);
 
   const now = new Date().toISOString();
   const item: TypedDocumentItem = {

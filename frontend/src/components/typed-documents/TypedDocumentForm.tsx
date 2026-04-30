@@ -1,4 +1,4 @@
-// Phase 51 Phase A + B — auto-generated form for an API-shaped DocumentType.
+// Phase 51 Phase A + B + C — auto-generated form for an API-shaped DocumentType.
 //
 // Widget mapping:
 //   - text + cardinality=1       → <input type="text">
@@ -6,8 +6,12 @@
 //   - number + cardinality=1     → <input type="number">
 //   - date + cardinality=1       → <input type="date">
 //   - boolean + cardinality=1    → <input type="checkbox">
+//   - enum + cardinality=1       → <select> populated from field.options (Phase C)
+//   - reference + cardinality=1  → <select> populated from props.referenceOptions (Phase C)
 //   - text/number/date + cardinality=unlimited → list of inputs with + / −
 //   - boolean + unlimited is REJECTED at the backend (semantically meaningless)
+//   - enum/reference + unlimited: out of scope for v1 (cardinality=1 only); a
+//     follow-up task can add multi-select repeating UI.
 //
 // Form internal state stores text-shaped values as strings; numbers are
 // coerced via Number() at submit time, dates pass through as ISO strings,
@@ -15,6 +19,11 @@
 
 import { useState } from 'react';
 import type { ApiDocumentType, ApiDocumentTypeField, TypedDocumentValue } from '../../hooks/useTypedDocuments';
+
+export interface ReferenceOption {
+  value: string; // documentId
+  label: string; // display label (caller picks which field to show)
+}
 
 // Form state per field. Booleans are stored natively; everything else is a
 // string (or string array for unlimited) for clean input wiring.
@@ -30,6 +39,13 @@ export interface TypedDocumentFormProps {
   onSubmit: (values: Record<string, TypedDocumentValue>) => Promise<void>;
   /** Reset to defaults after a successful submit (default true). */
   resetOnSubmit?: boolean;
+  /**
+   * Phase C — keyed by DocumentType id. Used by reference fields to populate
+   * their picker. Caller (typically TypedDocumentsPage) fetches instances of
+   * each referenced type and supplies them. Missing entries render a disabled
+   * picker with a "no options" hint.
+   */
+  referenceOptions?: Record<string, ReferenceOption[]>;
 }
 
 function defaultForField(field: ApiDocumentTypeField): FieldStored {
@@ -52,6 +68,9 @@ function coerceSingle(field: ApiDocumentTypeField, raw: SingleStored): TypedDocu
     }
     case 'boolean':
       return typeof raw === 'boolean' ? raw : null;
+    case 'enum':
+    case 'reference':
+      return typeof raw === 'string' && raw !== '' ? raw : null;
   }
 }
 
@@ -70,7 +89,7 @@ function coerceUnlimited(field: ApiDocumentTypeField, arr: string[]): TypedDocum
   return out.length > 0 ? (out as string[] | number[]) : null;
 }
 
-export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: TypedDocumentFormProps): JSX.Element {
+export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true, referenceOptions = {} }: TypedDocumentFormProps): JSX.Element {
   const [values, setValues] = useState<FormState>(() => {
     const init: FormState = {};
     for (const f of type.fields) init[f.fieldId] = defaultForField(f);
@@ -230,6 +249,46 @@ export function TypedDocumentForm({ type, onSubmit, resetOnSubmit = true }: Type
                 style={{ alignSelf: 'flex-start' }}
               />
             )}
+
+            {field.cardinality === 1 && field.widget === 'select' && (
+              <select
+                data-testid={`input-${field.fieldId}`}
+                value={typeof v === 'string' ? v : ''}
+                onChange={(e) => setField(field.fieldId, e.target.value)}
+                style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff' }}
+              >
+                <option value="">— select —</option>
+                {(field.options ?? []).map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            )}
+
+            {field.cardinality === 1 && field.widget === 'reference_picker' && (() => {
+              const opts = field.referenceTypeId ? (referenceOptions[field.referenceTypeId] ?? []) : [];
+              const empty = opts.length === 0;
+              return (
+                <>
+                  <select
+                    data-testid={`input-${field.fieldId}`}
+                    value={typeof v === 'string' ? v : ''}
+                    onChange={(e) => setField(field.fieldId, e.target.value)}
+                    disabled={empty}
+                    style={{ fontFamily: 'inherit', fontSize: 13, padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, background: empty ? '#f1f5f9' : '#fff' }}
+                  >
+                    <option value="">— select —</option>
+                    {opts.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  {empty && (
+                    <span data-testid={`reference-empty-${field.fieldId}`} style={{ fontSize: 11, color: '#94a3b8' }}>
+                      No referenceable documents yet for this type.
+                    </span>
+                  )}
+                </>
+              );
+            })()}
 
             {field.cardinality === 'unlimited' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

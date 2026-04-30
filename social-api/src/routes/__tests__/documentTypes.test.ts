@@ -436,6 +436,143 @@ describe('Phase B field types: number / date / boolean', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase C — enum + reference field types
+// ---------------------------------------------------------------------------
+
+describe('Phase C field types: enum + reference', () => {
+  test('POST type rejects enum field with no options', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: false },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects enum field with empty-string option', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: false, options: ['ok', ''] },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type rejects reference field with no referenceTypeId', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Bad',
+        fields: [
+          { name: 'owner', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: false },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST type 201 with valid enum + reference fields, options + referenceTypeId echo back', async () => {
+    const res = await run(buildApp(), 'POST', '/api/document-types', {
+      body: {
+        name: 'Article',
+        fields: [
+          { name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, options: ['draft', 'published'] },
+          { name: 'author', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: false, referenceTypeId: 'people-type' },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.body as { fields: { fieldType: string; options?: string[]; referenceTypeId?: string }[] };
+    const enumField = body.fields.find((f) => f.fieldType === 'enum')!;
+    expect(enumField.options).toEqual(['draft', 'published']);
+    const refField = body.fields.find((f) => f.fieldType === 'reference')!;
+    expect(refField.referenceTypeId).toBe('people-type');
+  });
+
+  test('POST instance rejects enum value not in configured options', async () => {
+    typeStore['type-c'] = {
+      typeId: 'type-c',
+      name: 'WithEnum',
+      fields: [
+        { fieldId: 'f-status', name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, helpText: '', options: ['draft', 'published'] },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-c', values: { 'f-status': 'archived' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST instance accepts enum value in options', async () => {
+    typeStore['type-c'] = {
+      typeId: 'type-c',
+      name: 'WithEnum',
+      fields: [
+        { fieldId: 'f-status', name: 'status', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, helpText: '', options: ['draft', 'published'] },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-c', values: { 'f-status': 'draft' } },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  test('POST instance rejects reference to non-existent document', async () => {
+    typeStore['people-type'] = { typeId: 'people-type', name: 'People', fields: [] };
+    typeStore['article-type'] = {
+      typeId: 'article-type',
+      name: 'Article',
+      fields: [
+        { fieldId: 'f-author', name: 'author', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: true, helpText: '', referenceTypeId: 'people-type' },
+      ],
+    };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'article-type', values: { 'f-author': 'nonexistent-doc' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST instance rejects reference to document of wrong type', async () => {
+    typeStore['people-type'] = { typeId: 'people-type', name: 'People', fields: [] };
+    typeStore['article-type'] = {
+      typeId: 'article-type',
+      name: 'Article',
+      fields: [
+        { fieldId: 'f-author', name: 'author', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: true, helpText: '', referenceTypeId: 'people-type' },
+      ],
+    };
+    docStore['stranger-doc'] = { documentId: 'stranger-doc', typeId: 'other-type', values: {} };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'article-type', values: { 'f-author': 'stranger-doc' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST instance accepts reference to existing document of matching type', async () => {
+    typeStore['people-type'] = { typeId: 'people-type', name: 'People', fields: [] };
+    typeStore['article-type'] = {
+      typeId: 'article-type',
+      name: 'Article',
+      fields: [
+        { fieldId: 'f-author', name: 'author', fieldType: 'reference', widget: 'reference_picker', cardinality: 1, required: true, helpText: '', referenceTypeId: 'people-type' },
+      ],
+    };
+    docStore['alice-doc'] = { documentId: 'alice-doc', typeId: 'people-type', values: {} };
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'article-type', values: { 'f-author': 'alice-doc' } },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.body as { values: Record<string, unknown> };
+    expect(body.values['f-author']).toBe('alice-doc');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase A acceptance test — full create-type → post-doc → retrieve loop
 // ---------------------------------------------------------------------------
 
