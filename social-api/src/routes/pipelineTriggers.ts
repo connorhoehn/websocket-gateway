@@ -56,7 +56,9 @@ import type {
   PipelineRunSnapshot as DCPipelineRunSnapshot,
   PendingApprovalRow as DCPendingApprovalRow,
   PublicBusEvent,
+  BusEvent as DCBusEvent,
   QueueInspector,
+  DeadLetterQueue,
 } from 'distributed-core';
 import { asyncHandler, NotFoundError, ValidationError } from '../middleware/error-handler';
 import { idempotency } from '../middleware/idempotency';
@@ -297,6 +299,14 @@ export interface PipelineBridge {
    * fall back gracefully if the bridge isn't wired yet.
    */
   getInspector?(): QueueInspector<PipelineRunSnapshot>;
+  /**
+   * (Phase 50, T9 — lib-expansion-3) Operator surface for the pipeline
+   * EventBus dead-letter queue. Populated by the bootstrap's
+   * `eventBusDeadLetterHandler`. Optional: when absent, the dlq route
+   * returns 503 so dashboards stay coherent during the bridge-not-wired
+   * window. `null` is the legitimate "DLQ disabled" return value.
+   */
+  getDLQ?(): DeadLetterQueue<DCBusEvent> | null;
 }
 
 /**

@@ -57,8 +57,14 @@
 // routes the six bridge surfaces (getRun, getHistory, listActiveRuns,
 // getMetrics, getPendingApprovals, pipeline.run.reassigned) into WebSockets.
 
-import { Cluster, PipelineModule } from 'distributed-core';
-import type { BusEvent, LLMClient, EventBusCompactionOptions } from 'distributed-core';
+import { Cluster, PipelineModule, InMemoryDeadLetterQueue, wrap } from 'distributed-core';
+import type {
+  BusEvent,
+  LLMClient,
+  EventBusCompactionOptions,
+  DeadLetterQueue,
+  Envelope,
+} from 'distributed-core';
 
 import { createLLMClient } from './createLLMClient';
 import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
@@ -104,8 +110,30 @@ export interface PipelineBootstrap {
   module: PipelineModule;
   /** Stable cluster node id (matches gossip membership). */
   nodeId: string;
+  /**
+   * EventBus dead-letter queue (T9 / lib-expansion-3). Populated by the
+   * bus's deadLetterHandler when subscribers throw or publishes fail.
+   * `null` when DLQ recording is disabled (PIPELINE_EVENT_BUS_DLQ_ENABLED=false).
+   */
+  dlq: DeadLetterQueue<BusEvent> | null;
   /** Coordinated tear-down: stops the module, then the cluster. */
   shutdown: () => Promise<void>;
+}
+
+function busEventAsEnvelope(event: BusEvent): Envelope<BusEvent> {
+  // Stable envelope id — bus events already carry a string `id`. Fall back
+  // to a synthetic id if a malformed event reaches the DLQ handler.
+  const id = typeof event.id === 'string' && event.id.length > 0
+    ? event.id
+    : `${event.type}-${event.timestamp ?? Date.now()}`;
+  const enqueuedAtMs = typeof event.timestamp === 'number' && Number.isFinite(event.timestamp)
+    ? event.timestamp
+    : Date.now();
+  return wrap(event, {
+    id,
+    now: () => enqueuedAtMs,
+    attemptCount: 0,
+  });
 }
 
 export interface BootstrapOptions {
@@ -531,11 +559,33 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // reasonable failure mode in production is to ALWAYS record dead letters
   // so subscriber bugs and publish failures don't disappear silently. Set
   // PIPELINE_EVENT_BUS_DLQ_ENABLED=false to opt out.
+  //
+  // T9 (lib-expansion-3): when enabled, the handler ALSO writes a structured
+  // entry into an InMemoryDeadLetterQueue<BusEvent>. The DLQ is constructed
+  // below (post-module so its redriveSink can re-publish via the bus) and
+  // assigned into `dlqRef.current` — the handler reads through the ref so
+  // construction order doesn't matter.
   const dlqRaw = process.env.PIPELINE_EVENT_BUS_DLQ_ENABLED ?? 'true';
   const dlqEnabled = dlqRaw.trim().toLowerCase() !== 'false';
+  const dlqRef: { current: DeadLetterQueue<BusEvent> | null } = { current: null };
   const eventBusDeadLetterHandler = dlqEnabled
     ? (event: BusEvent, error: Error): void => {
         incrementBusDeadLetter(error.name);
+        const dlq = dlqRef.current;
+        if (dlq) {
+          // Fire-and-forget — DLQ.put is async but the bus's handler signature
+          // is sync void; rejection is logged so a broken DLQ doesn't silently
+          // swallow dead letters.
+          void dlq
+            .put(busEventAsEnvelope(event), {
+              lastError:     error.message,
+              failedAtMs:    Date.now(),
+              totalAttempts: 1,
+            })
+            .catch((err: unknown) => {
+              console.error('[pipeline] DLQ.put failed', err);
+            });
+        }
         // BusEvent (v0.7.2) does not carry a `topic` field — that lives on
         // the EventBus instance, not the envelope. Surface `type` (the
         // user-facing event name) and `sourceNodeId` (which node emitted it)
@@ -613,6 +663,24 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     runQueueMetrics.recordFailed();
   }));
 
+  // T9 (lib-expansion-3): construct the bus-event DLQ and assign into the
+  // dlqRef captured by the handler above. RedriveSink re-publishes via the
+  // EventBus — this is the documented "operator fixed the bug, replay the
+  // failed event" semantics. When DLQ recording is disabled the ref stays
+  // null and the handler short-circuits.
+  let dlq: DeadLetterQueue<BusEvent> | null = null;
+  if (dlqEnabled) {
+    dlq = new InMemoryDeadLetterQueue<BusEvent>({
+      redriveSink: {
+        enqueue: async (env) => {
+          const evt = env.body;
+          await eventBus.publish(evt.type as never, evt.payload as never);
+        },
+      },
+    });
+    dlqRef.current = dlq;
+  }
+
   // --- Coordinated shutdown ---
   //
   // Order matters:
@@ -652,5 +720,5 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     }
   };
 
-  return { module, nodeId, shutdown };
+  return { module, nodeId, dlq, shutdown };
 }

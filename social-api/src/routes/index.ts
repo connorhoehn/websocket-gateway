@@ -28,6 +28,7 @@ import {
 } from './pipelineTriggers';
 import { pipelineValidationRouter } from './pipelineValidation';
 import { pipelineInspectorRouter } from './pipelineInspector';
+import { pipelineDLQRouter } from './pipelineDLQ';
 
 const router = Router();
 
@@ -77,6 +78,9 @@ router.use('/pipelines/approvals', pipelinePendingApprovalsRouter);
 // T13 inspector (lib-expansion-3) — operator introspection over the
 // run-queue. Static segment, must precede the `:pipelineId` mount.
 router.use('/pipelines/inspector', pipelineInspectorRouter);
+// T9 DLQ (lib-expansion-3) — EventBus dead-letter inspect/redrive. Static
+// segment, must precede the `:pipelineId` mount for the same reason.
+router.use('/pipelines/dlq', pipelineDLQRouter);
 // Per-pipeline run trigger. Mounted AFTER the static `/metrics`, `/defs`,
 // `/health`, `/validate`, `/runs/active`, and `/approvals` segments so
 // their specific paths match first (Express resolves mounts in

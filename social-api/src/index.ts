@@ -33,9 +33,9 @@ const server = app.listen(Number(port), () => {
 let pipelineShutdown: (() => Promise<void>) | null = null;
 
 bootstrapPipeline()
-  .then(({ module, nodeId, shutdown }) => {
+  .then(({ module, nodeId, dlq, shutdown }) => {
     pipelineShutdown = shutdown;
-    setPipelineBridge(createBridge(module));
+    setPipelineBridge(createBridge(module, dlq));
     console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId}`);
   })
   .catch((err: unknown) => {

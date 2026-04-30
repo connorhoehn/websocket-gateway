@@ -28,10 +28,12 @@
 import type {
   PipelineModule,
   PublicBusEvent,
+  BusEvent as DCBusEvent,
   Envelope,
   LeaseLike,
   DLQEntryLike,
   QueueInspector,
+  DeadLetterQueue,
 } from 'distributed-core';
 import { wrap, InMemoryQueueInspector } from 'distributed-core';
 import type {
@@ -105,7 +107,10 @@ function toRunSnapshot(run: unknown): PipelineRunSnapshot | null {
   return r as unknown as PipelineRunSnapshot;
 }
 
-export function createBridge(module: PipelineModule): PipelineBridge {
+export function createBridge(
+  module: PipelineModule,
+  dlq: DeadLetterQueue<DCBusEvent> | null = null,
+): PipelineBridge {
   // Snapshot helper for the inspector — same shape the route's
   // `listActiveRuns` returns, but extracted here so the inspector closure
   // and the bridge method stay in sync.
@@ -219,9 +224,15 @@ export function createBridge(module: PipelineModule): PipelineBridge {
       >({
         pending:  () => listActiveRunSnapshots().map(asEnvelope),
         inflight: () => [],
+        // PipelineRunSnapshot inspector and BusEvent DLQ are different
+        // shapes; the DLQ surface is exposed separately via getDLQ().
         dlq:      () => [],
       });
       return inspector;
+    },
+
+    getDLQ(): DeadLetterQueue<DCBusEvent> | null {
+      return dlq;
     },
   };
 }
