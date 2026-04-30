@@ -417,7 +417,7 @@ function GatewayDemo({
               } />
               <Route path="/document-types" element={
                 <ErrorBoundary name="DocumentTypes">
-                  <DocumentTypesPage />
+                  <DocumentTypesPage idToken={auth.idToken} />
                 </ErrorBoundary>
               } />
               <Route path="/field-types" element={

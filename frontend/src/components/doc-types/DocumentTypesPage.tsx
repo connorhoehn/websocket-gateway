@@ -6,12 +6,21 @@
 // State machine: idle → create → idle  |  idle → edit → idle
 // Delete flows through a confirmation modal.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DocumentTypeWizard } from './DocumentTypeWizard';
 import { useDocumentTypes } from '../../hooks/useDocumentTypes';
 import type { DocumentType } from '../../types/documentType';
 import Modal from '../shared/Modal';
 import EmptyState from '../shared/EmptyState';
+
+export interface DocumentTypesPageProps {
+  /**
+   * Cognito ID token. When provided, saves dual-write to the new server-side
+   * `/api/document-types` endpoint (Phase A.5). Without it, the wizard
+   * remains the localStorage-only flow that shipped pre-Phase A.5.
+   */
+  idToken?: string | null;
+}
 
 type Mode = 'idle' | 'create' | 'edit';
 
@@ -155,13 +164,28 @@ function TypeListItem({
 // Main page
 // ---------------------------------------------------------------------------
 
-export function DocumentTypesPage() {
-  const { types, createType, updateType, deleteType } = useDocumentTypes();
+export function DocumentTypesPage({ idToken }: DocumentTypesPageProps = {}) {
+  const { types, createType, updateType, deleteType, lastSync } = useDocumentTypes({ idToken });
 
   const [mode, setMode] = useState<Mode>('idle');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<{ text: string; key: number } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{ text: string; key: number; syncSuffix?: string } | null>(null);
+
+  // When a sync resolves, decorate the most recent save banner with the
+  // outcome. Tests assert via toHaveTextContent (substring match) so the
+  // existing "X created" / "X updated" assertions stay green.
+  useEffect(() => {
+    if (!lastSync || !saveMessage) return;
+    if (saveMessage.syncSuffix !== undefined) return; // already decorated
+    if (lastSync.op === 'delete') return; // delete clears the banner; no decoration
+    const suffix = lastSync.ok ? ' — synced' : ' — offline';
+    setSaveMessage((prev) => prev ? { ...prev, syncSuffix: suffix } : prev);
+    // We deliberately depend on lastSync.key (monotonic), not the whole
+    // object, so a stale render doesn't re-trigger the effect for the
+    // same sync.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSync?.key]);
 
   const editingType = editingId ? types.find(t => t.id === editingId) : undefined;
 
@@ -306,7 +330,7 @@ export function DocumentTypesPage() {
               background: '#f0fdf4', fontSize: 12, color: '#16a34a', fontWeight: 500,
             }}
           >
-            ✓ {saveMessage.text}
+            ✓ {saveMessage.text}{saveMessage.syncSuffix ?? ''}
           </div>
         )}
       </div>
