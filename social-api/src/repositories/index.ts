@@ -9,6 +9,7 @@ import { SectionReviewRepository } from './SectionReviewRepository';
 import { VideoSessionRepository } from './VideoSessionRepository';
 import { DocumentTypeRepository } from './DocumentTypeRepository';
 import { TypedDocumentRepository } from './TypedDocumentRepository';
+import { ApprovalRepository } from './ApprovalRepository';
 
 // Singleton instances — share the same docClient across all repositories
 export const profileRepo = new ProfileRepository(docClient);
@@ -21,6 +22,7 @@ export const sectionReviewRepo = new SectionReviewRepository(docClient);
 export const videoSessionRepo = new VideoSessionRepository(docClient);
 export const documentTypeRepo = new DocumentTypeRepository(docClient);
 export const typedDocumentRepo = new TypedDocumentRepository(docClient);
+export const approvalRepo = new ApprovalRepository(docClient);
 
 export { BaseRepository } from './BaseRepository';
 export { ProfileRepository, ProfileItem } from './ProfileRepository';
@@ -44,3 +46,8 @@ export {
   TypedDocumentItem,
   TypedDocumentValue,
 } from './TypedDocumentRepository';
+export {
+  ApprovalRepository,
+  ApprovalEntry,
+  ApprovalDecision,
+} from './ApprovalRepository';

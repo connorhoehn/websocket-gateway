@@ -31,6 +31,7 @@ import { pipelineInspectorRouter } from './pipelineInspector';
 import { pipelineDLQRouter } from './pipelineDLQ';
 import { documentTypesRouter } from './documentTypes';
 import { typedDocumentsRouter } from './typedDocuments';
+import { approvalsRouter } from './approvals';
 
 const router = Router();
 
@@ -99,5 +100,9 @@ router.use('/observability', observabilityRouter);
 // Phase 51 Phase A — document type schemas + typed document instances.
 router.use('/document-types', documentTypesRouter);
 router.use('/typed-documents', typedDocumentsRouter);
+
+// Phase 51 / hub#62 — append-only approval log mirrored from the
+// decisions renderer into the approval-workflows DDB table.
+router.use('/approvals', approvalsRouter);
 
 export default router;
