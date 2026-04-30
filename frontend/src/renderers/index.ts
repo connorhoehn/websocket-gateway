@@ -21,6 +21,12 @@ import ChecklistEditorRenderer from './checklist/ChecklistEditorRenderer';
 import ChecklistReaderRenderer from './checklist/ChecklistReaderRenderer';
 import DecisionsEditorRenderer from './decisions/DecisionsEditorRenderer';
 import DecisionsReaderRenderer from './decisions/DecisionsReaderRenderer';
+import FileUploadEditorRenderer from './file-upload/FileUploadEditorRenderer';
+import FileUploadReaderRenderer from './file-upload/FileUploadReaderRenderer';
+import DiagramEditorRenderer from './diagram/DiagramEditorRenderer';
+import DiagramReaderRenderer from './diagram/DiagramReaderRenderer';
+import LinkBlockEditorRenderer from './link-block/LinkBlockEditorRenderer';
+import LinkBlockReaderRenderer from './link-block/LinkBlockReaderRenderer';
 
 // Field type definitions (metadata + renderer key manifests)
 registerFieldType(tasksDef);
@@ -52,6 +58,19 @@ registerRenderer('checklist', 'reader', ChecklistReaderRenderer);
 registerRenderer('decisions', 'editor', DecisionsEditorRenderer);
 registerRenderer('decisions', 'ack',    DecisionsReaderRenderer);
 registerRenderer('decisions', 'reader', DecisionsReaderRenderer);
+
+// Phase 51 / hub#71 — File Upload / Diagram / Link Block.
+registerRenderer('file-upload', 'editor', FileUploadEditorRenderer);
+registerRenderer('file-upload', 'ack',    FileUploadReaderRenderer);
+registerRenderer('file-upload', 'reader', FileUploadReaderRenderer);
+
+registerRenderer('diagram', 'editor', DiagramEditorRenderer);
+registerRenderer('diagram', 'ack',    DiagramReaderRenderer);
+registerRenderer('diagram', 'reader', DiagramReaderRenderer);
+
+registerRenderer('link-block', 'editor', LinkBlockEditorRenderer);
+registerRenderer('link-block', 'ack',    LinkBlockReaderRenderer);
+registerRenderer('link-block', 'reader', LinkBlockReaderRenderer);
 
 export {
   registerRenderer,
