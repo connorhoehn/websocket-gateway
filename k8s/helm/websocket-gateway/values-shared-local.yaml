@@ -1,0 +1,25 @@
+# Shared-local-services mode override (see .planning/SHARED-SERVICES-MIGRATION.md).
+# Gateway consumes the operator-managed agent-hub stack on the host
+# instead of deploying its own redis + dynamodb pods.
+#
+# Operator side:
+#   $AGENT_HUB_ROOT/scripts/start-shared-services.sh
+#
+# Tilt picks this file up automatically when $AGENT_HUB_ROOT/.shared-services.json
+# exists (wired in α-4 / hub#101). Use directly with helm:
+#   helm template wsg k8s/helm/websocket-gateway -f values-shared-local.yaml
+
+sharedServices:
+  enabled: true
+
+# When sharing one DynamoDB-local across projects, table names need a
+# project-scoped prefix to avoid collisions. Production keeps the prefix
+# empty; only this local-dev override sets it. (Wired through src/ in
+# α-3 / hub#100.)
+gateway:
+  env:
+    DDB_TABLE_PREFIX: gateway_
+
+socialApi:
+  env:
+    DDB_TABLE_PREFIX: gateway_

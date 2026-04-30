@@ -67,3 +67,13 @@ dynamodb:
   enabled: true
   image: amazon/dynamodb-local:1.25.0
   port: 8000
+
+# Shared local-services mode (see .planning/SHARED-SERVICES-MIGRATION.md).
+# When enabled, the chart skips deploying its own redis + dynamodb pods
+# and instead renders ExternalName Service objects with the same names,
+# pointing at the operator-managed agent-hub stack on the host. Gateway
+# pod env wiring is unchanged — it still resolves the same service
+# names. Default off; flip on via values-shared-local.yaml in local dev.
+sharedServices:
+  enabled: false
+  externalName: host.docker.internal

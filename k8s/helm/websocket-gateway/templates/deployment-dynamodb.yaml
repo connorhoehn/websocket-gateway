@@ -1,4 +1,4 @@
-{{- if .Values.dynamodb.enabled }}
+{{- if and .Values.dynamodb.enabled (not .Values.sharedServices.enabled) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

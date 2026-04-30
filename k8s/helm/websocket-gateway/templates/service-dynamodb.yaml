@@ -7,6 +7,15 @@ metadata:
     {{- include "websocket-gateway.labels" . | nindent 4 }}
     app.kubernetes.io/component: dynamodb
 spec:
+{{- if .Values.sharedServices.enabled }}
+  type: ExternalName
+  externalName: {{ .Values.sharedServices.externalName }}
+  ports:
+    - port: {{ .Values.dynamodb.port }}
+      targetPort: {{ .Values.dynamodb.port }}
+      protocol: TCP
+      name: dynamodb
+{{- else }}
   type: ClusterIP
   ports:
     - port: {{ .Values.dynamodb.port }}
@@ -16,4 +25,5 @@ spec:
   selector:
     {{- include "websocket-gateway.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: dynamodb
+{{- end }}
 {{- end }}
