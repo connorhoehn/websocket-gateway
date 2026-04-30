@@ -45,23 +45,33 @@ const VIEWPORT = { width: 1440, height: 900 };
 // directory name under snapshots/<slug>/. Pages that 404 / error / time
 // out are recorded in index.json with the failure reason; one bad page
 // does NOT abort the run.
+//
+// Only user-facing UI surfaces. Per handoff #34 (orchestrator), no
+// `/api/*` JSON routes — Chromium rendering of raw JSON is useless for
+// a visual evolution archive. If a UI page exists for DLQ / Inspector
+// it goes here under a non-`api-` slug; today neither has a dedicated
+// React page (the data shows up under the pipeline editor when one is
+// live), so they're omitted entirely.
 const PAGES = [
-  { slug: 'previews',                url: '/previews' },
-  { slug: 'social',                  url: '/social' },
-  { slug: 'dashboard',               url: '/dashboard' },
-  { slug: 'documents',               url: '/documents' },
-  { slug: 'document-types',          url: '/document-types' },
-  { slug: 'field-types',             url: '/field-types' },
-  { slug: 'pipelines',               url: '/pipelines' },
-  { slug: 'pipelines-approvals',     url: '/pipelines/approvals' },
-  { slug: 'observability',           url: '/observability' },
-  { slug: 'observability-nodes',     url: '/observability/nodes' },
-  { slug: 'observability-events',    url: '/observability/events' },
-  { slug: 'observability-metrics',   url: '/observability/metrics' },
-  // API JSON renders (via the vite proxy → social-api)
-  { slug: 'api-pipelines-inspector', url: '/api/pipelines/inspector/summary' },
-  { slug: 'api-pipelines-dlq',       url: '/api/pipelines/dlq' },
+  { slug: 'previews',              url: '/previews' },
+  { slug: 'social',                url: '/social' },
+  { slug: 'dashboard',             url: '/dashboard' },
+  { slug: 'documents',             url: '/documents' },
+  { slug: 'document-types',        url: '/document-types' },
+  { slug: 'field-types',           url: '/field-types' },
+  { slug: 'pipelines',             url: '/pipelines' },
+  { slug: 'pipelines-approvals',   url: '/pipelines/approvals' },
+  { slug: 'observability',         url: '/observability' },
+  { slug: 'observability-nodes',   url: '/observability/nodes' },
+  { slug: 'observability-events',  url: '/observability/events' },
+  { slug: 'observability-metrics', url: '/observability/metrics' },
 ];
+
+// Slugs that previously appeared in PAGES and have been retired. The
+// runbook tells the operator to `rm -rf` these directories under
+// $AGENT_HUB_ROOT/snapshots/ — the script can't delete them itself
+// (worker policy: no destructive ops outside this repo).
+const DEPRECATED_SLUGS = ['api-pipelines-inspector', 'api-pipelines-dlq'];
 
 // ---------------------------------------------------------------------------
 // Logging helpers
@@ -247,6 +257,18 @@ async function main() {
   log(`SNAPSHOTS_ROOT=${SNAPSHOTS_ROOT}`);
   await mkdir(SNAPSHOTS_ROOT, { recursive: true });
 
+  // One-time hint about retired snapshot directories — the script can't
+  // delete files outside the gateway repo (worker policy), so we surface
+  // the dirs the operator should `rm -rf` manually if they're still
+  // around from earlier captures.
+  for (const slug of DEPRECATED_SLUGS) {
+    const dir = join(SNAPSHOTS_ROOT, slug);
+    if (existsSync(dir)) {
+      log(`deprecated slug present: ${dir}`);
+      log(`  → remove with: rm -rf "${dir}"`);
+    }
+  }
+
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
   let socialApi = null;
@@ -264,20 +286,39 @@ async function main() {
     }
   }
 
+  // Probe whether /health reports OK (200 with checks all green) — used
+  // to detect that the existing social-api is wired to a healthy stack.
+  // 503 = degraded, in which case we recommend a restart with the
+  // snapshot env so screenshots aren't all error states.
+  async function probeHealthOk(url) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(1_500) });
+      return res.status === 200;
+    } catch {
+      return false;
+    }
+  }
+
   try {
-    // Reuse a running social-api if one's already up — avoids EADDRINUSE
-    // when the operator has `npm run dev` going in another terminal.
     if (await probe(`http://localhost:${SOCIAL_API_PORT}/health`)) {
       log(`social-api already running on :${SOCIAL_API_PORT}, reusing`);
+      if (!(await probeHealthOk(`http://localhost:${SOCIAL_API_PORT}/health`))) {
+        log('  WARNING: existing social-api /health is degraded.');
+        log('  Snapshots will show the degraded banner.');
+        log('  To get healthy snapshots, stop the existing social-api and re-run');
+        log('  this script after `scripts/snapshot-stack.sh up && bootstrap && seed`.');
+      }
     } else {
-      // The dev script already sets SKIP_AUTH + LOCALSTACK pointers — local
-      // infra (Dynamo/Redis) may be down; the server still starts and
-      // reports 503-degraded on /health, which is fine for snapshot purposes.
+      // No social-api running — bring up the local DDB+Redis stack first,
+      // then spawn social-api with REDIS_ENDPOINT=localhost so /health
+      // can return 200 (provided the bootstrap+seed has populated DDB).
+      log('social-api not running — orchestrating local stack');
       socialApi = spawnDevServer(
         'social-api',
         'npm',
         ['run', 'dev'],
         join(REPO_ROOT, 'social-api'),
+        { REDIS_ENDPOINT: 'localhost' },
       );
       await pollUntilReady(
         `http://localhost:${SOCIAL_API_PORT}/health`,
