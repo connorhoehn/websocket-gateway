@@ -23,8 +23,11 @@ export function createApp(): express.Application {
   app.use(express.json());
   app.use(requestLogger);
 
-  // Health check — no auth required
+  // Health check — no auth required. Mounted at /health (canonical) and
+  // /api/health (alias) so callers using the /api/* convention don't 404.
+  // Both mounts use the same router so behaviour stays identical.
   app.use('/health', healthRouter);
+  app.use('/api/health', healthRouter);
 
   // Prometheus scrape endpoint — distributed-core MetricsRegistry shadow.
   // Public (no auth) so a Prometheus server can scrape it; matches the
