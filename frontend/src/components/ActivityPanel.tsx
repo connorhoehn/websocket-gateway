@@ -5,7 +5,8 @@
 // and prepends them in real-time with dedup and a 50-item cap.
 // Only ActivityPanel is exported.
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useToast } from './shared/ToastProvider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,14 +128,25 @@ function useActivityFeed({
   sendMessage: (msg: Record<string, unknown>) => void;
   onMessage: OnMessageFn;
   connectionState: ConnectionState;
-}): { items: ActivityItem[]; loading: boolean; isLive: boolean } {
+}): {
+  items: ActivityItem[];
+  loading: boolean;
+  isLive: boolean;
+  error: string | null;
+  retry: () => void;
+} {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const sendMessageRef = useRef(sendMessage);
   useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
+  const { toast } = useToast();
 
   const userId = extractUserId(idToken);
+
+  const retry = useCallback(() => setReloadKey(k => k + 1), []);
 
   // 1. Hydrate from REST on mount
   useEffect(() => {
@@ -143,15 +155,27 @@ function useActivityFeed({
     // Set loading synchronously before the async fetch — this is intentional
     // to show a loading indicator immediately on mount/token change.
     setLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
+    setError(null); // eslint-disable-line react-hooks/set-state-in-effect
     fetch(`${SOCIAL_API_URL}/api/activity?limit=20`, {
       headers: { Authorization: `Bearer ${idToken}` },
     })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then((data: ActivityResponse) => { if (!cancelled && data?.items) setItems(data.items); })
-      .catch(err => console.error('[activity] fetch failed:', err))
+      .then((data: ActivityResponse) => {
+        if (!cancelled && data?.items) {
+          setItems(data.items);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[activity] fetch failed:', err);
+        setError(msg);
+        toast("Couldn't load activity feed", { type: 'error' });
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [idToken]);
+  }, [idToken, reloadKey, toast]);
 
   // 2. Subscribe to WebSocket channel when connected
   useEffect(() => {
@@ -188,7 +212,7 @@ function useActivityFeed({
     return unregister;
   }, [onMessage]);
 
-  return { items, loading, isLive };
+  return { items, loading, isLive, error, retry };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +243,7 @@ interface ActivityPanelProps {
 }
 
 export function ActivityPanel({ idToken, sendMessage, onMessage, connectionState }: ActivityPanelProps) {
-  const { items, loading, isLive } = useActivityFeed({ idToken, sendMessage, onMessage, connectionState });
+  const { items, loading, isLive, error, retry } = useActivityFeed({ idToken, sendMessage, onMessage, connectionState });
 
   return (
     <div style={sectionCardStyle}>
@@ -244,6 +268,31 @@ export function ActivityPanel({ idToken, sendMessage, onMessage, connectionState
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '1rem', justifyContent: 'center', color: '#64748b' }}>
           <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #e2e8f0', borderTopColor: '#646cff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           Loading...
+        </div>
+      ) : error && items.length === 0 ? (
+        <div
+          role="alert"
+          style={{ padding: '1.5rem 1rem', textAlign: 'center', color: '#b91c1c', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}
+        >
+          <span>Couldn't load activity</span>
+          <span style={{ color: '#64748b', fontSize: 12 }}>{error}</span>
+          <button
+            type="button"
+            onClick={retry}
+            style={{
+              marginTop: 4,
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: 500,
+              color: '#1d4ed8',
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
         </div>
       ) : items.length === 0 ? (
         <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
