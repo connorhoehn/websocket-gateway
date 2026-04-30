@@ -13,7 +13,6 @@
 //
 // See .planning/SNAPSHOT-CAPTURE.md for the full operator runbook.
 
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -85,62 +84,6 @@ function log(msg) {
 function err(msg) {
   const ts = new Date().toISOString();
   console.error(`[snapshot ${ts}] ERROR ${msg}`);
-}
-
-// ---------------------------------------------------------------------------
-// Server lifecycle
-// ---------------------------------------------------------------------------
-
-function spawnDevServer(name, command, args, cwd, env = {}) {
-  log(`spawning ${name}: ${command} ${args.join(' ')} (cwd=${cwd})`);
-  const child = spawn(command, args, {
-    cwd,
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-  });
-  // Stream output prefixed for easy grep when debugging.
-  child.stdout.on('data', (d) => process.stdout.write(`[${name}] ${d}`));
-  child.stderr.on('data', (d) => process.stderr.write(`[${name}] ${d}`));
-  child.on('exit', (code) => log(`${name} exited code=${code}`));
-  return child;
-}
-
-async function pollUntilReady(url, label, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(2_000) });
-      // Any HTTP response (even 404 or 503) means the server is listening.
-      if (res.status > 0) {
-        log(`${label} ready at ${url} (HTTP ${res.status})`);
-        return true;
-      }
-    } catch {
-      // Not yet listening — keep polling.
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`${label} did not become ready within ${timeoutMs}ms (url=${url})`);
-}
-
-function killChild(child, name) {
-  if (!child || child.killed) return;
-  try {
-    child.kill('SIGTERM');
-    log(`sent SIGTERM to ${name}`);
-  } catch (e) {
-    err(`failed to SIGTERM ${name}: ${e.message}`);
-  }
-  // Hard fallback after a short grace.
-  setTimeout(() => {
-    try {
-      if (!child.killed) {
-        child.kill('SIGKILL');
-        log(`escalated to SIGKILL on ${name}`);
-      }
-    } catch { /* ignore */ }
-  }, 3_000).unref();
 }
 
 // ---------------------------------------------------------------------------
@@ -271,8 +214,6 @@ async function main() {
 
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
-  let socialApi = null;
-  let frontend = null;
   let exitCode = 0;
 
   // Helper: probe a URL with a short timeout. Returns true if any HTTP
@@ -300,47 +241,33 @@ async function main() {
   }
 
   try {
-    if (await probe(`http://localhost:${SOCIAL_API_PORT}/health`)) {
-      log(`social-api already running on :${SOCIAL_API_PORT}, reusing`);
-      if (!(await probeHealthOk(`http://localhost:${SOCIAL_API_PORT}/health`))) {
-        log('  WARNING: existing social-api /health is degraded.');
-        log('  Snapshots will show the degraded banner.');
-        log('  To get healthy snapshots, stop the existing social-api and re-run');
-        log('  this script after `scripts/snapshot-stack.sh up && bootstrap && seed`.');
-      }
-    } else {
-      // No social-api running — bring up the local DDB+Redis stack first,
-      // then spawn social-api with REDIS_ENDPOINT=localhost so /health
-      // can return 200 (provided the bootstrap+seed has populated DDB).
-      log('social-api not running — orchestrating local stack');
-      socialApi = spawnDevServer(
-        'social-api',
-        'npm',
-        ['run', 'dev'],
-        join(REPO_ROOT, 'social-api'),
-        { REDIS_ENDPOINT: 'localhost' },
-      );
-      await pollUntilReady(
-        `http://localhost:${SOCIAL_API_PORT}/health`,
-        'social-api',
-        SERVER_BOOT_TIMEOUT_MS,
-      );
+    // Tilt is the canonical local-dev orchestrator (per orchestrator
+    // handoff #35). The script no longer spawns its own social-api or
+    // frontend; the operator is expected to have run `tilt up` (or
+    // started the dev stack equivalently) before running snapshots.
+    //
+    // We probe :3001/health and :5174 to confirm the stack is up, and
+    // abort with a clear message if either is missing.
+    if (!(await probe(`http://localhost:${SOCIAL_API_PORT}/health`))) {
+      err(`social-api not reachable on :${SOCIAL_API_PORT}`);
+      err('start the dev stack first:  tilt up');
+      err('(or run social-api locally — `cd social-api && npm run dev`)');
+      throw new Error('social-api unreachable; aborting snapshot');
+    }
+    if (!(await probeHealthOk(`http://localhost:${SOCIAL_API_PORT}/health`))) {
+      log(`WARNING: social-api /health is degraded (HTTP != 200).`);
+      log('  Snapshots will show the degraded banner.');
+      log('  Verify Tilt brought up the DDB + Redis pods successfully:');
+      log('    tilt status   (or open the Tilt UI at http://localhost:10350)');
     }
 
-    if (await probe(FRONTEND_BASE)) {
-      log(`frontend already running on :${FRONTEND_PORT}, reusing`);
-    } else {
-      // Boot frontend with auth bypass. Vite's dev server proxies /api/* to
-      // social-api on port 3001.
-      frontend = spawnDevServer(
-        'frontend',
-        'npm',
-        ['run', 'dev'],
-        join(REPO_ROOT, 'frontend'),
-        { VITE_DEV_BYPASS_AUTH: 'true' },
-      );
-      await pollUntilReady(FRONTEND_BASE, 'frontend', SERVER_BOOT_TIMEOUT_MS);
+    if (!(await probe(FRONTEND_BASE))) {
+      err(`frontend not reachable at ${FRONTEND_BASE}`);
+      err('start the dev stack first:  tilt up');
+      err('(Tilt brings up frontend-dev as a local_resource at :5174)');
+      throw new Error('frontend unreachable; aborting snapshot');
     }
+    log(`stack reachable: social-api on :${SOCIAL_API_PORT}, frontend on :${FRONTEND_PORT}`);
 
     // Capture.
     const { captured, errored } = await captureAll(runTimestamp);
@@ -374,12 +301,10 @@ async function main() {
   } catch (e) {
     err(`run failed: ${e?.message ?? e}`);
     exitCode = 1;
-  } finally {
-    killChild(frontend, 'frontend');
-    killChild(socialApi, 'social-api');
-    // Give the kills a moment to propagate.
-    await new Promise((r) => setTimeout(r, 1_500));
   }
+  // No teardown — the script doesn't own the dev stack lifecycle
+  // anymore (Tilt does, per handoff #35). Operator runs `tilt down`
+  // when they're done.
   process.exit(exitCode);
 }
 

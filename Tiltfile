@@ -167,6 +167,10 @@ local_resource(
             --global-secondary-indexes '[{"IndexName":"userId-documentId-index","KeySchema":[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"documentId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},{"IndexName":"sectionId-timestamp-index","KeySchema":[{"AttributeName":"sectionId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
             $ENDPOINT 2>/dev/null || echo "section-reviews exists"
 
+        # Phase 51 Phase A — document-type schemas + typed-document instances.
+        $CT --table-name document-types --attribute-definitions AttributeName=typeId,AttributeType=S --key-schema AttributeName=typeId,KeyType=HASH 2>/dev/null || echo "document-types exists"
+        $CT --table-name typed-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "typed-documents exists"
+
         echo "All tables ready"
     ''',
     resource_deps=['wsg-websocket-gateway-dynamodb'],

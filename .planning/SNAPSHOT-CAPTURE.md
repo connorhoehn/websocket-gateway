@@ -8,49 +8,36 @@ gateway's key UI surfaces and writes them under
 Output lives **outside** this repo so screenshots don't bloat git
 history.
 
-## Quick start (healthy snapshots — recommended)
+## Quick start
 
-The healthy-snapshot path uses a local Dynamo + Redis stack so the
-degraded banner is gone and seeded data populates the sidebars.
+The dev stack is managed by [Tilt](https://tilt.dev) (per orchestrator
+handoff #35) — one canonical local-dev path, no parallel docker-compose.
+The Tiltfile at the repo root brings up gateway + social-api +
+DynamoDB-local + Redis-local + a frontend dev server.
 
 ```bash
-# 1. Bring up local Dynamo (port 8000) + Redis (port 6379).
-scripts/snapshot-stack.sh up
+# 1. Bring up the full local stack via Tilt.
+#    (Requires colima or another local k8s context — see Tiltfile header.)
+tilt up
 
-# 2. Create the DDB tables social-api expects (idempotent).
-node scripts/snapshot-bootstrap.mjs
-
-# 3. Seed sample rows so the UI isn't empty (idempotent — re-running
-#    overwrites in place, no duplicates).
+# 2. Once Tilt reports "All resources ready", seed deterministic
+#    sample rows so the UI isn't empty:
 node scripts/snapshot-seed.mjs
 
-# 4. Stop any existing `npm run dev` you have running on :3001 — the
-#    snapshot script will spawn its own social-api with the snapshot env
-#    (REDIS_ENDPOINT=localhost) only when the port is free.
-
-# 5. Capture.
+# 3. Capture page snapshots + run journeys.
 node scripts/snapshot-capture.mjs
 
-# 6. (Optional) Tear the stack down once you're done.
-scripts/snapshot-stack.sh down
+# 4. Tear the stack down when you're done.
+tilt down
 ```
 
-Expected runtime: **~30–45 s** for step 5 (server boot + 12 page
-captures at ~2 s each + teardown).
+Expected runtime for step 3: **~30–45 s** (12 page captures + 4
+journeys).
 
-## Quick start (degraded snapshots — fallback)
-
-If you don't want to set up the local stack (e.g. you only need to
-verify the page list works), you can skip steps 1–3. The capture
-script reuses any social-api that's already running on :3001, even one
-without `REDIS_ENDPOINT=localhost`. The screenshots will all show the
-yellow "Backend services degraded" banner — which is a legitimate
-record of "this is what the system looks like when its dependencies
-are down."
-
-```bash
-node scripts/snapshot-capture.mjs
-```
+If you started the stack a different way (e.g. `cd social-api && npm
+run dev`), the snapshot script still runs as long as :3001 and :5174
+are reachable — it doesn't care who started them, but it does abort
+with a clear message if they're missing.
 
 ## Output
 
@@ -63,35 +50,25 @@ A successful run produces:
 
 ## Server lifecycle
 
-The script auto-detects whether servers are already running:
+The capture script does **not** spawn its own services. It expects:
+- **social-api** reachable at `http://localhost:3001/health`. Status
+  503 (degraded) is logged but doesn't abort — the operator has
+  visibility into the degraded reason via Tilt's UI.
+- **frontend** reachable at `http://localhost:5174`. Vite proxies
+  `/api/*` to social-api on `:3001`.
 
-- **social-api** on `:3001` — if up, reused; the script logs a warning
-  if `/health` is degraded so you know snapshots will reflect that.
-  If it's not running, the script spawns `npm run dev` in `social-api/`
-  with `REDIS_ENDPOINT=localhost`.
-- **frontend** on `:5174` — same logic against the Vite root, with
-  `VITE_DEV_BYPASS_AUTH=true` injected so route gates land you
-  straight on the page.
-
-Whatever the script spawned, it cleanly tears down at the end.
-Whatever was already running is left untouched.
-
-The local Dynamo + Redis containers (started via `snapshot-stack.sh
-up`) are NOT torn down by the capture script — they're orthogonal,
-and operators may want them to outlive a single capture run. Run
-`snapshot-stack.sh down` explicitly when you're done.
+If either is unreachable, the script aborts with a clear "run tilt
+up first" message. The decision to spawn or reuse services is
+deliberately delegated to Tilt — no parallel docker-compose path.
 
 ## Schema bootstrap + seed
 
-Bootstrap (`scripts/snapshot-bootstrap.mjs`) creates the DDB tables
-the captured UI surfaces touch:
+Tilt's `dynamodb-setup` `local_resource` creates all DDB tables on
+first up (idempotent — re-running Tilt is safe), including the
+Phase 51 Phase A tables (`document-types`, `typed-documents`).
 
-- `social-profiles` — `/health` canary table.
-- `social-rooms`, `social-room-members` (with GSI `userId-roomId-index`).
-- `social-relationships`, `social-outbox`, `user-activity`.
-- `document-types`, `typed-documents` (Phase 51 Phase A).
-
-Seed (`scripts/snapshot-seed.mjs`) inserts deterministic sample rows:
+Seed (`scripts/snapshot-seed.mjs`) inserts deterministic sample rows
+on top of the Tilt-created tables:
 
 - 1 dev profile.
 - 3 rooms (general / engineering / design) with the dev user as owner.
@@ -99,15 +76,16 @@ Seed (`scripts/snapshot-seed.mjs`) inserts deterministic sample rows:
 - 2 typed-document instances.
 - 4 activity-log entries.
 
-Both scripts are **idempotent** — re-running overwrites in place
-rather than duplicating, so re-runs are safe.
+Re-running the seed overwrites in place; same IDs each time, so
+visual diffs across snapshot runs reflect real UI changes, not seed
+churn.
 
 ## Environment variables
 
 | Var               | Default                                                    | Purpose                                                  |
 |-------------------|------------------------------------------------------------|----------------------------------------------------------|
 | `AGENT_HUB_ROOT`  | `/Users/connorhoehn/Projects/hoehn-claude-orchestrator`    | Where `snapshots/` lives. Must exist before the run.     |
-| `LOCALSTACK_ENDPOINT` | `http://localhost:8000`                                | DDB endpoint for bootstrap/seed.                         |
+| `LOCALSTACK_ENDPOINT` | `http://localhost:8000`                                | DDB endpoint for the seed script.                        |
 | `AWS_REGION`      | `us-east-1`                                                | DDB region.                                              |
 
 ## Pages captured (current set, 12 total)
