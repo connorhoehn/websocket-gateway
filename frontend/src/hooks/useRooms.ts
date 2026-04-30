@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GatewayMessage } from '../types/gateway';
+import { useToast } from '../components/shared/ToastProvider';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +50,8 @@ export interface UseRoomsReturn {
   members: RoomMemberItem[];
   loading: boolean;
   error: string | null;
+  /** Retry the GET /api/rooms hydrate after a fetch failure. */
+  retry: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,8 +64,12 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
   const [members, setMembers] = useState<RoomMemberItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { toast } = useToast();
 
   const baseUrl = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
+
+  const retry = useCallback(() => setReloadKey((k) => k + 1), []);
 
   // ---- Stable refs for WS handler -----------------------------------------
 
@@ -78,6 +85,7 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
   useEffect(() => {
     if (!idToken || !baseUrl) return;
 
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
@@ -89,15 +97,20 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
         return res.json() as Promise<{ rooms: RoomItem[] }>;
       })
       .then((data) => {
+        if (cancelled) return;
         setRooms(data.rooms ?? []);
       })
       .catch((err: Error) => {
+        if (cancelled) return;
         setError(err.message);
+        toast("Couldn't load rooms", { type: 'error' });
       })
       .finally(() => {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
-  }, [idToken, baseUrl]);  
+
+    return () => { cancelled = true; };
+  }, [idToken, baseUrl, reloadKey, toast]);
 
   // ---- WS handler: member joined / member left (RTIM-04) ------------------
 
@@ -271,5 +284,6 @@ export function useRooms({ idToken, onMessage }: UseRoomsOptions): UseRoomsRetur
     members,
     loading,
     error,
+    retry,
   };
 }

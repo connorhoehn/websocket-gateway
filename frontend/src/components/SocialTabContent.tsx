@@ -24,6 +24,8 @@ export interface SocialTabContentProps {
   createDM: (targetUserId: string) => Promise<void>;
   createGroupRoom: (groupId: string, name: string) => Promise<void>;
   roomsLoading: boolean;
+  roomsError?: string | null;
+  onRoomsRetry?: () => void;
   handleRoomSelect: (room: RoomItem) => void;
   activeRoomId: string | null;
   activityEvents: ActivityEvent[];
@@ -39,6 +41,8 @@ export default function SocialTabContent({
   createDM,
   createGroupRoom,
   roomsLoading,
+  roomsError,
+  onRoomsRetry,
   handleRoomSelect,
   activeRoomId,
   onMessage,
@@ -112,6 +116,8 @@ export default function SocialTabContent({
               createRoom={createRoom}
               createDM={createDM}
               loading={roomsLoading}
+              error={roomsError}
+              onRetry={onRoomsRetry}
               onRoomSelect={handleRoomSelect}
               activeRoomId={activeRoomId}
               compact
@@ -133,6 +139,8 @@ export default function SocialTabContent({
               createRoom={createRoom}
               createDM={createDM}
               loading={roomsLoading}
+              error={roomsError}
+              onRetry={onRoomsRetry}
               onRoomSelect={handleRoomSelect}
               activeRoomId={activeRoomId}
               compact

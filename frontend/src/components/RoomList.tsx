@@ -18,6 +18,9 @@ interface RoomListProps {
   createRoom: (name: string) => Promise<void>;
   createDM: (peerId: string) => Promise<void>;
   loading: boolean;
+  /** Inline-render an error + retry control instead of the empty state when set. */
+  error?: string | null;
+  onRetry?: () => void;
   onRoomSelect: (room: RoomItem) => void;
   activeRoomId?: string | null;
   compact?: boolean;
@@ -281,10 +284,61 @@ function CompactRoomRow({ room, isActive, onClick }: RoomRowProps) {
 }
 
 // ---------------------------------------------------------------------------
+// RoomsErrorState (internal)
+// ---------------------------------------------------------------------------
+
+interface RoomsErrorStateProps {
+  message: string;
+  onRetry?: () => void;
+  compact?: boolean;
+}
+
+function RoomsErrorState({ message, onRetry, compact }: RoomsErrorStateProps) {
+  return (
+    <div
+      role="alert"
+      style={{
+        padding: compact ? '12px 8px' : '24px 16px',
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <div style={{ fontSize: compact ? 12 : 14, fontWeight: 600, color: '#b91c1c' }}>
+        Couldn't load rooms
+      </div>
+      <div style={{ fontSize: compact ? 11 : 12, color: '#64748b' }}>{message}</div>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            marginTop: 4,
+            padding: compact ? '3px 10px' : '4px 14px',
+            fontSize: compact ? 11 : 12,
+            fontWeight: 500,
+            color: '#1d4ed8',
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // RoomList (exported)
 // ---------------------------------------------------------------------------
 
-export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoomSelect, activeRoomId, compact }: RoomListProps) {
+export function RoomList({ idToken, rooms, createRoom, createDM, loading, error, onRetry, onRoomSelect, activeRoomId, compact }: RoomListProps) {
   const { friends } = useFriends({ idToken });
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -321,6 +375,8 @@ export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoom
         <div>
           {loading && rooms.length === 0 ? (
             <div style={{ padding: '8px', color: '#94a3b8', fontSize: 12, textAlign: 'center' }}>Loading…</div>
+          ) : error && rooms.length === 0 ? (
+            <RoomsErrorState message={error} onRetry={onRetry} compact />
           ) : rooms.length === 0 ? (
             <div style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 12 }}>No rooms yet</div>
           ) : (
@@ -389,6 +445,8 @@ export function RoomList({ idToken, rooms, createRoom, createDM, loading, onRoom
             <span style={{ display: 'inline-block', width: 16, height: 16, border: '2px solid #e2e8f0', borderTopColor: '#646cff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             Loading...
           </div>
+        ) : error && rooms.length === 0 ? (
+          <RoomsErrorState message={error} onRetry={onRetry} />
         ) : rooms.length === 0 ? (
           <div style={{ padding: '24px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 4 }}>

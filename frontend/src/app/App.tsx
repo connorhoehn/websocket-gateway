@@ -508,7 +508,15 @@ function SocialRoute(props: {
   onSwitchChannel: (channel: string) => void;
 }) {
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const { rooms, createRoom, createDM, createGroupRoom, loading: roomsLoading } = useRooms({
+  const {
+    rooms,
+    createRoom,
+    createDM,
+    createGroupRoom,
+    loading: roomsLoading,
+    error: roomsError,
+    retry: roomsRetry,
+  } = useRooms({
     idToken: props.idToken!,
     onMessage: props.onMessage,
   });
@@ -531,6 +539,8 @@ function SocialRoute(props: {
       createDM={createDM}
       createGroupRoom={createGroupRoom}
       roomsLoading={roomsLoading}
+      roomsError={roomsError}
+      onRoomsRetry={roomsRetry}
       handleRoomSelect={handleRoomSelect}
       activeRoomId={activeRoomId}
       activityEvents={props.activityEvents}
