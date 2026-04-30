@@ -295,3 +295,39 @@ export function pipelineReadRateLimit(
     store: storeOverride ?? null,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Preconfigured limiter for pipeline destructive WRITE endpoints — currently
+// `POST /api/pipelines/dlq/redrive` and `POST /api/pipelines/dlq/purge`.
+//
+// Tighter budget than the read limiter: 10 writes / min / user, no burst
+// beyond the per-minute budget. The intent is operator-grade safety — a
+// fat-finger script that POSTs `{ids: [...]}` in a tight loop will 429
+// well before re-fanning hundreds of failed events across the bus. Trigger,
+// cancel, and approval routes have their own per-route limiters with their
+// own budgets; this one is namespaced (`pipeline:write`) so it does not
+// share a bucket with them.
+//
+// Mounted at the router level on the DLQ POST routes (not via app.ts mount)
+// so it ships co-located with the destructive endpoints.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a rate limiter middleware tuned for pipeline destructive writes
+ * (DLQ redrive / purge).
+ *
+ * @param storeOverride Optional store injection — tests pass a fake to avoid
+ *                      cross-test bleed via the in-memory fallback.
+ */
+export function pipelineWriteRateLimit(
+  storeOverride?: RateLimitStore | null,
+): RequestHandler {
+  return createRateLimiter({
+    capacity: 10,
+    refillRate: 10,
+    refillIntervalMs: 60_000,
+    scope: 'pipeline:write',
+    key: (req) => req.user?.sub ?? req.ip ?? 'anon',
+    store: storeOverride ?? null,
+  });
+}
