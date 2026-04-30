@@ -242,6 +242,54 @@ describe('useWebSocket', () => {
 
       expect(result.current.connectionState).toBe('disconnected');
     });
+
+    it('publishes a single RECONNECT_EXHAUSTED lastError when auto-retries fail (not on user disconnect)', async () => {
+      const { result } = renderHook(() =>
+        useWebSocket({ config: makeConfig() })
+      );
+
+      act(() => {
+        MockWebSocket.instances[0].open();
+        MockWebSocket.instances[0].triggerClose();
+      });
+
+      for (let i = 1; i <= 5; i++) {
+        const delay = 1000 * Math.pow(2, i - 1);
+        act(() => {
+          vi.advanceTimersByTime(delay + 50);
+        });
+        if (MockWebSocket.instances[i]) {
+          act(() => {
+            MockWebSocket.instances[i].triggerClose();
+          });
+        }
+      }
+
+      expect(result.current.connectionState).toBe('disconnected');
+      expect(result.current.lastError?.code).toBe('RECONNECT_EXHAUSTED');
+      expect(result.current.lastError?.message).toMatch(/5 retries/);
+    });
+
+    it('does NOT publish RECONNECT_EXHAUSTED when the user-initiated disconnect closes the socket', () => {
+      const { result } = renderHook(() =>
+        useWebSocket({ config: makeConfig() })
+      );
+
+      act(() => {
+        MockWebSocket.instances[0].open();
+      });
+      expect(result.current.connectionState).toBe('connected');
+
+      act(() => {
+        result.current.disconnect();
+        // Simulate the browser firing onclose for the closed socket; the
+        // intentionalDisconnectRef should suppress the terminal error.
+        MockWebSocket.instances[0].triggerClose();
+      });
+
+      expect(result.current.connectionState).toBe('disconnected');
+      expect(result.current.lastError?.code).not.toBe('RECONNECT_EXHAUSTED');
+    });
   });
 
   describe('error handling', () => {

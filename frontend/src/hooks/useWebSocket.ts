@@ -86,6 +86,9 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const retryCountRef = useRef<number>(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set by the disconnect() callback so the onclose handler knows the close
+  // was intentional and should NOT raise a "reconnect exhausted" error.
+  const intentionalDisconnectRef = useRef<boolean>(false);
 
   // Keep callbacks in a ref so the WebSocket handlers always have fresh values
   // without being torn down and rebuilt every render.
@@ -166,6 +169,13 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
       if (wsRef.current !== ws) return;
 
       if (retryCountRef.current < MAX_RETRIES) {
+        // Quiet warn on the first attempt, debug on subsequent — keeps the
+        // browser console readable across an outage cycle.
+        if (retryCountRef.current === 0) {
+          console.warn('[useWebSocket] connection lost, retrying with backoff');
+        } else {
+          console.debug('[useWebSocket] reconnect attempt', retryCountRef.current + 1, 'of', MAX_RETRIES);
+        }
         setConnectionState('reconnecting');
         const delay = BASE_BACKOFF_MS * Math.pow(2, retryCountRef.current);
         retryCountRef.current += 1;
@@ -174,6 +184,15 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
         }, delay);
       } else {
         setConnectionState('disconnected');
+        // Auto-fail (not user-initiated) → publish a single, terminal error
+        // that downstream UI (e.g. ToastProvider consumers) can present once.
+        if (!intentionalDisconnectRef.current) {
+          setLastError({
+            code: 'RECONNECT_EXHAUSTED',
+            message: `Lost connection to gateway after ${MAX_RETRIES} retries`,
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
     };
 
@@ -240,6 +259,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
+    intentionalDisconnectRef.current = true;
     retryCountRef.current = MAX_RETRIES; // Prevent onclose from scheduling a retry
     wsRef.current?.close();
     wsRef.current = null;
@@ -252,6 +272,7 @@ export function useWebSocket(options: UseWebSocketOptions): UseWebSocketReturn {
   const reconnect = useCallback(() => {
     // Reset retry counter so we get a fresh 5-attempt window.
     retryCountRef.current = 0;
+    intentionalDisconnectRef.current = false;
     // Cancel any pending timer from a previous reconnect sequence.
     if (retryTimerRef.current !== null) {
       clearTimeout(retryTimerRef.current);

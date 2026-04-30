@@ -17,6 +17,7 @@ import { usePresenceContext } from '../contexts/PresenceContext';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ApiDegradedBanner } from './ApiDegradedBanner';
 import { useApiHealth } from '../hooks/useApiHealth';
+import { useToast } from './shared/ToastProvider';
 import { CollapsibleSidebar } from './CollapsibleSidebar';
 import { CollapsedIconStrip } from './CollapsedIconStrip';
 import { ReactionsOverlay } from './ReactionsOverlay';
@@ -202,6 +203,22 @@ function AppLayoutInner({
   const navigate = useNavigate();
   const location = useLocation();
   const apiHealth = useApiHealth();
+  const { toast } = useToast();
+
+  // Surface a single, consolidated toast when the WebSocket retry budget is
+  // exhausted. The hook silences per-attempt console noise and emits exactly
+  // one terminal lastError with code RECONNECT_EXHAUSTED.
+  const lastErrorCodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastError?.code === 'RECONNECT_EXHAUSTED' && lastErrorCodeRef.current !== 'RECONNECT_EXHAUSTED') {
+      toast(lastError.message, {
+        type: 'error',
+        actionLabel: 'Reconnect',
+        onAction: () => onReconnect(),
+      });
+    }
+    lastErrorCodeRef.current = lastError?.code ?? null;
+  }, [lastError, toast, onReconnect]);
 
   // Derive active view from URL path
   const activeView: 'panels' | 'social' | 'dashboard' | 'doc-editor' | 'doc-types' | 'field-types' | 'pipelines' | 'observability' =
