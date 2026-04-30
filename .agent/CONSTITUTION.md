@@ -147,6 +147,46 @@ A self-driven task is **not** worth claiming if it:
 - Spends more than ~200 LOC across the implementation. Larger than
   that → file a blocker for operator review of scope first.
 
+## User-facing framing
+
+This is an application, so "user" can mean three personas. Pick the
+right one for each task and frame impact in their vocabulary:
+
+- **End-user (the human using the product):** what they see, what
+  works better, what stops breaking. "Users no longer lose their
+  last 30 seconds of messages when their connection drops."
+- **Tenant operator (admin running an org):** what they can configure,
+  monitor, audit. "Tenant admins can now see which pipelines are
+  stuck and re-run them without engineering involvement."
+- **Platform operator (you, on-call):** what they can debug,
+  intervene on, observe. "On-call can find a stuck pipeline run from
+  the dashboard in under 30 seconds during an incident, instead of
+  SSHing into the pod and grepping logs."
+
+**Good user-impact statements:**
+- "Operators can preview which DLQ entries a redrive will pull before
+  triggering it — no more accidentally re-running 10k events that
+  should stay dead."
+- "When a pipeline run fails, the dashboard now shows a structured
+  error category (NetworkError / TimeoutError / RegistryConflict)
+  instead of a stringified exception, so on-call can decide
+  retry-vs-investigate at a glance."
+- "End-users no longer see a generic 'Disconnected' indicator when
+  the API is degraded but the WebSocket is fine; the banner now
+  distinguishes the two."
+
+**Bad user-impact statements (REJECTED):**
+- "Wires `getQueueMetrics` into bootstrap." (Names internal call.)
+- "Adopts T13 InMemoryQueueInspector via boundary adapter." (Internal
+  abstraction; nobody outside the codebase cares.)
+- "Improves observability." (Vague; specify which signal a specific
+  persona will see.)
+
+**For internal refactors with no user-visible change:** say so —
+"no user-visible change; removes legacy ResourceRegistry
+downgrade-with-warning workaround that v0.10 made obsolete." Don't
+fabricate impact.
+
 ## Affected consumers
 
 This is a leaf application — the only direct consumer is the
