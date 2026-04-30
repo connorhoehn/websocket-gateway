@@ -13,7 +13,7 @@
 // CloudWatch dashboards.
 
 const os = require('os');
-const { MetricsRegistry, formatPrometheus } = require('distributed-core');
+const { MetricsRegistry, formatPrometheus, QueueMetrics } = require('distributed-core');
 
 const SERVICE = process.env.WSG_SERVICE_NAME || 'gateway';
 const NODE_ID = process.env.WSG_NODE_ID || os.hostname();
@@ -146,6 +146,27 @@ function getRegistry() {
     return registry;
 }
 
+// Bounded enum: cardinality of the `queue` label is gateway-owned (the
+// distributed-core library does not enforce a cap). Adding a fourth queue
+// requires a deliberate edit here — it must NOT be a tenant id, run id,
+// or any other unbounded identifier.
+const ALLOWED_QUEUE_NAMES = Object.freeze(['run-queue', 'trigger-queue', 'dlq']);
+const queueMetricsByName = new Map();
+
+function getQueueMetrics(queueName) {
+    if (!ALLOWED_QUEUE_NAMES.includes(queueName)) {
+        throw new Error(
+            `getQueueMetrics: unknown queueName ${JSON.stringify(queueName)}; allowed: ${ALLOWED_QUEUE_NAMES.join(', ')}`,
+        );
+    }
+    let metrics = queueMetricsByName.get(queueName);
+    if (!metrics) {
+        metrics = new QueueMetrics({ registry, queueName });
+        queueMetricsByName.set(queueName, metrics);
+    }
+    return metrics;
+}
+
 module.exports = {
     recordConnection,
     recordMessage,
@@ -163,4 +184,6 @@ module.exports = {
     recordPeerReceivedHandlerError,
     renderPrometheusText,
     getRegistry,
+    getQueueMetrics,
+    ALLOWED_QUEUE_NAMES,
 };

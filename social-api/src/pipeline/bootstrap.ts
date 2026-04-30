@@ -64,6 +64,7 @@ import { createLLMClient } from './createLLMClient';
 import { setupFailureDetectorBridge } from './config/failureDetectorBridge';
 import {
   getRegistry as getMetricsRegistry,
+  getQueueMetrics,
   incrementBusDeadLetter,
 } from '../observability/metrics';
 import {
@@ -594,6 +595,24 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
     },
   });
 
+  // T12 (lib-expansion-3): emit dc_queue_throughput_{enqueued,completed,failed}_total
+  // for the run-queue, derived from the canonical pipeline:run:* events on the
+  // module's EventBus. Cardinality discipline: queue label is the bounded enum
+  // 'run-queue' (see observability/metrics.ts ALLOWED_QUEUE_NAMES) — never run
+  // ids, tenant ids, or pipeline ids.
+  const runQueueMetrics = getQueueMetrics('run-queue');
+  const eventBus = module.getEventBus();
+  const runQueueSubIds: string[] = [];
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:started', () => {
+    runQueueMetrics.recordEnqueued();
+  }));
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:completed', () => {
+    runQueueMetrics.recordCompleted();
+  }));
+  runQueueSubIds.push(eventBus.subscribe('pipeline:run:failed', () => {
+    runQueueMetrics.recordFailed();
+  }));
+
   // --- Coordinated shutdown ---
   //
   // Order matters:
@@ -608,6 +627,11 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   // need every subsystem torn down even if one stage misbehaves.
   const shutdown = async (): Promise<void> => {
     clearInterval(keepAlive);
+    // T12: detach run-queue metrics subscriptions BEFORE stopping the module.
+    // EventBus.unsubscribe is sync + idempotent — best-effort, swallow on miss.
+    for (const subId of runQueueSubIds) {
+      try { eventBus.unsubscribe(subId); } catch { /* idempotent */ }
+    }
     try {
       await moduleRegistry.stop();
     } catch (err) {

@@ -12,7 +12,7 @@
 // is additive and side-effect-free w.r.t. existing dashboards.
 
 import os from 'os';
-import { MetricsRegistry, formatPrometheus } from 'distributed-core';
+import { MetricsRegistry, formatPrometheus, QueueMetrics } from 'distributed-core';
 
 const SERVICE = process.env.WSG_SERVICE_NAME || 'social-api';
 const NODE_ID = process.env.WSG_NODE_ID || os.hostname();
@@ -109,4 +109,27 @@ export function renderPrometheusText(): string {
 // a custom counter).
 export function getRegistry(): MetricsRegistry {
   return registry;
+}
+
+// Bounded enum: cardinality of the `queue` label is gateway-owned (the
+// distributed-core library does not enforce a cap). Adding a fourth queue
+// requires a deliberate edit here — it must NOT be a tenant id, run id,
+// or any other unbounded identifier.
+export const ALLOWED_QUEUE_NAMES = ['run-queue', 'trigger-queue', 'dlq'] as const;
+export type QueueName = (typeof ALLOWED_QUEUE_NAMES)[number];
+
+const queueMetricsByName = new Map<QueueName, QueueMetrics>();
+
+export function getQueueMetrics(queueName: QueueName): QueueMetrics {
+  if (!ALLOWED_QUEUE_NAMES.includes(queueName)) {
+    throw new Error(
+      `getQueueMetrics: unknown queueName ${JSON.stringify(queueName)}; allowed: ${ALLOWED_QUEUE_NAMES.join(', ')}`,
+    );
+  }
+  let metrics = queueMetricsByName.get(queueName);
+  if (!metrics) {
+    metrics = new QueueMetrics({ registry, queueName });
+    queueMetricsByName.set(queueName, metrics);
+  }
+  return metrics;
 }
