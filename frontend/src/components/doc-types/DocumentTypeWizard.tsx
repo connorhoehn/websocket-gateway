@@ -6,6 +6,24 @@
 // Step 3: View modes — per-field visibility and renderer overrides
 
 import { useEffect, useState } from 'react';
+import {
+  DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { ViewMode } from '../../types/document';
 import type {
   DocumentType,
@@ -236,6 +254,189 @@ function FieldRow({
   );
 }
 
+// Phase 51 / hub#70 — sortable wrappers for the multi-page wizard render.
+// Each SortablePage owns a drag handle (the ⋮⋮ on the page header) plus
+// a nested SortableContext over its section ids; SortableSection owns
+// the section row's drag handle.
+
+interface SortablePageProps {
+  page: DocumentTypePage;
+  pageIdx: number;
+  totalPages: number;
+  isActive: boolean;
+  setActivePageId: (id: string) => void;
+  movePage: (pageId: string, dir: -1 | 1) => void;
+  removePage: (pageId: string) => void;
+  renamePage: (pageId: string, title: string) => void;
+  pages: DocumentTypePage[];
+  fieldsById: Map<string, DocumentTypeField>;
+  renderRow: (sectionId: string, page: DocumentTypePage, idx: number) => React.ReactNode;
+  moveSectionToPage: (sectionId: string, fromPageId: string, toPageId: string) => void;
+}
+
+function SortablePage({
+  page, pageIdx, totalPages, isActive, setActivePageId,
+  movePage, removePage, renamePage, pages, fieldsById, renderRow, moveSectionToPage,
+}: SortablePageProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: page.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      data-testid={`wizard-page-${page.id}`}
+    >
+      <div style={{
+        ...card,
+        marginBottom: 12,
+        background: isActive ? '#faf5ff' : '#fff',
+        borderColor: isActive ? '#c4b5fd' : '#e2e8f0',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <button
+            type="button"
+            data-testid={`page-drag-handle-${page.id}`}
+            {...attributes}
+            {...listeners}
+            style={{
+              cursor: 'grab',
+              padding: '2px 4px',
+              fontSize: 14,
+              color: '#94a3b8',
+              border: 'none',
+              background: 'transparent',
+              userSelect: 'none',
+              touchAction: 'none',
+            }}
+            title="Drag to reorder pages"
+          >⋮⋮</button>
+          <button
+            type="button"
+            data-testid={`page-up-${page.id}`}
+            disabled={pageIdx === 0}
+            onClick={() => movePage(page.id, -1)}
+            style={{ ...btn('ghost', pageIdx === 0), padding: '2px 6px', fontSize: 11 }}
+          >▲</button>
+          <button
+            type="button"
+            data-testid={`page-down-${page.id}`}
+            disabled={pageIdx === totalPages - 1}
+            onClick={() => movePage(page.id, +1)}
+            style={{ ...btn('ghost', pageIdx === totalPages - 1), padding: '2px 6px', fontSize: 11 }}
+          >▼</button>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', minWidth: 56 }}>
+            Page {pageIdx + 1}
+          </span>
+          <input
+            data-testid={`page-title-${page.id}`}
+            value={page.title ?? ''}
+            placeholder={`Page ${pageIdx + 1}`}
+            onChange={(e) => renamePage(page.id, e.target.value)}
+            style={{ ...input, flex: 1, padding: '4px 8px', fontSize: 13 }}
+            onFocus={() => setActivePageId(page.id)}
+          />
+          <button
+            type="button"
+            data-testid={`page-remove-${page.id}`}
+            disabled={totalPages <= 1}
+            onClick={() => removePage(page.id)}
+            style={{ ...btn('ghost', totalPages <= 1), padding: '2px 8px', fontSize: 13, color: '#ef4444' }}
+            title="Remove page (sections move to first page)"
+          >✕</button>
+        </div>
+
+        {page.sectionIds.length === 0 ? (
+          <div
+            data-testid={`page-empty-${page.id}`}
+            style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 12, fontStyle: 'italic' }}
+          >
+            No sections on this page yet — click the page header to make it active, then pick a section type.
+          </div>
+        ) : (
+          <SortableContext items={page.sectionIds} strategy={verticalListSortingStrategy}>
+            <div data-testid={`page-sections-${page.id}`}>
+              {page.sectionIds.map((sid, idx) => {
+                if (!fieldsById.get(sid)) return null;
+                return (
+                  <SortableSection
+                    key={sid}
+                    sectionId={sid}
+                    page={page}
+                    idx={idx}
+                    pages={pages}
+                    renderRow={renderRow}
+                    moveSectionToPage={moveSectionToPage}
+                  />
+                );
+              })}
+            </div>
+          </SortableContext>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface SortableSectionProps {
+  sectionId: string;
+  page: DocumentTypePage;
+  idx: number;
+  pages: DocumentTypePage[];
+  renderRow: (sectionId: string, page: DocumentTypePage, idx: number) => React.ReactNode;
+  moveSectionToPage: (sectionId: string, fromPageId: string, toPageId: string) => void;
+}
+
+function SortableSection({ sectionId, page, idx, pages, renderRow, moveSectionToPage }: SortableSectionProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: sectionId });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={{ ...style, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button
+        type="button"
+        data-testid={`section-drag-handle-${sectionId}`}
+        {...attributes}
+        {...listeners}
+        style={{
+          cursor: 'grab', padding: '2px 4px', fontSize: 14, color: '#94a3b8',
+          border: 'none', background: 'transparent',
+          userSelect: 'none', touchAction: 'none', flexShrink: 0,
+        }}
+        title="Drag to reorder sections (or drop on another page)"
+      >⋮⋮</button>
+      <div style={{ flex: 1 }}>{renderRow(sectionId, page, idx)}</div>
+      {pages.length > 1 && (
+        <select
+          data-testid={`section-move-page-${sectionId}`}
+          value={page.id}
+          onChange={(e) => moveSectionToPage(sectionId, page.id, e.target.value)}
+          style={{
+            fontSize: 11, padding: '4px 6px', borderRadius: 4,
+            fontFamily: 'inherit', cursor: 'pointer',
+            background: '#f8fafc', border: '1px solid #e2e8f0',
+          }}
+          title="Move section to another page"
+        >
+          {pages.map((pp, pi) => (
+            <option key={pp.id} value={pp.id}>
+              {pp.title || `Page ${pi + 1}`}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 function Step2Fields({
   fields, setFields, pages, setPages, pageConfig, setPageConfig,
 }: {
@@ -344,6 +545,72 @@ function Step2Fields({
   // is added.
   const isSinglePage = pages.length === 1;
 
+  // Phase 51 / hub#70 — drag-and-drop reordering.
+  // findContainer maps either a page id OR a section id to its owning page.
+  // Used by onDragOver / onDragEnd to disambiguate page-vs-section drags
+  // and to detect cross-page section moves.
+  const findContainer = (id: string): string | undefined => {
+    if (pages.some((p) => p.id === id)) return id;
+    for (const p of pages) if (p.sectionIds.includes(id)) return p.id;
+    return undefined;
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragOver = (e: DragOverEvent) => {
+    const { active, over } = e;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const activeContainer = findContainer(activeId);
+    const overContainer = findContainer(overId);
+    if (!activeContainer || !overContainer) return;
+    if (activeContainer === overContainer) return;
+    // Page drag is handled in onDragEnd, not onDragOver.
+    if (pages.some((p) => p.id === activeId)) return;
+    // Section being dragged into a different page → move it now.
+    setPages(pages.map((p) => {
+      if (p.id === activeContainer) return { ...p, sectionIds: p.sectionIds.filter((s) => s !== activeId) };
+      if (p.id === overContainer)   return { ...p, sectionIds: [...p.sectionIds, activeId] };
+      return p;
+    }));
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Page-level drag: both ids are page ids.
+    if (pages.some((p) => p.id === activeId) && pages.some((p) => p.id === overId)) {
+      const oldIndex = pages.findIndex((p) => p.id === activeId);
+      const newIndex = pages.findIndex((p) => p.id === overId);
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+        setPages(arrayMove(pages, oldIndex, newIndex));
+      }
+      return;
+    }
+
+    // Section-level drag: figure out which page the active item is in
+    // (after onDragOver may have moved it cross-page) and reorder
+    // within that page.
+    const activeContainer = findContainer(activeId);
+    if (!activeContainer) return;
+    const page = pages.find((p) => p.id === activeContainer);
+    if (!page) return;
+    const oldIndex = page.sectionIds.indexOf(activeId);
+    const newIndex = page.sectionIds.indexOf(overId);
+    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+      setPages(pages.map((p) =>
+        p.id === activeContainer ? { ...p, sectionIds: arrayMove(p.sectionIds, oldIndex, newIndex) } : p,
+      ));
+    }
+  };
+
   // Render a single FieldRow given its position within a page. Reused
   // by both the single-page legacy path and the multi-page path.
   const renderRow = (sectionId: string, page: DocumentTypePage, idx: number) => {
@@ -391,96 +658,37 @@ function Step2Fields({
             </div>
           )
         ) : (
-          // Multi-page rendering. Each page gets its own card with a
-          // header, a sortable section list, and per-page controls.
-          pages.map((p, pageIdx) => (
-            <div
-              key={p.id}
-              data-testid={`wizard-page-${p.id}`}
-              style={{
-                ...card,
-                marginBottom: 12,
-                background: p.id === activePageId ? '#faf5ff' : '#fff',
-                borderColor: p.id === activePageId ? '#c4b5fd' : '#e2e8f0',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <button
-                  type="button"
-                  data-testid={`page-up-${p.id}`}
-                  disabled={pageIdx === 0}
-                  onClick={() => movePage(p.id, -1)}
-                  style={{ ...btn('ghost', pageIdx === 0), padding: '2px 6px', fontSize: 11 }}
-                >▲</button>
-                <button
-                  type="button"
-                  data-testid={`page-down-${p.id}`}
-                  disabled={pageIdx === pages.length - 1}
-                  onClick={() => movePage(p.id, +1)}
-                  style={{ ...btn('ghost', pageIdx === pages.length - 1), padding: '2px 6px', fontSize: 11 }}
-                >▼</button>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', minWidth: 56 }}>
-                  Page {pageIdx + 1}
-                </span>
-                <input
-                  data-testid={`page-title-${p.id}`}
-                  value={p.title ?? ''}
-                  placeholder={`Page ${pageIdx + 1}`}
-                  onChange={(e) => renamePage(p.id, e.target.value)}
-                  style={{ ...input, flex: 1, padding: '4px 8px', fontSize: 13 }}
-                  onFocus={() => setActivePageId(p.id)}
+          // Multi-page rendering wrapped in a DndContext for drag-drop
+          // reorder (hub#70). Within-page section reorder, cross-page
+          // section move, and page reorder are all handled by a single
+          // onDragEnd / onDragOver pair. Button-based controls remain
+          // for accessibility.
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={pages.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+              {pages.map((p, pageIdx) => (
+                <SortablePage
+                  key={p.id}
+                  page={p}
+                  pageIdx={pageIdx}
+                  totalPages={pages.length}
+                  isActive={p.id === activePageId}
+                  setActivePageId={setActivePageId}
+                  movePage={movePage}
+                  removePage={removePage}
+                  renamePage={renamePage}
+                  pages={pages}
+                  fieldsById={fieldsById}
+                  renderRow={renderRow}
+                  moveSectionToPage={moveSectionToPage}
                 />
-                <button
-                  type="button"
-                  data-testid={`page-remove-${p.id}`}
-                  disabled={pages.length <= 1}
-                  onClick={() => removePage(p.id)}
-                  style={{ ...btn('ghost', pages.length <= 1), padding: '2px 8px', fontSize: 13, color: '#ef4444' }}
-                  title="Remove page (sections move to first page)"
-                >✕</button>
-              </div>
-
-              {p.sectionIds.length === 0 ? (
-                <div
-                  data-testid={`page-empty-${p.id}`}
-                  style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 12, fontStyle: 'italic' }}
-                >
-                  No sections on this page yet — click the page header to make it active, then pick a section type.
-                </div>
-              ) : (
-                <div data-testid={`page-sections-${p.id}`}>
-                  {p.sectionIds.map((sid, idx) => {
-                    const f = fieldsById.get(sid);
-                    if (!f) return null;
-                    return (
-                      <div key={sid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ flex: 1 }}>{renderRow(sid, p, idx)}</div>
-                        {pages.length > 1 && (
-                          <select
-                            data-testid={`section-move-page-${sid}`}
-                            value={p.id}
-                            onChange={(e) => moveSectionToPage(sid, p.id, e.target.value)}
-                            style={{
-                              fontSize: 11, padding: '4px 6px', borderRadius: 4,
-                              fontFamily: 'inherit', cursor: 'pointer',
-                              background: '#f8fafc', border: '1px solid #e2e8f0',
-                            }}
-                            title="Move section to another page"
-                          >
-                            {pages.map((pp, pi) => (
-                              <option key={pp.id} value={pp.id}>
-                                {pp.title || `Page ${pi + 1}`}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))
+              ))}
+            </SortableContext>
+          </DndContext>
         )}
 
         {/* + Add Page — always available; multi-page UI only kicks in
