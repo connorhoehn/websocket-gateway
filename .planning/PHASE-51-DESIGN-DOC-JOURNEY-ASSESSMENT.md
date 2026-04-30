@@ -116,33 +116,36 @@ reader."
 
 ### Per-section presence (the "alice is editing the decision-log" indicator)
 
-`ParticipantAvatars` shows users who are on the doc, but doesn't
-attribute them to a specific section in the UI. The CRDT layer can
-discriminate (Yjs awareness state can carry a `currentSection`), but
-the rendering at the section level isn't shipped.
+UPDATED 2026-04-30: this was filed as a gap, but on inspection during
+hub#61 the wiring is **already shipped** end-to-end:
 
-**Journey workaround:** the journey opens two contexts and lets both
-participants type concurrently in the same doc. The header's
-`ParticipantAvatars` updates in real time — that's a genuine
-real-time signal even without per-section attribution.
+- Yjs awareness write — `DocumentEditorPage.tsx:427-430` `handleSectionFocus`
+  → `awareness.updateSection(sectionId)` via SectionBlock's
+  `onClickCapture/onFocusCapture`.
+- Per-section filter — `SectionList.tsx:80`
+  `participants?.filter(p => p.currentSectionId === section.id)`.
+- Per-section UI — `SectionBlock.tsx:248` colored left border, line
+  249 blue box-shadow when isFocused, line 373 `<AvatarStack>`
+  rendering initials + gradient + green online dot.
 
-**Filed as follow-up:** "Phase 51 / per-section presence attribution."
+The journey simply navigates `/documents` in two contexts; with the
+WS gateway running, the CRDT layer + AvatarStack do the rest.
+
+**Closed as already-implemented** under hub#61.
 
 ### Per-section approval flow (with append-only log)
 
-The `decisions` renderer has append-only log semantics, but doesn't
-trigger DB writes against `approval-workflows` — it persists via
-the CRDT layer like any other section. There's no "click approve →
-log entry persists with reviewer name + section ID + timestamp"
-wired to the approval-workflows table.
+UPDATED 2026-04-30: this gap is closed by hub#62 (backend) + hub#80
+(frontend wiring).
 
-**Journey workaround:** the journey uses the decisions renderer's
-in-renderer "add entry" affordance (whatever it has) to demonstrate
-the append flow. The persistence is via CRDT, not the
-approval-workflows table — and this is acknowledged explicitly.
-
-**Filed as follow-up:** "Phase 51 / wire decisions renderer to
-approval-workflows table."
+- Backend: POST /api/approvals + ApprovalRepository persisting to
+  `approval-workflows` (pk=documentId, sk=workflowId, GSI on
+  workflowStatus + createdAt).
+- Frontend: DecisionsEditorRenderer's status-change handler fires a
+  best-effort POST when status transitions to a terminal value
+  (acked/done → approved, rejected → rejected, pending no-ops).
+- See `frontend/src/renderers/decisions/approvalSync.ts` for the
+  helper.
 
 ## Stack used to capture the journey
 
@@ -165,10 +168,13 @@ Per the task spec: ~25-40 steps total. Concrete plan:
   pages, save.
 - **Scene C — Viewer reads (4 steps):** ?mode=reader on the same doc;
   capture the read-only rendering.
-- **Scene D — Two-user collab (6 steps):** two browser contexts,
-  ParticipantAvatars updates as both join, both edit different
-  sections concurrently, screenshots show the avatar update + a
-  decision log append from one user appearing in the other's view.
+- **Scene D — Two-user collab (6 steps):** two browser contexts both
+  open `/documents` and (when at least one doc exists) both navigate
+  into the same `/documents/<id>` URL, both type into the rich-text
+  body. Real CRDT collab flows when the WS gateway is running (`tilt
+  up`); when the WS service is down, both contexts capture the
+  disconnected-UI state honestly — no PLACEHOLDER markers, just
+  truthful "this is what the system looks like without infra."
 
 ## Follow-ups filed (gap tasks)
 
