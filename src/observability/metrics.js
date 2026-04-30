@@ -13,14 +13,13 @@
 // CloudWatch dashboards.
 
 const os = require('os');
-const { MetricsRegistry, MetricsExporter } = require('distributed-core');
+const { MetricsRegistry, formatPrometheus } = require('distributed-core');
 
 const SERVICE = process.env.WSG_SERVICE_NAME || 'gateway';
 const NODE_ID = process.env.WSG_NODE_ID || os.hostname();
 const BASE_LABELS = { service: SERVICE, node_id: NODE_ID };
 
 const registry = new MetricsRegistry();
-const exporter = new MetricsExporter(registry);
 
 // Pre-register the shadowed metrics so the snapshot is non-empty even
 // before any traffic arrives (Prometheus scrapes prefer presence to
@@ -135,9 +134,10 @@ function recordPeerReceivedHandlerError() {
 
 // Renders the registry snapshot as Prometheus 0.0.4 text format.
 // Suitable for `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
+// Canonical helper from distributed-core (see docs/observability/prometheus.md
+// in the library); replaces the older `new MetricsExporter(registry)` pattern.
 function renderPrometheusText() {
-    const snapshot = registry.getSnapshot();
-    return exporter.formatPrometheusMetrics(snapshot.metrics);
+    return formatPrometheus(registry.getSnapshot());
 }
 
 // Returns the singleton MetricsRegistry for callers that want to register
