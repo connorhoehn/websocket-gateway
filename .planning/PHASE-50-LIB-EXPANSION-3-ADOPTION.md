@@ -14,12 +14,19 @@ This doc is the mechanical adoption recipe for the three lib-expansion-3 primiti
 |---|---|
 | Gateway pin (root) | `distributed-core` → `github:connorhoehn/distributed-core#v0.10.0` (`5bbbe26`) |
 | Gateway pin (social-api) | same |
-| dist-core local HEAD | `0b9eb15` (verified 2026-04-30) |
-| dist-core origin/main | `667cabb` |
-| Available tags | up through `v0.10.0` only — `v0.11.0` does NOT exist |
-| Pin path A (`#v0.11.0`) | tag missing — install will fail |
-| Pin path B (`#f842e96`) | sha not on origin — install will fail |
+| dist-core local HEAD | `f0a5852` (release commit; verified 2026-04-30T13:58Z) |
+| dist-core local tag | `v0.11.0` exists locally on `f0a5852` |
+| dist-core origin/main | `667cabb` (T10 ship) |
+| dist-core origin tags | only `v0.10.0` — `v0.11.0` not yet pushed |
+| Pin path A (`#v0.11.0`) | tag missing on origin — install will fail until operator pushes |
+| Pin path B (`#f0a5852`) | sha not on origin — install will fail until operator pushes |
 | Worker policy | local-only, no push of dist-core. Release cut is operator-driven (hub#35). |
+
+**v0.11.0 release commit.** Distributed-core has prepared v0.11.0 locally: `f0a5852` is the release commit (bumps `package.json`, adds CHANGELOG entry covering all 15 lib-expansion-3 primitives + Phase 50 trio callout + T6/T16 unpark triggers). Local annotated tag `v0.11.0` already exists. Pending only the operator push.
+
+**Reference docs that ship with v0.11.0** (consult during execution):
+- `docs/patterns/job-queue.md` (refresh on commit `69f1910`) — canonical composition pattern with the new toolkit; "T1 Envelope adoption story (additive)" section has the full adapter pattern.
+- `docs/patterns/k8s-prestop-drain.md` (commit `0b9eb15`) — k8s preStop integration with T8/T11 (was hub#36 — now done as part of the v0.11.0 cut).
 
 **Hard gate:** code wiring (Steps 1–3 below) cannot land until either (a) hub#35 lands and origin has `v0.11.0`, or (b) distributed-core operator pushes its local main and we SHA-pin to a resolvable origin SHA.
 
