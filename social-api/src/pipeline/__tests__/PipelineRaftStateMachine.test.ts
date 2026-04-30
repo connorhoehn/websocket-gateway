@@ -17,7 +17,7 @@ import {
   type PipelineRunCommand,
   type PipelineRaftSnapshotState,
 } from '../PipelineRaftStateMachine';
-import type { RaftLogEntry } from 'distributed-core/dist/cluster/raft/types';
+import type { RaftLogEntry } from 'distributed-core';
 
 function entry<T>(index: number, term: number, command: T): RaftLogEntry<T> {
   return { index, term, command };
