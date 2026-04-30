@@ -245,15 +245,6 @@ Slug rules: kebab-case, deterministic. Don't rename existing slugs
 (orphans the historical run directory). Step names are also
 kebab-cased for filesystem safety.
 
-### Known issue
-
-The `create-document-type-basic` and `edit-document-type-name`
-journeys can race on wizard mount-after-click in headless runs
-depending on machine load. The runner records the failure text and
-the screenshots up to the failing step so the operator can triage. A
-follow-up task tracks tightening the selectors / replacing
-inline-create with seeded localStorage where applicable.
-
 ## What's deliberately out of scope
 
 - Scheduled re-runs (cron). v1 is manual; the orchestrator has the

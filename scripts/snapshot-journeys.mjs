@@ -174,12 +174,24 @@ const JOURNEYS = [
       });
       await step('click-edit', 'Click Edit on the seeded type', async () => {
         await page.click('[data-testid="edit-type-journey-edit-seed"]');
-        await page.waitForSelector('[data-testid="name-input"]', { timeout: 10_000 });
+        // The wizard intentionally starts on step 2 (Sections) when editing
+        // so fields are immediately visible — see DocumentTypeWizard line
+        // 485. Wait for the wizard's Next button to confirm it mounted,
+        // not the name-input (which lives on step 1).
+        await page.waitForSelector('[data-testid="wizard-next"]', { timeout: 10_000 });
+      });
+      await step('back-to-basics', 'Click Back to reach the name field on step 1', async () => {
+        // The Back button has no testid; match by visible text. Only
+        // present when step > 1, which it is in edit mode.
+        await page.click('button:has-text("Back")');
+        await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
       });
       await step('rename-the-type', 'Update the type name', async () => {
         await page.fill('[data-testid="name-input"]', 'Renamed Type');
       });
-      await step('save-rename', 'Save changes', async () => {
+      await step('save-rename', 'Walk wizard forward and save', async () => {
+        // step 1 → 2 → 3 → save. handleSave fires when wizard-next is
+        // clicked at step === TOTAL_STEPS.
         for (let i = 0; i < 6; i++) {
           const next = await page.$('[data-testid="wizard-next"]');
           if (!next) break;
