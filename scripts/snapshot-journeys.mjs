@@ -476,6 +476,14 @@ const JOURNEYS = [
           await page.waitForTimeout(1_500);
         }
       });
+      await step('open-new-document', 'Click the newly created document to open the editor', async () => {
+        const card = await page.$('[data-testid^="document-card-"]');
+        if (card) {
+          await card.click();
+          await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(() => {});
+          await page.waitForTimeout(800);
+        }
+      });
       await step('see-document-editor', 'Land on the document editor page', async () => {
         await page.waitForTimeout(800);
       });
@@ -595,6 +603,14 @@ const JOURNEYS = [
         const submit = await page.$('[data-testid="new-doc-submit"]');
         if (submit) { await submit.click(); await page.waitForTimeout(1_500); }
       });
+      await step('open-created-document', 'Click the newly created document to enter the editor', async () => {
+        const card = await page.$('[data-testid^="document-card-"]');
+        if (card) {
+          await card.click();
+          await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(() => {});
+          await page.waitForTimeout(800);
+        }
+      });
 
       // --- Add some content so review isn't empty ---
       await step('add-content-to-body', 'Type some content into the first section', async () => {
@@ -611,6 +627,10 @@ const JOURNEYS = [
       });
 
       // --- Switch to Review mode ---
+      await step('scroll-back-for-mode-switch', 'Scroll to top so the mode buttons are accessible', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
       await step('enter-review-mode', 'Click the Review mode button', async () => {
         const reviewBtn = await page.$('[data-testid="mode-btn-ack"]')
           ?? await page.$('button:has-text("Review")');
@@ -748,6 +768,14 @@ const JOURNEYS = [
       await step('alice-submits-document', 'Alice creates the document', async () => {
         const submit = await page.$('[data-testid="new-doc-submit"]');
         if (submit) { await submit.click(); await page.waitForTimeout(1_500); }
+      });
+      await step('alice-opens-document', 'Alice clicks the newly created document to enter the editor', async () => {
+        const card = await page.$('[data-testid^="document-card-"]');
+        if (card) {
+          await card.click();
+          await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(() => {});
+          await page.waitForTimeout(800);
+        }
       });
       await step('alice-in-editor', 'Alice lands in the document editor', async () => {
         await page.waitForTimeout(800);
@@ -985,32 +1013,44 @@ const JOURNEYS = [
 
       // --- Phase 4: Add nodes via keyboard shortcuts ---
       await step('add-llm-node-via-shortcut', 'Press keyboard shortcut 2 to add an LLM node', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
         await page.keyboard.press('2');
         await page.waitForTimeout(600);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-transform-node', 'Press 3 to add a Transform node', async () => {
         await page.keyboard.press('3');
         await page.waitForTimeout(600);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-condition-node', 'Press 4 to add a Condition node', async () => {
         await page.keyboard.press('4');
         await page.waitForTimeout(600);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-action-node', 'Press 7 to add an Action node', async () => {
         await page.keyboard.press('7');
         await page.waitForTimeout(600);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
 
       // --- Phase 5: Auto-arrange and config panel ---
-      await step('auto-arrange-nodes', 'Click auto-arrange to organize 5 nodes in columns', async () => {
-        await page.keyboard.press('Escape');
+      await step('auto-arrange-nodes', 'Click auto-arrange to organize the nodes on the canvas', async () => {
         await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(500);
       });
-      await step('click-llm-node', 'Tab through nodes and press Enter to select one for config', async () => {
-        await page.keyboard.press('Tab');
-        await page.keyboard.press('Tab');
-        await page.keyboard.press('Enter');
+      await step('click-llm-node', 'Click the LLM node on the canvas to open its config panel', async () => {
+        const node = await page.$('[data-testid="canvas-node-llm"], [data-node-type="llm"], [data-testid*="node"][data-testid*="llm"]');
+        if (node) { await node.click(); }
+        else {
+          const nodes = await page.$('[data-testid^="canvas-node-"]');
+          if (nodes.length > 1) await nodes[1].click();
+        }
         await page.waitForTimeout(800);
       });
       await step('see-config-panel', 'See the right-side config panel with Config / Runs / Docs tabs', async () => {
@@ -1186,28 +1226,40 @@ const JOURNEYS = [
 
       // --- Phase 12: Add 6 node types to second pipeline ---
       await step('add-llm-to-second', 'Add an LLM node via shortcut 2', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
         await page.keyboard.press('2');
         await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-transform-to-second', 'Add a Transform node via shortcut 3', async () => {
         await page.keyboard.press('3');
         await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-fork-to-second', 'Add a Fork node via shortcut 5', async () => {
         await page.keyboard.press('5');
         await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-join-to-second', 'Add a Join node via shortcut 6', async () => {
         await page.keyboard.press('6');
         await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
       });
       await step('add-approval-to-second', 'Add an Approval node via shortcut 8', async () => {
         await page.keyboard.press('8');
         await page.waitForTimeout(500);
-      });
-      await step('deselect-before-arrange', 'Press Escape to dismiss any config panel', async () => {
         await page.keyboard.press('Escape');
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(200);
+      });
+      await step('auto-arrange-second', 'Auto-arrange the second pipeline nodes', async () => {
+        await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
+        await page.waitForTimeout(500);
       });
 
       // --- Phase 13: Pending approvals ---
