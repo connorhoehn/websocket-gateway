@@ -11,6 +11,8 @@
 
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
+import multer from 'multer';
+import { parse } from 'csv-parse/sync';
 import { documentTypeRepo, typedDocumentRepo } from '../repositories';
 import type {
   TypedDocumentItem,
@@ -265,3 +267,125 @@ typedDocumentsRouter.get('/:documentId', asyncHandler(async (req: Request, res: 
   if (!item) throw new NotFoundError(`typed document ${params.documentId} not found`);
   res.status(200).json(item);
 }));
+
+// Phase 51 Phase G — bulk CSV import
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+typedDocumentsRouter.post(
+  '/bulk-import',
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : '';
+    if (!typeId) throw new ValidationError('typeId query parameter is required');
+
+    const type = await documentTypeRepo.get(typeId);
+    if (!type) throw new NotFoundError(`document type ${typeId} not found`);
+
+    if (!req.file) throw new ValidationError('CSV file is required (upload as multipart/form-data with field name "file")');
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    let rows: Record<string, string>[];
+    try {
+      rows = parse(csvContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      }) as Record<string, string>[];
+    } catch (e) {
+      throw new ValidationError(`CSV parse error: ${(e as Error).message}`);
+    }
+
+    if (rows.length === 0) {
+      return res.status(200).json({ imported: 0, failed: 0, errors: [] });
+    }
+
+    // Map CSV column headers to fieldIds. Accept either the field name or the fieldId itself.
+    const fieldMap = new Map<string, DocumentTypeFieldItem>();
+    for (const field of type.fields) {
+      fieldMap.set(field.fieldId, field);
+      fieldMap.set(field.name, field);
+    }
+
+    const now = new Date().toISOString();
+    const results: { imported: number; failed: number; errors: Array<{ row: number; reason: string }> } = {
+      imported: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2; // CSV row numbering starts at 1, header is row 1, data starts at row 2
+
+      try {
+        // Convert CSV row to values object keyed by fieldId
+        const rawValues: Record<string, unknown> = {};
+        for (const [csvKey, csvValue] of Object.entries(row)) {
+          const field = fieldMap.get(csvKey);
+          if (!field) {
+            // Unknown column — skip silently (allows extra columns for notes/metadata)
+            continue;
+          }
+
+          // Coerce CSV string to the expected type
+          let coerced: unknown;
+          if (field.cardinality === 'unlimited') {
+            // Multi-value: split on semicolon
+            const parts = csvValue.split(';').map((s) => s.trim()).filter((s) => s.length > 0);
+            if (field.fieldType === 'number') {
+              coerced = parts.map((p) => {
+                const n = Number(p);
+                if (!Number.isFinite(n)) throw new Error(`"${p}" is not a valid number`);
+                return n;
+              });
+            } else {
+              coerced = parts;
+            }
+          } else {
+            // Single value
+            if (field.fieldType === 'number') {
+              const n = Number(csvValue);
+              if (!Number.isFinite(n)) throw new Error(`"${csvValue}" is not a valid number`);
+              coerced = n;
+            } else if (field.fieldType === 'boolean') {
+              const lower = csvValue.toLowerCase();
+              if (lower === 'true' || lower === '1' || lower === 'yes') {
+                coerced = true;
+              } else if (lower === 'false' || lower === '0' || lower === 'no' || lower === '') {
+                coerced = false;
+              } else {
+                throw new Error(`"${csvValue}" is not a valid boolean (use true/false, yes/no, 1/0)`);
+              }
+            } else {
+              coerced = csvValue;
+            }
+          }
+
+          rawValues[field.fieldId] = coerced;
+        }
+
+        // Validate against schema (reuses the same logic as POST /api/typed-documents)
+        const values = validateValuesAgainstSchema(type.fields, rawValues);
+        await assertReferencesExist(type.fields, values);
+
+        const item: TypedDocumentItem = {
+          documentId: randomUUID(),
+          typeId,
+          values,
+          createdBy: req.user!.sub,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await typedDocumentRepo.create(item);
+        results.imported++;
+      } catch (e) {
+        results.failed++;
+        results.errors.push({
+          row: rowNum,
+          reason: (e as Error).message,
+        });
+      }
+    }
+
+    res.status(200).json(results);
+  }),
+);

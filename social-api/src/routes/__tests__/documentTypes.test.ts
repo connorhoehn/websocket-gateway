@@ -881,3 +881,249 @@ describe('Phase A end-to-end loop', () => {
     expect(list.items[0].documentId).toBe(doc.documentId);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase G — JSON Schema export + bulk CSV import
+// ---------------------------------------------------------------------------
+
+describe('Phase G — JSON Schema export', () => {
+  beforeEach(() => {
+    typeStore['type-g'] = {
+      typeId: 'type-g',
+      name: 'Product',
+      description: 'A product catalog entry',
+      fields: [
+        { fieldId: 'f-sku',   name: 'SKU',         fieldType: 'text',    widget: 'text_field',   cardinality: 1, required: true,  helpText: 'Unique identifier',
+          validation: { regex: '^[A-Z]{3}-\\d{3}$' } },
+        { fieldId: 'f-price', name: 'Price',       fieldType: 'number',  widget: 'number_input', cardinality: 1, required: true,  helpText: '',
+          validation: { min: 0 } },
+        { fieldId: 'f-date',  name: 'Launch Date', fieldType: 'date',    widget: 'date_picker',  cardinality: 1, required: false, helpText: '' },
+        { fieldId: 'f-tags',  name: 'Tags',        fieldType: 'text',    widget: 'text_field',   cardinality: 'unlimited', required: false, helpText: '' },
+      ],
+    };
+  });
+
+  test('GET /:typeId/schema 200 with valid JSON Schema draft-07', async () => {
+    const res = await run(buildApp(), 'GET', '/api/document-types/type-g/schema');
+    expect(res.statusCode).toBe(200);
+    const schema = res.body as Record<string, unknown>;
+    expect(schema.$schema).toBe('http://json-schema.org/draft-07/schema#');
+    expect(schema.title).toBe('Product');
+    expect(schema.description).toBe('A product catalog entry');
+    expect(schema.type).toBe('object');
+    const properties = schema.properties as Record<string, Record<string, unknown>>;
+    expect(properties['f-sku'].type).toBe('string');
+    expect(properties['f-sku'].pattern).toBe('^[A-Z]{3}-\\d{3}$');
+    expect(properties['f-price'].type).toBe('number');
+    expect(properties['f-price'].minimum).toBe(0);
+    expect(properties['f-date'].type).toBe('string');
+    expect(properties['f-date'].format).toBe('date');
+    const tagsSchema = properties['f-tags'] as Record<string, unknown>;
+    expect(tagsSchema.type).toBe('array');
+    expect((tagsSchema.items as Record<string, unknown>).type).toBe('string');
+    expect(schema.required).toEqual(['f-sku', 'f-price']);
+  });
+
+  test('GET /:typeId/schema 404 for nonexistent type', async () => {
+    const res = await run(buildApp(), 'GET', '/api/document-types/missing/schema');
+    expect(res.statusCode).toBe(404);
+  });
+
+  test('GET /:typeId/schema maps enum field to JSON Schema enum', async () => {
+    typeStore['type-enum'] = {
+      typeId: 'type-enum', name: 'WithEnum', fields: [
+        { fieldId: 'f-status', name: 'Status', fieldType: 'enum', widget: 'select', cardinality: 1, required: true, helpText: '', options: ['draft', 'published'] },
+      ],
+    };
+    const res = await run(buildApp(), 'GET', '/api/document-types/type-enum/schema');
+    expect(res.statusCode).toBe(200);
+    const properties = (res.body as Record<string, unknown>).properties as Record<string, Record<string, unknown>>;
+    expect(properties['f-status'].enum).toEqual(['draft', 'published']);
+  });
+
+  test('GET /:typeId/schema omits required array if no required fields without showWhen', async () => {
+    typeStore['type-optional'] = {
+      typeId: 'type-optional', name: 'AllOptional', fields: [
+        { fieldId: 'f-a', name: 'A', fieldType: 'text', widget: 'text_field', cardinality: 1, required: false, helpText: '' },
+        { fieldId: 'f-b', name: 'B', fieldType: 'text', widget: 'text_field', cardinality: 1, required: true, helpText: '',
+          showWhen: { fieldId: 'f-a', equals: 'yes' } },
+      ],
+    };
+    const res = await run(buildApp(), 'GET', '/api/document-types/type-optional/schema');
+    expect(res.statusCode).toBe(200);
+    const schema = res.body as Record<string, unknown>;
+    expect(schema.required).toBeUndefined();
+  });
+});
+
+describe('Phase G — bulk CSV import', () => {
+  beforeEach(() => {
+    typeStore['type-csv'] = {
+      typeId: 'type-csv',
+      name: 'Contact',
+      fields: [
+        { fieldId: 'f-name',  name: 'Name',  fieldType: 'text',   widget: 'text_field',   cardinality: 1,           required: true,  helpText: '' },
+        { fieldId: 'f-email', name: 'Email', fieldType: 'text',   widget: 'text_field',   cardinality: 1,           required: true,  helpText: '' },
+        { fieldId: 'f-age',   name: 'Age',   fieldType: 'number', widget: 'number_input', cardinality: 1,           required: false, helpText: '' },
+        { fieldId: 'f-tags',  name: 'Tags',  fieldType: 'text',   widget: 'text_field',   cardinality: 'unlimited', required: false, helpText: '' },
+      ],
+    };
+  });
+
+  async function postCSV(app: express.Express, typeId: string, csv: string): Promise<MockRes> {
+    const buffer = Buffer.from(csv, 'utf-8');
+    const res = mockRes();
+    const req = {
+      method: 'POST',
+      url: `/api/typed-documents/bulk-import?typeId=${typeId}`,
+      originalUrl: `/api/typed-documents/bulk-import?typeId=${typeId}`,
+      path: '/api/typed-documents/bulk-import',
+      headers: { 'content-type': 'multipart/form-data' },
+      query: { typeId },
+      body: {},
+      file: { buffer, fieldname: 'file', originalname: 'test.csv', encoding: '7bit', mimetype: 'text/csv', size: buffer.length },
+      user: { sub: 'importer' },
+      ip: '127.0.0.1',
+    } as unknown as Request;
+    await new Promise<void>((resolve, reject) => {
+      const finalHandler = (err?: unknown): void => {
+        if (err) { reject(err); return; }
+        if (!res.ended) { res.status(404).json({ error: 'route not found' }); }
+        resolve();
+      };
+      (app as unknown as (req: Request, res: Response, next: NextFunction) => void)(
+        req, res as unknown as Response, finalHandler,
+      );
+      res.finished.then(() => resolve()).catch(reject);
+    });
+    return res;
+  }
+
+  test('POST /bulk-import 200 with imported=2, failed=0 for valid CSV', async () => {
+    const csv = `Name,Email,Age
+Alice,alice@example.com,30
+Bob,bob@example.com,25`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { imported: number; failed: number; errors: unknown[] };
+    expect(body.imported).toBe(2);
+    expect(body.failed).toBe(0);
+    expect(body.errors).toHaveLength(0);
+    expect(Object.keys(docStore)).toHaveLength(2);
+  });
+
+  test('POST /bulk-import uses fieldId from CSV header if provided', async () => {
+    const csv = `f-name,f-email
+Charlie,charlie@example.com`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { imported: number };
+    expect(body.imported).toBe(1);
+  });
+
+  test('POST /bulk-import coerces numbers from CSV strings', async () => {
+    const csv = `Name,Email,Age
+Dave,dave@example.com,40`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const docs = Object.values(docStore);
+    expect((docs[0].values as Record<string, unknown>)['f-age']).toBe(40);
+  });
+
+  test('POST /bulk-import splits multi-value fields on semicolon', async () => {
+    const csv = `Name,Email,Tags
+Eve,eve@example.com,developer;opensource;remote`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const docs = Object.values(docStore);
+    expect((docs[0].values as Record<string, unknown>)['f-tags']).toEqual(['developer', 'opensource', 'remote']);
+  });
+
+  test('POST /bulk-import reports partial success: 1 imported, 1 failed', async () => {
+    const csv = `Name,Email,Age
+Frank,frank@example.com,50
+,missing-name@example.com,30`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { imported: number; failed: number; errors: { row: number; reason: string }[] };
+    expect(body.imported).toBe(1);
+    expect(body.failed).toBe(1);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0].row).toBe(3);
+    expect(body.errors[0].reason).toContain('required');
+  });
+
+  test('POST /bulk-import 400 when typeId missing', async () => {
+    const buffer = Buffer.from('Name\nGrace', 'utf-8');
+    const res = mockRes();
+    const req = {
+      method: 'POST',
+      url: '/api/typed-documents/bulk-import',
+      originalUrl: '/api/typed-documents/bulk-import',
+      path: '/api/typed-documents/bulk-import',
+      headers: { 'content-type': 'multipart/form-data' },
+      query: {},
+      body: {},
+      file: { buffer, fieldname: 'file', originalname: 'test.csv', encoding: '7bit', mimetype: 'text/csv', size: buffer.length },
+      user: { sub: 'importer' },
+      ip: '127.0.0.1',
+    } as unknown as Request;
+    const app = buildApp();
+    await new Promise<void>((resolve, reject) => {
+      const finalHandler = (err?: unknown): void => {
+        if (err) { reject(err); return; }
+        if (!res.ended) { res.status(404).json({ error: 'route not found' }); }
+        resolve();
+      };
+      (app as unknown as (req: Request, res: Response, next: NextFunction) => void)(
+        req, res as unknown as Response, finalHandler,
+      );
+      res.finished.then(() => resolve()).catch(reject);
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST /bulk-import 400 when file missing', async () => {
+    const res = mockRes();
+    const req = {
+      method: 'POST',
+      url: '/api/typed-documents/bulk-import?typeId=type-csv',
+      originalUrl: '/api/typed-documents/bulk-import?typeId=type-csv',
+      path: '/api/typed-documents/bulk-import',
+      headers: { 'content-type': 'multipart/form-data' },
+      query: { typeId: 'type-csv' },
+      body: {},
+      user: { sub: 'importer' },
+      ip: '127.0.0.1',
+    } as unknown as Request;
+    const app = buildApp();
+    await new Promise<void>((resolve, reject) => {
+      const finalHandler = (err?: unknown): void => {
+        if (err) { reject(err); return; }
+        if (!res.ended) { res.status(404).json({ error: 'route not found' }); }
+        resolve();
+      };
+      (app as unknown as (req: Request, res: Response, next: NextFunction) => void)(
+        req, res as unknown as Response, finalHandler,
+      );
+      res.finished.then(() => resolve()).catch(reject);
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST /bulk-import 400 for malformed CSV', async () => {
+    const csv = `Name,Email
+"Unclosed quote`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('POST /bulk-import 200 with imported=0 for empty CSV (header only)', async () => {
+    const csv = `Name,Email`;
+    const res = await postCSV(buildApp(), 'type-csv', csv);
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { imported: number; failed: number };
+    expect(body.imported).toBe(0);
+    expect(body.failed).toBe(0);
+  });
+});

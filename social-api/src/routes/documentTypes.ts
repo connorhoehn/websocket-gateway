@@ -265,3 +265,105 @@ documentTypesRouter.delete('/:typeId', asyncHandler(async (req: Request, res: Re
   await documentTypeRepo.delete(params.typeId);
   res.status(204).end();
 }));
+
+// Phase 51 Phase G — JSON Schema export
+documentTypesRouter.get('/:typeId/schema', asyncHandler(async (req: Request, res: Response) => {
+  const params = req.params as { typeId: string };
+  const item = await documentTypeRepo.get(params.typeId);
+  if (!item) throw new NotFoundError(`document type ${params.typeId} not found`);
+
+  // Generate JSON Schema draft-07 representation of the document type
+  const schema: Record<string, unknown> = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    $id: `#/document-types/${item.typeId}`,
+    title: item.name,
+    description: item.description || undefined,
+    type: 'object',
+    properties: {} as Record<string, unknown>,
+    required: [] as string[],
+  };
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const field of item.fields) {
+    const propSchema: Record<string, unknown> = {
+      title: field.name,
+      description: field.helpText || undefined,
+    };
+
+    // Map field type to JSON Schema type
+    switch (field.fieldType) {
+      case 'text':
+      case 'long_text':
+      case 'enum':
+      case 'reference':
+        propSchema.type = 'string';
+        break;
+      case 'number':
+        propSchema.type = 'number';
+        break;
+      case 'date':
+        propSchema.type = 'string';
+        propSchema.format = 'date';
+        break;
+      case 'boolean':
+        propSchema.type = 'boolean';
+        break;
+    }
+
+    // Add enum constraints
+    if (field.fieldType === 'enum' && field.options) {
+      propSchema.enum = field.options;
+    }
+
+    // Add validation constraints
+    if (field.validation) {
+      const v = field.validation;
+      if (v.min !== undefined) {
+        if (field.fieldType === 'number') {
+          propSchema.minimum = v.min;
+        } else if (field.fieldType === 'text' || field.fieldType === 'long_text') {
+          propSchema.minLength = v.min;
+        }
+      }
+      if (v.max !== undefined) {
+        if (field.fieldType === 'number') {
+          propSchema.maximum = v.max;
+        } else if (field.fieldType === 'text' || field.fieldType === 'long_text') {
+          propSchema.maxLength = v.max;
+        }
+      }
+      if (v.regex !== undefined) {
+        propSchema.pattern = v.regex;
+      }
+    }
+
+    // Handle cardinality
+    if (field.cardinality === 'unlimited') {
+      properties[field.fieldId] = {
+        type: 'array',
+        items: propSchema,
+        minItems: field.required ? 1 : 0,
+      };
+    } else {
+      properties[field.fieldId] = propSchema;
+    }
+
+    // Track required fields (respecting showWhen visibility — schema export
+    // doesn't model conditionals, so we export all fields as optional if any
+    // have showWhen; consumers must validate with the live type schema)
+    if (field.required && !field.showWhen) {
+      required.push(field.fieldId);
+    }
+  }
+
+  schema.properties = properties;
+  if (required.length > 0) {
+    schema.required = required;
+  } else {
+    delete schema.required;
+  }
+
+  res.status(200).json(schema);
+}));
