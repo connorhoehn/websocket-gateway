@@ -60,38 +60,44 @@ frontend into a working product.
   CI is intentionally disabled. Cloud apply is operator-only.
 - **Don't add multi-tenant scaffolding.** Single-tenant is the
   contract today.
-- **Phase 50 is hardened; Phase 51 is now active.** Polish work on
-  Phase 50 surfaces is fine but no longer takes priority over Phase 51
-  feature progression.
+- **Phase 50 is hardened; Phase 51 Phases A–E are shipped.** Polish
+  work on shipped surfaces is fine but Phase 51 Phase F/G progression
+  and new backlog items take priority.
 - **Don't push half-done state to main.** Tests must be green
   (gateway + social-api + frontend) before push.
 
 ## Current phase
 
-**Phase 51: Document Types & Fields.** Phase A shipped at SHA `42b27d8`
-(hub#48):
-- DDB-backed `DocumentTypeRepository` + `TypedDocumentRepository`
-- `/api/document-types` CRUD and `/api/typed-documents` create/get/list
-  with schema-aware validation
-- React `TypedDocumentForm` auto-generates inputs from a schema; new
-  `TypedDocumentsPage` lists types and renders instances
+**Phase 51: Document Types & Fields.** Phases A through E shipped:
+- **Phase A** (hub#48, SHA `42b27d8`): DDB-backed repos, CRUD routes,
+  `TypedDocumentForm` auto-form, `TypedDocumentsPage`.
+- **Phase A.5**: `useDocumentTypes` dual-writes to server when
+  `idToken` is present; localStorage remains authoritative.
+- **Phase B**: `number`, `date`, `boolean` field types with
+  `number_input`, `date_picker`, `checkbox` widgets.
+- **Phase C**: `enum` (select from options) + `reference` (pick from
+  another typed-document) field types with async validation.
+- **Phase D**: per-field `validation` (min/max/regex/requireTrue) +
+  `showWhen` conditional visibility; enforced client + server.
+- **Phase E**: `displayModes` per field (full/teaser/list); mode
+  picker on `TypedDocumentsPage`.
 - Phase decomposition lives at `.planning/PHASE-51-DOCUMENT-TYPES.md`
 
 Phase 50 is shipped + hardened (operator preview/redrive UX, error
 taxonomy, route-level test coverage all closed by self-driven hub#43,
 #44, #46). Phase 50 polish backlog is empty.
 
-Tests green: gateway 372 / social-api 239 / frontend 919.
+Tests green: gateway 372 / social-api 297 / frontend 994.
 
 ## Phase north-star
 
 Phase 51 lets tenant admins define document shapes (types) and end-users
-create instances against those shapes — without engineering. Phase A
-(shipped) demonstrates the pattern with text + long_text fields. The
-"done" state for Phase 51: a tenant admin can model a real document
-shape (10+ fields, mixed types, references, taxonomy) end-to-end via
-the UI, instances persist server-side, and the operator can monitor
-schema usage from the dashboard.
+create instances against those shapes — without engineering. Phases A–E
+are shipped: the UI supports 5 primitive types (text, long_text, number,
+date, boolean) plus enum and reference fields, with validation rules,
+conditional visibility, and display modes. The remaining "done" state
+for Phase 51: Phase F (bridge decision — do typed documents subsume CRDT
+docs?) and Phase G (bulk ops + JSON Schema export).
 
 ## Self-driven backlog (in priority order, ranked)
 
@@ -99,30 +105,16 @@ When the dispatched queue is empty AND no unread handoffs are open,
 draw from these ranked items. Each item must still satisfy the
 "Good-enhancement criteria" below before being claimed.
 
-1. **Phase 51 Phase B**: more field types — `number`, `date`, `boolean`
-   with appropriate widgets. Same auto-form pattern; same DDB shape.
-   ~150 LOC.
-2. **Phase 51 Phase A.5**: unify the type-creation surface. Today the
-   existing localStorage-backed wizard and the new server-backed
-   `/api/document-types` live in parallel. Wire the wizard's save path
-   to dual-write (local + server) so creating a type is server-primary
-   without breaking the 37 existing wizard tests. ~80 LOC.
-3. **Phase 51 Phase C**: reference / taxonomy / enum fields — schema
-   gains a "select from another typed document" or "select from a
-   controlled vocabulary" affordance. ~200 LOC.
-4. **Phase 51 Phase D**: validation rules (min/max, regex, conditional
-   show-when). Schema gains optional `validation: { ... }` per field;
-   form enforces client-side; route enforces server-side. ~150 LOC.
-5. **Phase 51 Phase E**: display modes (full / teaser / list). Admin
-   picks which fields show in each render context. ~150 LOC.
-6. **Phase 51 Phase F**: bridge decision — do typed documents subsume
+1. **Phase 51 Phase F**: bridge decision — do typed documents subsume
    the existing CRDT documents, or remain parallel? Operator-input
    needed; file as a planning task with options before code. ~planning
    only.
-7. **Phase 51 Phase G**: bulk operations + JSON Schema export.
-   Lower priority; defer until Phases B-E ship and the schema model
-   has stabilized. ~250 LOC.
-8. **Pipeline / Phase 50 leftovers** (carry-over):
+2. **Phase 51 Phase G**: bulk operations + JSON Schema export.
+   Phases B–E have shipped and the schema model is stable. ~250 LOC.
+3. **distributed-core v0.14.0 adoption**: surface-narrowing release;
+   no gateway breakage confirmed. Pin bump from v0.11.0 is safe but
+   not urgent. Adopt deliberately as a standalone task.
+4. **Pipeline / Phase 50 leftovers** (carry-over):
    - `T2 IdempotentProducer` adoption — only if duplicate-trigger
      incidents are observed. Don't pre-adopt.
    - `T6 ConsumerGroup` adoption — only if multi-node trigger fires.

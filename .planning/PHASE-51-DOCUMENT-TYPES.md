@@ -1,7 +1,7 @@
 # Phase 51 — Document Types & Fields (Drupal Fields-UI / Webforms style)
 
-**Status:** Phase A in progress (hub#48). Phases B–G filed as follow-ups
-once A lands.
+**Status:** Phases A through E shipped. Phase F (bridge decision) and
+Phase G (bulk ops + JSON Schema export) remain.
 
 ## North star
 
@@ -150,13 +150,14 @@ and revisit once the schema model has shipped.
 
 | Phase | Title                                          | Demo at end of phase                                                              |
 |-------|------------------------------------------------|-----------------------------------------------------------------------------------|
-| A     | Server-side persistence + minimal auto-form    | Admin creates type ("Article" with `title`/`body`); end-user fills form; persists |
-| B     | More field types: number, date, boolean        | Same flow with the four primitive field types                                     |
-| C     | Reference / taxonomy / enum fields             | Field that picks from another typed-document or a controlled vocabulary           |
-| D     | Validation rules + required/conditional logic  | Required + min/max + regex + show-this-field-when                                 |
-| E     | Display modes (full / teaser / list)           | Admin picks which fields show in each render context                              |
-| F     | Bridge to CRDT documents (decision phase)      | Decide: do typed documents subsume CRDT docs, OR do they remain parallel?         |
-| G     | Bulk import/export, JSON Schema export         | Admin exports a type as JSON Schema; bulk-import instances from CSV               |
+| A     | Server-side persistence + minimal auto-form    | Admin creates type ("Article" with `title`/`body`); end-user fills form; persists | **SHIPPED** |
+| A.5   | Wizard dual-write to server                    | Wizard saves sync to `/api/document-types` when authenticated                     | **SHIPPED** |
+| B     | More field types: number, date, boolean        | Same flow with the four primitive field types                                     | **SHIPPED** |
+| C     | Reference / taxonomy / enum fields             | Field that picks from another typed-document or a controlled vocabulary           | **SHIPPED** |
+| D     | Validation rules + required/conditional logic  | Required + min/max + regex + show-this-field-when                                 | **SHIPPED** |
+| E     | Display modes (full / teaser / list)           | Admin picks which fields show in each render context                              | **SHIPPED** |
+| F     | Bridge to CRDT documents (decision phase)      | Decide: do typed documents subsume CRDT docs, OR do they remain parallel?         |             |
+| G     | Bulk import/export, JSON Schema export         | Admin exports a type as JSON Schema; bulk-import instances from CSV               |             |
 
 This list is the menu, not a commitment. Phases B–G get filed as
 separate hub tasks. Each is bounded; none is more than ~300 LOC.
@@ -198,7 +199,7 @@ separate hub tasks. Each is bounded; none is more than ~300 LOC.
   - Best-effort sync of `useDocumentTypes` saves to the new server
     endpoint (NON-blocking — localStorage stays primary so the 37
     existing wizard tests are unaffected).
-- Test totals stay green: gateway 372 / social-api 223+ / frontend 913+.
+- Test totals stay green: gateway 372 / social-api 297 / frontend 994.
 - Constitution edit submitted via handoff to orchestrator (NOT
   silently committed).
 
