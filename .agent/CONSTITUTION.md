@@ -87,7 +87,7 @@ Phase 50 is shipped + hardened (operator preview/redrive UX, error
 taxonomy, route-level test coverage all closed by self-driven hub#43,
 #44, #46). Phase 50 polish backlog is empty.
 
-Tests green: gateway 372 / social-api 297 / frontend 994.
+Tests green: gateway 372 / social-api 359 / frontend 1006.
 
 ## Phase north-star
 
