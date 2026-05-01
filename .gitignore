@@ -124,3 +124,7 @@ samconfig.toml
 # Allow assets folder for documentation
 !assets/
 !assets/**
+
+# agent-hub shard transients
+.agent-hub/*.db-wal
+.agent-hub/*.db-shm
