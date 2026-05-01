@@ -144,6 +144,12 @@ export interface BootstrapOptions {
   identityFile?: string;
   registryWalFilePath?: string;
   /**
+   * Pipeline run persistence repository. When provided, bootstrap subscribes
+   * to pipeline:run:* events and persists run state to DDB. Optional —
+   * defaults to undefined (run persistence disabled).
+   */
+  pipelineRunRepository?: import('../repositories/PipelineRunRepository').PipelineRunRepository;
+  /**
    * Registry mode override. When set, takes precedence over the env-var
    * resolver in `resolveRegistryMode()`. Tests use this to opt into the
    * 'raft' branch without monkey-patching `process.env`.
@@ -667,6 +673,50 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   runQueueSubIds.push(eventBus.subscribe('pipeline:run:failed', async () => {
     runQueueMetrics.recordFailed();
   }));
+
+  // Pipeline run persistence: when pipelineRunRepository is provided, subscribe
+  // to pipeline:run:* events and persist state transitions to DDB. Fire-and-forget
+  // — persistence failures are logged but do not block event handlers.
+  const runRepo = opts.pipelineRunRepository;
+  if (runRepo) {
+    runQueueSubIds.push(eventBus.subscribe('pipeline:run:started', async (event: BusEvent<{
+      runId: string;
+      pipelineId: string;
+      triggeredBy: { triggerType: string; payload?: unknown };
+      at: string;
+    }>) => {
+      const payload = event.payload;
+      const now = new Date().toISOString();
+      const ttl = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60; // 90 days
+      await runRepo.create({
+        pipelineId: payload.pipelineId,
+        runId: payload.runId,
+        userId: (payload.triggeredBy?.payload as { userId?: string })?.userId ?? 'system',
+        status: 'running',
+        triggeredAt: payload.at,
+        startedAt: payload.at,
+        updatedAt: now,
+        triggerPayload: payload.triggeredBy?.payload,
+        triggeredBy: payload.triggeredBy as { userId: string; triggerType: string } | undefined,
+        ttl,
+      }).catch((err: unknown) => {
+        console.error('[pipeline] run persistence failed (started)', { runId: payload.runId, err });
+      });
+    }));
+    runQueueSubIds.push(eventBus.subscribe('pipeline:run:completed', async (event: BusEvent<{
+      runId: string;
+      durationMs: number;
+      at: string;
+    }>) => {
+      // Query all runs to find pipelineId (DDB requires both keys).
+      // In production, the bridge or Raft state machine should carry pipelineId in the event.
+      // For now, this is a Phase 1 best-effort implementation.
+      console.warn('[pipeline] run:completed persistence requires pipelineId lookup — not implemented in Phase 1');
+    }));
+    runQueueSubIds.push(eventBus.subscribe('pipeline:run:failed', async (event: BusEvent<unknown>) => {
+      console.warn('[pipeline] run:failed persistence requires pipelineId lookup — not implemented in Phase 1');
+    }));
+  }
 
   // T9 (lib-expansion-3): construct the bus-event DLQ and assign into the
   // dlqRef captured by the handler above. RedriveSink re-publishes via the

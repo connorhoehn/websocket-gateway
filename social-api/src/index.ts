@@ -10,6 +10,8 @@ import { pipelineDefinitionsCache } from './pipeline/definitions-cache';
 import { setPipelineBridge } from './routes/pipelineTriggers';
 import { bootstrapPipeline } from './pipeline/bootstrap';
 import { createBridge } from './pipeline/createBridge';
+import { PipelineRunRepository } from './repositories/PipelineRunRepository';
+import { docClient } from './lib/aws-clients';
 
 const port = process.env.PORT ?? '3001';
 
@@ -32,11 +34,19 @@ const server = app.listen(Number(port), () => {
 
 let pipelineShutdown: (() => Promise<void>) | null = null;
 
-bootstrapPipeline()
+// Pipeline run persistence — wire PipelineRunRepository into bootstrap so run
+// state is persisted to DDB. Opt-in via PIPELINE_RUN_PERSISTENCE_ENABLED=true.
+const runPersistenceEnabled =
+  (process.env.PIPELINE_RUN_PERSISTENCE_ENABLED ?? 'false').trim().toLowerCase() === 'true';
+const pipelineRunRepository = runPersistenceEnabled
+  ? new PipelineRunRepository(docClient)
+  : undefined;
+
+bootstrapPipeline({ pipelineRunRepository })
   .then(({ module, nodeId, dlq, shutdown }) => {
     pipelineShutdown = shutdown;
     setPipelineBridge(createBridge(module, dlq));
-    console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId}`);
+    console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId} (run persistence: ${runPersistenceEnabled ? 'enabled' : 'disabled'})`);
   })
   .catch((err: unknown) => {
     console.error('[social-api] PipelineModule bootstrap failed (continuing with stub paths):', err);

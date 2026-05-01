@@ -40,6 +40,9 @@ export {
   DocumentTypeFieldKind,
   DocumentTypeFieldWidget,
   DocumentTypeFieldCardinality,
+  DocumentTypeFieldValidation,
+  DocumentTypeFieldShowWhen,
+  DocumentTypeFieldDisplayModes,
 } from './DocumentTypeRepository';
 export {
   TypedDocumentRepository,
