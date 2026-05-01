@@ -83,7 +83,7 @@ frontend into a working product.
 
 Phase 50 shipped + hardened. Phase 51 shipped + stable + UI complete.
 
-Tests green: gateway 372 / social-api 456 / frontend 1006.
+Tests green: gateway 372 / social-api 590 / frontend 1006.
 
 ## Self-driven backlog (in priority order, ranked)
 
