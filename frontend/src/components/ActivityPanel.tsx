@@ -37,7 +37,9 @@ interface GatewayMessage {
 // Constants
 // ---------------------------------------------------------------------------
 
-const SOCIAL_API_URL = (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
+function getBaseUrl(): string {
+  return (import.meta.env as Record<string, string>).VITE_SOCIAL_API_URL ?? '';
+}
 
 const MAX_ITEMS = 50;
 
@@ -150,13 +152,14 @@ function useActivityFeed({
 
   // 1. Hydrate from REST on mount
   useEffect(() => {
-    if (!idToken || !SOCIAL_API_URL) return;
+    const baseUrl = getBaseUrl();
+    if (!idToken || !baseUrl) return;
     let cancelled = false;
     // Set loading synchronously before the async fetch — this is intentional
     // to show a loading indicator immediately on mount/token change.
     setLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     setError(null); // eslint-disable-line react-hooks/set-state-in-effect
-    fetch(`${SOCIAL_API_URL}/api/activity?limit=20`, {
+    fetch(`${baseUrl}/api/activity?limit=20`, {
       headers: { Authorization: `Bearer ${idToken}` },
     })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
