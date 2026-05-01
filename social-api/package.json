@@ -2,7 +2,7 @@
   "name": "social-api",
   "version": "0.1.0",
   "scripts": {
-    "dev": "COGNITO_REGION=us-east-1 COGNITO_USER_POOL_ID=us-east-1_localdev000 SKIP_AUTH=true LOCALSTACK_ENDPOINT=http://localhost:8000 AWS_REGION=us-east-1 ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "COGNITO_REGION=us-east-1 COGNITO_USER_POOL_ID=us-east-1_localdev000 SKIP_AUTH=true LOCALSTACK_ENDPOINT=http://localhost:8000 REDIS_ENDPOINT=localhost AWS_REGION=us-east-1 ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest"
