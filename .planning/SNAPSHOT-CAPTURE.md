@@ -8,16 +8,28 @@ gateway's key UI surfaces and writes them under
 Output lives **outside** this repo so screenshots don't bloat git
 history.
 
+## Modes
+
+The Tiltfile auto-detects which of two modes to run in:
+
+- **standalone** (default) — Tilt deploys redis + dynamodb-local pods
+  alongside the gateway. Self-contained.
+- **shared** — Tilt picks this up automatically when
+  `$AGENT_HUB_ROOT/.shared-services.json` exists. Skips deploying the
+  redis + dynamodb pods (the chart renders ExternalName aliases
+  pointing at the host) and consumes the host-side shared stack.
+  Multiple project agents can share one DDB-local + Redis-local
+  without port collisions.
+
 ## Quick start
 
-The dev stack is managed by [Tilt](https://tilt.dev) (per orchestrator
-handoff #35) — one canonical local-dev path, no parallel docker-compose.
-The Tiltfile at the repo root brings up gateway + social-api +
-DynamoDB-local + Redis-local + a frontend dev server.
-
 ```bash
-# 1. Bring up the full local stack via Tilt.
-#    (Requires colima or another local k8s context — see Tiltfile header.)
+# 0. (shared mode only — skip if you don't have an agent-hub orchestrator)
+#    Bring up the shared local-services stack ONCE for all projects.
+$AGENT_HUB_ROOT/scripts/start-shared-services.sh
+
+# 1. Bring up gateway. Tilt picks up shared mode automatically when
+#    $AGENT_HUB_ROOT/.shared-services.json exists; otherwise standalone.
 tilt up
 
 # 2. Once Tilt reports "All resources ready", seed deterministic
@@ -29,6 +41,8 @@ node scripts/snapshot-capture.mjs
 
 # 4. Tear the stack down when you're done.
 tilt down
+# (Shared services persist across `tilt down`. Stop them separately
+#  with $AGENT_HUB_ROOT/scripts/stop-shared-services.sh.)
 ```
 
 Expected runtime for step 3: **~30–45 s** (12 page captures + 4

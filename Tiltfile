@@ -1,8 +1,27 @@
 # WebSocket Gateway - Local K8s Development with Tilt
 # Usage: colima start --kubernetes && tilt up
+#
+# Two modes (auto-detected):
+#   * standalone — Tilt deploys redis + dynamodb-local pods alongside
+#     the gateway. Self-contained; nothing else needs to be running.
+#   * shared    — Tilt picks up values-shared-local.yaml when
+#     $AGENT_HUB_ROOT/.shared-services.json exists. Skips deploying
+#     the redis + dynamodb pods (the chart renders ExternalName
+#     aliases instead — see hub#99) and consumes the host-side stack
+#     started by `$AGENT_HUB_ROOT/scripts/start-shared-services.sh`.
+#     Operator brings shared services up FIRST, then `tilt up`.
 
 # --- Configuration ---
 allow_k8s_contexts('colima')
+
+# --- Shared-services auto-detect ---
+HUB_ROOT = os.getenv('AGENT_HUB_ROOT', '')
+SHARED_STATE_FILE = HUB_ROOT + '/.shared-services.json' if HUB_ROOT else ''
+SHARED_MODE = bool(HUB_ROOT) and os.path.exists(SHARED_STATE_FILE)
+if SHARED_MODE:
+    print('[tilt] shared-services mode (state file: ' + SHARED_STATE_FILE + ')')
+else:
+    print('[tilt] standalone mode (no AGENT_HUB_ROOT/.shared-services.json detected)')
 
 # --- Build gateway Docker image ---
 docker_build(
@@ -46,31 +65,46 @@ docker_build(
 )
 
 # --- Deploy Helm chart ---
+HELM_VALUES = []
+if SHARED_MODE:
+    HELM_VALUES.append('k8s/helm/websocket-gateway/values-shared-local.yaml')
+
 k8s_yaml(helm(
     'k8s/helm/websocket-gateway',
     name='wsg',
-    values=['k8s/helm/websocket-gateway/values-local.yaml'],
+    values=HELM_VALUES,
 ))
 
 # --- Resource configuration ---
-# Resource names match Helm deployment names: {release}-{chart}-{component}
+# Resource names match Helm deployment names: {release}-{chart}-{component}.
+# In shared mode the redis + dynamodb workloads aren't deployed (the chart
+# renders ExternalName aliases instead), so neither k8s_resource nor
+# resource_deps reference them — host-side ports already serve those
+# endpoints, and the gateway pod still resolves the same service names
+# via the in-cluster ExternalName entries.
+if SHARED_MODE:
+    GATEWAY_DEPS = []
+else:
+    GATEWAY_DEPS = ['wsg-websocket-gateway-redis', 'wsg-websocket-gateway-dynamodb']
+
 k8s_resource('wsg-websocket-gateway-gateway',
     port_forwards=['8080:8080'],
     labels=['app'],
-    resource_deps=['wsg-websocket-gateway-redis', 'wsg-websocket-gateway-dynamodb'],
+    resource_deps=GATEWAY_DEPS,
 )
-k8s_resource('wsg-websocket-gateway-redis',
-    port_forwards=['6379:6379'],
-    labels=['infra'],
-)
-k8s_resource('wsg-websocket-gateway-dynamodb',
-    port_forwards=['8000:8000'],
-    labels=['infra'],
-)
+if not SHARED_MODE:
+    k8s_resource('wsg-websocket-gateway-redis',
+        port_forwards=['6379:6379'],
+        labels=['infra'],
+    )
+    k8s_resource('wsg-websocket-gateway-dynamodb',
+        port_forwards=['8000:8000'],
+        labels=['infra'],
+    )
 k8s_resource('wsg-websocket-gateway-social-api',
     port_forwards=['3001:3001'],
     labels=['app'],
-    resource_deps=['wsg-websocket-gateway-redis', 'wsg-websocket-gateway-dynamodb'],
+    resource_deps=GATEWAY_DEPS,
 )
 
 # --- Frontend dev server (runs locally, not in K8s) ---
@@ -178,6 +212,7 @@ local_resource(
 
         echo "All tables ready"
     ''',
-    resource_deps=['wsg-websocket-gateway-dynamodb'],
+    env={'DDB_TABLE_PREFIX': 'gateway_'} if SHARED_MODE else {},
+    resource_deps=[] if SHARED_MODE else ['wsg-websocket-gateway-dynamodb'],
     labels=['setup'],
 )

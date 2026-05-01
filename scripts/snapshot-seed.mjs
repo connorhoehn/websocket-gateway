@@ -12,6 +12,21 @@ import {
   DynamoDBDocumentClient,
   PutCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { existsSync } from 'node:fs';
+
+// Shared-services precondition: when AGENT_HUB_ROOT is set, the host-side
+// shared DDB stack must be running before seeding. Failing fast here saves
+// the operator a confusing "connection refused" stack trace later.
+if (process.env.AGENT_HUB_ROOT) {
+  const stateFile = `${process.env.AGENT_HUB_ROOT}/.shared-services.json`;
+  if (!existsSync(stateFile)) {
+    console.error('[seed] ERROR: AGENT_HUB_ROOT is set but shared services are not running.');
+    console.error(`[seed]        Expected state file at: ${stateFile}`);
+    console.error('[seed]        Start them first:');
+    console.error(`[seed]          ${process.env.AGENT_HUB_ROOT}/scripts/start-shared-services.sh`);
+    process.exit(1);
+  }
+}
 
 const ENDPOINT = process.env.LOCALSTACK_ENDPOINT ?? 'http://localhost:8000';
 const REGION = process.env.AWS_REGION ?? 'us-east-1';
