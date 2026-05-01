@@ -340,6 +340,102 @@ describe('POST /api/typed-documents', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('rejects values as array with 400', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-1', values: [1, 2, 3] },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects values as null with 400', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-1', values: null },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects empty string for required text field', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-1', values: { 'f-name': '' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('accepts long_text field type', async () => {
+    const longText = { fieldId: 'f-bio', name: 'Bio', fieldType: 'long_text', cardinality: 1, required: false };
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-lt', fields: [longText] });
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-lt', values: { 'f-bio': 'A long biography...' } },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects boolean with unlimited cardinality', async () => {
+    const multiBool = { fieldId: 'f-flags', name: 'Flags', fieldType: 'boolean', cardinality: 'unlimited', required: false };
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-mb', fields: [multiBool] });
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-mb', values: { 'f-flags': [true, false] } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects required multi-value field with empty array', async () => {
+    const reqMulti = { ...MULTI_TEXT, required: true };
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-rm', fields: [reqMulti] });
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-rm', values: { 'f-tags': [] } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('applies validation rules — string max length', async () => {
+    const maxField = { ...TEXT_FIELD, validation: { max: 5 } };
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-v', fields: [maxField] });
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-v', values: { 'f-name': 'toolong' } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('accepts empty reference field when not required', async () => {
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-r', fields: [REF_FIELD] });
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-r', values: {} },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('validates multi-value reference array', async () => {
+    const multiRef = { ...REF_FIELD, cardinality: 'unlimited' };
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-mr', fields: [multiRef] });
+    mockTypedDocGet
+      .mockResolvedValueOnce({ documentId: 'doc-1', typeId: 'type-parent' })
+      .mockResolvedValueOnce(null);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-mr', values: { 'f-parent': ['doc-1', 'doc-missing'] } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects NaN for number field', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-1', values: { 'f-name': 'Alice', 'f-age': NaN } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects Infinity for number field', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const res = await run(buildApp(), 'POST', '/api/typed-documents', {
+      body: { typeId: 'type-1', values: { 'f-name': 'Alice', 'f-age': Infinity } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe('GET /api/typed-documents', () => {
