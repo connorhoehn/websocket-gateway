@@ -195,3 +195,150 @@ describe('applyImport', () => {
     );
   });
 });
+
+describe('applyImport — performance with large datasets', () => {
+  const mockCreateSection = jest.fn();
+  const mockGetSections = jest.fn();
+  const mockCreateItem = jest.fn();
+
+  const deps = {
+    sectionRepo: {
+      createSection: mockCreateSection,
+      getSectionsForDocument: mockGetSections,
+    },
+    itemRepo: { createItem: mockCreateItem },
+  };
+
+  beforeEach(() => {
+    mockCreateSection.mockReset();
+    mockGetSections.mockReset();
+    mockCreateItem.mockReset();
+    mockGetSections.mockResolvedValue([]);
+  });
+
+  function generateLargeParsedDataset(sectionCount: number, itemsPerSection: number): ParsedSection[] {
+    const sections: ParsedSection[] = [];
+    for (let i = 0; i < sectionCount; i++) {
+      const items = [];
+      for (let j = 0; j < itemsPerSection; j++) {
+        items.push({
+          text: `Item ${i}-${j}: sample text for validation`,
+          status: j % 3 === 0 ? 'done' : 'open',
+          ...(j % 5 === 0 ? { assignee: `user-${j % 10}` } : {}),
+          ...(j % 7 === 0 ? { priority: ['low', 'medium', 'high'][j % 3] } : {}),
+          ...(j % 11 === 0 ? { dueDate: `2026-${String((j % 12) + 1).padStart(2, '0')}-15` } : {}),
+        });
+      }
+      sections.push({
+        title: `Section ${i}`,
+        type: ['text', 'checklist', 'progress'][i % 3],
+        items,
+      });
+    }
+    return sections;
+  }
+
+  it('completes 1000-row import in under 5 seconds', async () => {
+    mockCreateSection.mockImplementation(async (data) => ({
+      sectionId: `sec-${data.title}`,
+    }));
+    mockCreateItem.mockResolvedValue(undefined);
+
+    // 20 sections × 50 items = 1000 total items
+    const parsed = generateLargeParsedDataset(20, 50);
+    expect(parsed.reduce((sum, s) => sum + s.items.length, 0)).toBe(1000);
+
+    const startTime = Date.now();
+    const result = await applyImport('perf-doc', parsed, deps);
+    const elapsed = Date.now() - startTime;
+
+    expect(result.sectionsCreated).toBe(20);
+    expect(result.itemsCreated).toBe(1000);
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('handles 1000-row import with varied field types', async () => {
+    mockCreateSection.mockImplementation(async (data) => ({
+      sectionId: `sec-${data.title}`,
+    }));
+    mockCreateItem.mockResolvedValue(undefined);
+
+    const parsed = generateLargeParsedDataset(25, 40);
+    const result = await applyImport('perf-doc-2', parsed, deps);
+
+    expect(result.itemsCreated).toBe(1000);
+    // Verify mock was called with optional fields distributed correctly
+    const calls = mockCreateItem.mock.calls;
+    const withAssignee = calls.filter((c) => c[0].assignee).length;
+    const withPriority = calls.filter((c) => c[0].priority).length;
+    const withDueDate = calls.filter((c) => c[0].dueDate).length;
+    expect(withAssignee).toBeGreaterThan(0);
+    expect(withPriority).toBeGreaterThan(0);
+    expect(withDueDate).toBeGreaterThan(0);
+  });
+
+  it('handles partial failure — 50% validation errors during bulk import', async () => {
+    let sectionCallCount = 0;
+    mockCreateSection.mockImplementation(async (data) => ({
+      sectionId: `sec-${data.title}`,
+    }));
+
+    // Fail every other item creation to simulate validation errors
+    let itemCallCount = 0;
+    mockCreateItem.mockImplementation(async () => {
+      itemCallCount++;
+      if (itemCallCount % 2 === 0) {
+        throw new ValidationError('simulated validation failure');
+      }
+    });
+
+    const parsed = generateLargeParsedDataset(10, 100); // 1000 items
+    let thrownError: unknown = null;
+
+    try {
+      await applyImport('partial-fail-doc', parsed, deps);
+    } catch (err) {
+      thrownError = err;
+    }
+
+    // applyImport does NOT catch per-item errors — it fails fast
+    expect(thrownError).toBeInstanceOf(ValidationError);
+    expect((thrownError as ValidationError).message).toMatch(/simulated validation/);
+
+    // First section's first item succeeded, second item failed → stopped there
+    expect(mockCreateSection).toHaveBeenCalledTimes(1);
+    expect(mockCreateItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('measures memory stability for 2000-row import', async () => {
+    mockCreateSection.mockImplementation(async (data) => ({
+      sectionId: `sec-${data.title}`,
+    }));
+    mockCreateItem.mockResolvedValue(undefined);
+
+    const memBefore = process.memoryUsage().heapUsed;
+    const parsed = generateLargeParsedDataset(40, 50); // 2000 items
+    const result = await applyImport('mem-doc', parsed, deps);
+    const memAfter = process.memoryUsage().heapUsed;
+
+    expect(result.itemsCreated).toBe(2000);
+
+    // Memory delta should be < 50MB for 2000 in-memory mock calls
+    const deltaMB = (memAfter - memBefore) / (1024 * 1024);
+    expect(deltaMB).toBeLessThan(50);
+  });
+
+  it('handles empty items in large section without error', async () => {
+    mockCreateSection.mockResolvedValue({ sectionId: 'sec-empty' });
+    mockCreateItem.mockResolvedValue(undefined);
+
+    const parsed: ParsedSection[] = [
+      { title: 'Empty Section', items: [] },
+      ...generateLargeParsedDataset(10, 100),
+    ];
+
+    const result = await applyImport('mixed-doc', parsed, deps);
+    expect(result.sectionsCreated).toBe(11);
+    expect(result.itemsCreated).toBe(1000);
+  });
+});
