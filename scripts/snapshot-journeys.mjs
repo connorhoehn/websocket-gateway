@@ -126,6 +126,16 @@ async function stitchScreenshots(leftPath, rightPath, outputPath, leftLabel, rig
 // screenshots of two browser contexts.
 // ---------------------------------------------------------------------------
 
+async function clickIfExists(page, selector) {
+  const el = await page.$(selector);
+  if (el) await el.click();
+}
+
+async function fillIfExists(page, selector, value) {
+  const el = await page.$(selector);
+  if (el) { await el.click(); await el.fill(value); }
+}
+
 function makeStepRecorder(page, runDir, recordedSteps) {
   let idx = 0;
 
@@ -897,33 +907,49 @@ const JOURNEYS = [
   },
 
   // =========================================================================
-  // Journey 5: Pipeline Create, Configure, and Run
-  //   Create a pipeline from blank, add nodes, save, trigger a run, and
-  //   observe the runs page.
-  //   ~22 steps.
+  // Journey 5: Pipeline Create, Configure, and Run (75+ steps)
+  //   Comprehensive pipeline journey: templates, canvas editor, node palette,
+  //   config panel, execution log, runs page, stats page, observability.
   // =========================================================================
   {
     slug: 'pipeline-create-configure-run',
-    title: 'Create a pipeline, configure nodes, and trigger a run',
-    description: 'Operator creates a new pipeline from blank, names it, opens the canvas editor, and explores the pipeline runs page with search and range filtering.',
+    title: 'Comprehensive pipeline journey — templates to observability',
+    description: 'Operator browses templates, creates from blank, explores canvas editor with node palette and keyboard shortcuts, config panel tabs, execution log, overflow menu, simulator, version diff, runs page with all filters, stats page KPIs, second pipeline, pending approvals, and full observability dashboard.',
     async run(page, step) {
+      // --- Phase 1: Pipeline list & templates ---
       await step('land-on-pipelines', 'Navigate to /pipelines', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(800);
       });
-      await step('see-pipeline-list', 'See the pipelines list (empty or populated)', async () => {
+      await step('see-pipeline-list-page', 'See the pipelines list page with header and filter bar', async () => {
         await page.waitForTimeout(400);
       });
-      await step('open-new-pipeline-modal', 'Click the new-pipeline trigger', async () => {
+      await step('open-templates-modal', 'Click Templates to browse prebuilt pipeline templates', async () => {
+        const tpl = await page.$('button:has-text("Templates"), button:has-text("Browse Templates"), [data-testid="templates-btn"]');
+        if (tpl) { await tpl.click(); await page.waitForTimeout(600); }
+      });
+      await step('see-templates-grid', 'See the template gallery with searchable card grid', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('search-templates', 'Type a search term in the templates search box', async () => {
+        await fillIfExists(page, '[data-testid="templates-search"]', 'review');
+        await page.waitForTimeout(300);
+      });
+      await step('close-templates', 'Close the templates modal', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      });
+
+      // --- Phase 2: Create pipeline from blank ---
+      await step('open-new-pipeline-modal', 'Click the new-pipeline trigger to create from blank', async () => {
         const launcher = await page.$('button:has-text("New Pipeline"), button:has-text("+ New"), button:has-text("Blank")');
         if (launcher) {
           await launcher.click();
-          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 });
+          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 }).catch(() => {});
         }
       });
       await step('name-the-pipeline', 'Name it "Content Review Pipeline"', async () => {
-        const input = await page.$('[data-testid="new-pipeline-name"]');
-        if (input) await input.fill('Content Review Pipeline');
+        await fillIfExists(page, '[data-testid="new-pipeline-name"]', 'Content Review Pipeline');
       });
       await step('create-pipeline', 'Click Create to land in the canvas editor', async () => {
         const confirm = await page.$('[data-testid="new-pipeline-confirm"]');
@@ -935,79 +961,216 @@ const JOURNEYS = [
           ]).catch(() => {});
         }
       });
-      await step('see-canvas-editor', 'See the pipeline canvas editor', async () => {
+      await step('see-canvas-editor', 'See the pipeline canvas editor with left palette and center canvas', async () => {
         await page.waitForTimeout(800);
       });
 
-      // --- Explore the editor ---
-      await step('see-trigger-node', 'See the default trigger node on the canvas', async () => {
-        await page.waitForTimeout(400);
+      // --- Phase 3: Explore node palette ---
+      await step('see-node-palette', 'See the left node palette with available node types', async () => {
+        await page.waitForTimeout(300);
       });
-      await step('explore-node-palette', 'Look at available node types in the palette', async () => {
-        // Try to find a node palette / add-node button
-        const addNode = await page.$('button:has-text("Add Node"), button:has-text("+ Node"), [data-testid="add-node"]');
-        if (addNode) await addNode.click();
+      await step('see-trigger-node-on-canvas', 'See the default trigger node on the canvas', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('search-palette', 'Type in the palette search to filter node types', async () => {
+        const search = await page.$('[data-testid="palette-search"], [data-testid="node-search"]');
+        if (search) { await search.click(); await search.fill('transform'); }
+        await page.waitForTimeout(300);
+      });
+      await step('clear-palette-search', 'Clear the palette search to see all node types again', async () => {
+        const search = await page.$('[data-testid="palette-search"], [data-testid="node-search"]');
+        if (search) await search.fill('');
+        await page.waitForTimeout(200);
+      });
+
+      // --- Phase 4: Add nodes via keyboard shortcuts ---
+      await step('add-llm-node-via-shortcut', 'Press keyboard shortcut 2 to add an LLM node', async () => {
+        await page.keyboard.press('2');
         await page.waitForTimeout(600);
       });
-      await step('see-editor-toolbar', 'See the editor toolbar and controls', async () => {
+      await step('add-transform-node', 'Press 3 to add a Transform node', async () => {
+        await page.keyboard.press('3');
+        await page.waitForTimeout(600);
+      });
+      await step('add-condition-node', 'Press 4 to add a Condition node', async () => {
+        await page.keyboard.press('4');
+        await page.waitForTimeout(600);
+      });
+      await step('add-action-node', 'Press 7 to add an Action node', async () => {
+        await page.keyboard.press('7');
+        await page.waitForTimeout(600);
+      });
+
+      // --- Phase 5: Auto-arrange and config panel ---
+      await step('auto-arrange-nodes', 'Click auto-arrange to organize 5 nodes in columns', async () => {
+        await page.keyboard.press('Escape');
+        await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
+        await page.waitForTimeout(300);
+      });
+      await step('click-llm-node', 'Tab through nodes and press Enter to select one for config', async () => {
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(800);
+      });
+      await step('see-config-panel', 'See the right-side config panel with Config / Runs / Docs tabs', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('click-docs-tab', 'Click the Docs tab to see node type documentation', async () => {
+        const docsTab = await page.$('[data-testid="config-tab-docs"], button:has-text("Docs")');
+        if (docsTab) await docsTab.click();
+        await page.waitForTimeout(300);
+      });
+      await step('click-config-tab', 'Click back to the Config tab', async () => {
+        const configTab = await page.$('[data-testid="config-tab-config"], button:has-text("Config")');
+        if (configTab) await configTab.click();
+        await page.waitForTimeout(300);
+      });
+      await step('deselect-node', 'Press Escape to deselect the node and close the config panel', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      });
+
+      // --- Phase 6: Execution log ---
+      await step('expand-execution-log', 'Click the chevron to expand the collapsed execution log', async () => {
+        const chevron = await page.$('[data-testid="execution-log-toggle"], [data-testid="exec-log-chevron"]');
+        if (chevron) await chevron.click();
+        await page.waitForTimeout(400);
+      });
+      await step('click-fullscreen-log', 'Click the fullscreen button on the execution log', async () => {
+        await clickIfExists(page, '[data-testid="execution-log-fullscreen-btn"]');
+        await page.waitForTimeout(200);
+      });
+      await step('close-fullscreen-log', 'Close the fullscreen execution log', async () => {
+        await clickIfExists(page, '[data-testid="execution-log-fullscreen-close"]');
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      });
+
+      // --- Phase 7: Rename & overflow menu ---
+      await step('click-pipeline-name', 'Click the pipeline name to rename it', async () => {
+        await clickIfExists(page, '[data-testid="pipeline-name"]');
+        await page.waitForTimeout(200);
+      });
+      await step('rename-pipeline', 'Rename to "Content Review Pipeline v2"', async () => {
+        const nameInput = await page.$('[data-testid="pipeline-name-input"], [data-testid="pipeline-name"] input');
+        if (nameInput) {
+          await nameInput.fill('Content Review Pipeline v2');
+          await page.keyboard.press('Enter');
+        }
+        await page.waitForTimeout(300);
+      });
+      await step('open-overflow-menu', 'Click the overflow menu button', async () => {
+        await clickIfExists(page, '[data-testid="overflow-menu-btn"]');
+        await page.waitForTimeout(200);
+      });
+      await step('close-overflow-menu', 'See Duplicate/Export/Publish/Delete options then close', async () => {
+        await page.keyboard.press('Escape');
         await page.waitForTimeout(400);
       });
 
-      // Capture the pipeline ID from the URL for the runs page.
+      // --- Phase 8: Validation, simulator, versions ---
+      await step('click-validation-indicator', 'Click the validation indicator to see any warnings', async () => {
+        await clickIfExists(page, '[data-testid="validation-indicator"]');
+        await page.waitForTimeout(200);
+      });
+      await step('click-sim-panel', 'Open the simulator panel if available', async () => {
+        await clickIfExists(page, '[data-testid="sim-panel-open"]');
+        await page.waitForTimeout(200);
+      });
+      await step('see-sim-panel', 'See the simulator panel for testing with mock data', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('click-versions', 'Click version history button', async () => {
+        await clickIfExists(page, '[data-testid="view-versions-btn"]');
+        await page.waitForTimeout(200);
+      });
+      await step('close-versions', 'Close the version diff view', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(400);
+      });
+
+      // Capture pipeline ID for runs/stats pages
       const pipelineUrl = page.url();
       const pipelineId = pipelineUrl.split('/pipelines/')[1]?.split(/[?#/]/)[0] ?? 'unknown';
 
-      // --- Navigate to runs page ---
+      // --- Phase 9: Runs page with all filters ---
       await step('go-to-runs-page', 'Navigate to the pipeline runs page', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines/${pipelineId}/runs`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(800);
       });
-      await step('see-runs-empty-state', 'See the runs page (empty — no runs yet)', async () => {
-        await page.waitForTimeout(400);
+      await step('type-in-runs-search', 'See the runs page and type a search query', async () => {
+        await fillIfExists(page, '[data-testid="runs-search-input"]', 'content review');
+        await page.waitForTimeout(200);
       });
-      await step('type-in-search', 'Type a search query in the runs search box', async () => {
-        const input = await page.$('[data-testid="runs-search-input"]');
-        if (input) await input.fill('content review');
-        await page.waitForTimeout(300);
+      await step('click-status-chip-completed', 'Click the completed status filter chip', async () => {
+        await clickIfExists(page, '[data-testid="runs-status-chip-completed"]');
+        await page.waitForTimeout(200);
       });
-      await step('click-range-24h', 'Click the 24h range pill', async () => {
-        const btn = await page.$('[data-testid="runs-range-24h"]');
-        if (btn) await btn.click();
-        await page.waitForTimeout(300);
+      await step('click-status-chip-failed', 'Click the failed status filter chip', async () => {
+        await clickIfExists(page, '[data-testid="runs-status-chip-failed"]');
+        await page.waitForTimeout(200);
       });
-      await step('click-range-7d', 'Click the 7d range pill', async () => {
-        const btn = await page.$('[data-testid="runs-range-7d"]');
-        if (btn) await btn.click();
-        await page.waitForTimeout(300);
+      await step('click-trigger-chip-manual', 'Click the manual trigger type filter chip', async () => {
+        await clickIfExists(page, '[data-testid="runs-trigger-chip-manual"]');
+        await page.waitForTimeout(200);
+      });
+      await step('click-range-24h', 'Click the 24h date range pill', async () => {
+        await clickIfExists(page, '[data-testid="runs-range-24h"]');
+        await page.waitForTimeout(200);
+      });
+      await step('click-range-7d', 'Click the 7d date range pill', async () => {
+        await clickIfExists(page, '[data-testid="runs-range-7d"]');
+        await page.waitForTimeout(200);
+      });
+      await step('click-range-30d', 'Click the 30d date range pill', async () => {
+        await clickIfExists(page, '[data-testid="runs-range-30d"]');
+        await page.waitForTimeout(200);
       });
       await step('click-range-all', 'Click All to show all runs', async () => {
-        const btn = await page.$('[data-testid="runs-range-all"]');
-        if (btn) await btn.click();
-        await page.waitForTimeout(300);
+        await clickIfExists(page, '[data-testid="runs-range-all"]');
+        await page.waitForTimeout(200);
       });
 
-      // --- Go back to pipeline list ---
+      // --- Phase 10: Stats page ---
+      await step('go-to-stats-page', 'Navigate to the pipeline stats page', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines/${pipelineId}/stats`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-stats-kpi-row', 'See the KPI row: total runs, success rate, median duration, cost', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('scroll-to-charts', 'Scroll down to see cost/duration/token trend charts', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 400, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+      await step('see-cost-by-node-chart', 'See the cost-by-node breakdown chart', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('scroll-to-failure-breakdown', 'Scroll to failure breakdown and cost trend', async () => {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+
+      // --- Phase 11: Back to list, second pipeline ---
       await step('back-to-pipeline-list', 'Navigate back to /pipelines', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(800);
       });
-      await step('see-pipeline-in-list', 'See "Content Review Pipeline" in the list', async () => {
+      await step('see-first-pipeline-in-list', 'See Content Review Pipeline v2 in the list', async () => {
         await page.waitForTimeout(400);
       });
-
-      // --- Create a second pipeline ---
-      await step('create-second-pipeline', 'Create a second pipeline for comparison', async () => {
+      await step('create-second-pipeline', 'Click new pipeline button', async () => {
         const launcher = await page.$('button:has-text("New Pipeline"), button:has-text("+ New"), button:has-text("Blank")');
         if (launcher) {
           await launcher.click();
-          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 });
+          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 }).catch(() => {});
         }
       });
       await step('name-second-pipeline', 'Name it "Data Ingestion Pipeline"', async () => {
-        const input = await page.$('[data-testid="new-pipeline-name"]');
-        if (input) await input.fill('Data Ingestion Pipeline');
+        await fillIfExists(page, '[data-testid="new-pipeline-name"]', 'Data Ingestion Pipeline');
       });
-      await step('create-second', 'Click Create', async () => {
+      await step('create-second', 'Click Create to open the second pipeline editor', async () => {
         const confirm = await page.$('[data-testid="new-pipeline-confirm"]');
         if (confirm) {
           await confirm.click();
@@ -1017,12 +1180,111 @@ const JOURNEYS = [
           ]).catch(() => {});
         }
       });
-      await step('see-second-editor', 'See the second pipeline editor', async () => {
+      await step('see-second-editor', 'See the second pipeline editor canvas', async () => {
         await page.waitForTimeout(800);
       });
+
+      // --- Phase 12: Add 6 node types to second pipeline ---
+      await step('add-llm-to-second', 'Add an LLM node via shortcut 2', async () => {
+        await page.keyboard.press('2');
+        await page.waitForTimeout(500);
+      });
+      await step('add-transform-to-second', 'Add a Transform node via shortcut 3', async () => {
+        await page.keyboard.press('3');
+        await page.waitForTimeout(500);
+      });
+      await step('add-fork-to-second', 'Add a Fork node via shortcut 5', async () => {
+        await page.keyboard.press('5');
+        await page.waitForTimeout(500);
+      });
+      await step('add-join-to-second', 'Add a Join node via shortcut 6', async () => {
+        await page.keyboard.press('6');
+        await page.waitForTimeout(500);
+      });
+      await step('add-approval-to-second', 'Add an Approval node via shortcut 8', async () => {
+        await page.keyboard.press('8');
+        await page.waitForTimeout(500);
+      });
+      await step('deselect-before-arrange', 'Press Escape to dismiss any config panel', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      });
+
+      // --- Phase 13: Pending approvals ---
+      await step('go-to-pending-approvals', 'Navigate to /pipelines/approvals', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines/approvals`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-approvals-page', 'See the pending approvals page with count badge', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      // --- Phase 14: Observability dashboard ---
+      await step('go-to-observability-dashboard', 'Navigate to /observability', async () => {
+        await page.goto(`${FRONTEND_BASE}/observability`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-dashboard-kpi-row', 'See the KPI row: runs today, active now, pending approvals, failed 24h', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('scroll-to-cluster-health', 'Scroll to see the cluster health card with node grid', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 400, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+      await step('scroll-to-active-runs', 'Scroll to see the active runs table', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 800, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+      await step('scroll-to-recent-events', 'Scroll to see recent events and alerts panel', async () => {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+
+      // --- Phase 15: Observability sub-pages ---
+      await step('go-to-nodes-page', 'Navigate to /observability/nodes', async () => {
+        await page.goto(`${FRONTEND_BASE}/observability/nodes`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-nodes-page-layout', 'See Chaos Panel on left and node grid with status/CPU/memory', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('go-to-events-page', 'Navigate to /observability/events', async () => {
+        await page.goto(`${FRONTEND_BASE}/observability/events`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-events-list', 'See the events list with pipeline and run filter controls', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('go-to-metrics-page', 'Navigate to /observability/metrics', async () => {
+        await page.goto(`${FRONTEND_BASE}/observability/metrics`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-metrics-chart-cards', 'See the metric chart cards with time range selector', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('scroll-metrics-page', 'Scroll through the metrics charts', async () => {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+
+      // --- Phase 16: Final list with filter chips ---
       await step('back-to-list-final', 'Return to /pipelines to see both pipelines', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(800);
+      });
+      await step('see-both-pipelines', 'See both Content Review and Data Ingestion pipelines', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('click-draft-status-chip', 'Click the Draft status filter chip', async () => {
+        await clickIfExists(page, '[data-testid="status-chip-draft"]');
+        await page.waitForTimeout(200);
+      });
+      await step('click-published-status-chip', 'Click the Published status filter chip', async () => {
+        await clickIfExists(page, '[data-testid="status-chip-published"]');
+        await page.waitForTimeout(200);
+      });
+      await step('final-pipeline-list-state', 'Final state of the pipeline list with both pipelines', async () => {
+        await page.waitForTimeout(400);
       });
     },
   },
