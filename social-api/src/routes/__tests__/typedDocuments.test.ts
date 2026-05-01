@@ -372,3 +372,151 @@ describe('GET /api/typed-documents/:documentId', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bulk CSV import — multer needs real multipart, so we spin up a test server
+// ---------------------------------------------------------------------------
+import http from 'http';
+
+function buildAppWithUser(): express.Express {
+  const app = express();
+  app.use(express.json());
+  app.use((_req, _res, next) => {
+    (_req as unknown as { user: { sub: string } }).user = { sub: 'tester' };
+    next();
+  });
+  app.use('/api/typed-documents', typedDocumentsRouter);
+  app.use(errorHandler);
+  return app;
+}
+
+function multipartBody(filename: string, csv: string): { body: Buffer; boundary: string } {
+  const boundary = '----TestBoundary' + Date.now();
+  const parts = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`,
+    'Content-Type: text/csv\r\n\r\n',
+    csv,
+    `\r\n--${boundary}--\r\n`,
+  ];
+  return { body: Buffer.from(parts.join('')), boundary };
+}
+
+async function postMultipart(
+  server: http.Server,
+  path: string,
+  csv: string,
+): Promise<{ status: number; json: Record<string, unknown> }> {
+  const { body, boundary } = multipartBody('import.csv', csv);
+  const addr = server.address() as { port: number };
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { hostname: '127.0.0.1', port: addr.port, path, method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': body.length } },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        res.on('end', () => {
+          try { resolve({ status: res.statusCode!, json: JSON.parse(data) }); }
+          catch { resolve({ status: res.statusCode!, json: { raw: data } as Record<string, unknown> }); }
+        });
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+describe('POST /api/typed-documents/bulk-import', () => {
+  let server: http.Server;
+
+  beforeAll((done) => {
+    server = buildAppWithUser().listen(0, '127.0.0.1', done);
+  });
+  afterAll((done) => { server.close(done); });
+
+  it('imports valid CSV rows and returns counts', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'Name,Age\nAlice,30\nBob,25\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 2, failed: 0 });
+    expect(mockTypedDocCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps by field name (case-sensitive)', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'name,Age\nalice,30\n'; // lowercase 'name' doesn't match 'Name'
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    // 'name' is unknown, so only Age is mapped; required field f-name missing → row fails
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 0, failed: 1 });
+  });
+
+  it('reports row errors without aborting the batch', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'Name,Age\nAlice,thirty\nBob,25\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 1, failed: 1 });
+    expect((res.json as { errors: unknown[] }).errors).toHaveLength(1);
+  });
+
+  it('returns 200 with zero counts for empty CSV', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'Name,Age\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 0, failed: 0, errors: [] });
+  });
+
+  it('rejects missing typeId with 400', async () => {
+    const csv = 'Name\nAlice\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import', csv);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when type not found', async () => {
+    mockDocTypeGet.mockResolvedValue(null);
+    const csv = 'Name\nAlice\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=nope', csv);
+    expect(res.status).toBe(404);
+  });
+
+  it('coerces boolean values from CSV strings', async () => {
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-b', fields: [TEXT_FIELD, BOOL_FIELD] });
+    const csv = 'Name,Active\nAlice,yes\nBob,0\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-b', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 2, failed: 0 });
+    const call1 = mockTypedDocCreate.mock.calls[0][0];
+    const call2 = mockTypedDocCreate.mock.calls[1][0];
+    expect(call1.values['f-active']).toBe(true);
+    expect(call2.values['f-active']).toBe(false);
+  });
+
+  it('handles multi-value fields split on semicolons', async () => {
+    mockDocTypeGet.mockResolvedValue({ typeId: 'type-m', fields: [MULTI_TEXT] });
+    const csv = 'Tags\nred;green;blue\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-m', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 1, failed: 0 });
+    expect(mockTypedDocCreate.mock.calls[0][0].values['f-tags']).toEqual(['red', 'green', 'blue']);
+  });
+
+  it('skips unknown CSV columns silently', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'Name,Notes\nAlice,some note\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 1, failed: 0 });
+  });
+
+  it('validates enum values in CSV rows', async () => {
+    mockDocTypeGet.mockResolvedValue(BASIC_TYPE);
+    const csv = 'Name,Status\nAlice,deleted\n';
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-1', csv);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 0, failed: 1 });
+  });
+});
