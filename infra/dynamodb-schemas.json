@@ -178,6 +178,53 @@
       "hashKey": { "name": "documentId", "type": "S" },
       "rangeKey": { "name": "sessionId", "type": "S" },
       "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "pipeline-definitions",
+      "hashKey": { "name": "userId", "type": "S" },
+      "rangeKey": { "name": "pipelineId", "type": "S" },
+      "billing": "PAY_PER_REQUEST"
+    },
+    {
+      "tableName": "pipeline-runs",
+      "hashKey": { "name": "pipelineId", "type": "S" },
+      "rangeKey": { "name": "runId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "status-startedAt-index",
+          "hashKey": { "name": "status", "type": "S" },
+          "rangeKey": { "name": "startedAt", "type": "S" },
+          "projection": "ALL"
+        },
+        {
+          "indexName": "triggeredBy-startedAt-index",
+          "hashKey": { "name": "triggeredBy", "type": "S" },
+          "rangeKey": { "name": "startedAt", "type": "S" },
+          "projection": "ALL"
+        }
+      ],
+      "_note": "TTL attribute: ttl (epoch seconds). Set by application for auto-expiry of old runs."
+    },
+    {
+      "tableName": "document-types",
+      "hashKey": { "name": "typeId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "_note": "Phase 51 Phase A — schema definitions for typed documents. Each DocumentType describes fields, validation, and display modes. Used by auto-form generator."
+    },
+    {
+      "tableName": "typed-documents",
+      "hashKey": { "name": "documentId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "typeId-createdAt-index",
+          "hashKey": { "name": "typeId", "type": "S" },
+          "rangeKey": { "name": "createdAt", "type": "S" },
+          "projection": "ALL"
+        }
+      ],
+      "_note": "Phase 51 Phase A — instances conforming to DocumentType schemas. GSI on typeId enables efficient list-by-type queries (currently Scan fallback in code, GSI provisioned for future)."
     }
   ]
 }
