@@ -488,7 +488,7 @@ const JOURNEYS = [
         await page.waitForTimeout(800);
       });
 
-      // --- Fill in content ---
+      // --- Fill in content across ALL sections ---
       await step('type-in-body-section', 'Type content into the rich-text body section', async () => {
         const editable = await page.$('[contenteditable="true"]');
         if (editable) {
@@ -497,17 +497,100 @@ const JOURNEYS = [
           await page.waitForTimeout(400);
         }
       });
-      await step('scroll-through-sections', 'Scroll down to see all sections populated from the type', async () => {
-        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight / 2, behavior: 'smooth' }));
-        await page.waitForTimeout(600);
+
+      await step('add-first-task', 'Click "+ Add item" to create the first task', async () => {
+        const addBtn = await page.$('button:has-text("+ Add item")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const inputs = await page.$$('input[type="text"]');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            await lastInput.click();
+            await lastInput.fill('Migrate auth service to OAuth 2.1 — due Friday');
+          }
+          await page.waitForTimeout(200);
+        }
       });
-      await step('scroll-to-bottom', 'Scroll to bottom to see the full document', async () => {
-        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
-        await page.waitForTimeout(600);
+      await step('add-second-task', 'Add a second task item', async () => {
+        const addBtn = await page.$('button:has-text("+ Add item")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const inputs = await page.$$('input[type="text"]');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            await lastInput.click();
+            await lastInput.fill('Write post-mortem for the staging outage');
+          }
+          await page.waitForTimeout(200);
+        }
       });
+      await step('add-third-task', 'Add a third task item', async () => {
+        const addBtn = await page.$('button:has-text("+ Add item")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const inputs = await page.$$('input[type="text"]');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            await lastInput.click();
+            await lastInput.fill('Schedule design review with UX team');
+          }
+          await page.waitForTimeout(200);
+        }
+      });
+      await step('see-tasks-filled', 'See the task list with three items', async () => {
+        await page.waitForTimeout(300);
+      });
+
+      await step('scroll-to-decisions', 'Scroll down to the Decisions section', async () => {
+        const decisionsHeading = await page.$('text=Decisions');
+        if (decisionsHeading) {
+          await decisionsHeading.scrollIntoViewIfNeeded();
+          await page.waitForTimeout(400);
+        } else {
+          await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        }
+      });
+      await step('add-first-decision', 'Click "+ Add decision" and type the first decision', async () => {
+        const addBtn = await page.$('button:has-text("+ Add decision")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const input = await page.$('input[placeholder="Describe the decision..."]');
+          if (input) {
+            await input.click();
+            await input.fill('Adopt distributed-core v0.14.0 — approved unanimously');
+          }
+          await page.waitForTimeout(200);
+        }
+      });
+      await step('add-second-decision', 'Add a second decision', async () => {
+        const addBtn = await page.$('button:has-text("+ Add decision")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const inputs = await page.$$('input[placeholder="Describe the decision..."]');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            await lastInput.click();
+            await lastInput.fill('Defer multi-tenant support to Q4');
+          }
+          await page.waitForTimeout(200);
+        }
+      });
+      await step('see-decisions-filled', 'See the Decisions section with two entries', async () => {
+        await page.waitForTimeout(300);
+      });
+
       await step('scroll-back-to-top', 'Scroll back to the top to capture the complete view', async () => {
         await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
         await page.waitForTimeout(400);
+      });
+      await step('see-all-sections-filled', 'See the complete document with rich text, tasks, and decisions all filled', async () => {
+        await page.waitForTimeout(600);
       });
 
       // --- Switch to different view modes ---
@@ -533,6 +616,389 @@ const JOURNEYS = [
         const editorBtn = await page.$('[data-testid="mode-btn-editor"]')
           ?? await page.$('button:has-text("Editor")');
         if (editorBtn) await editorBtn.click();
+        await page.waitForTimeout(500);
+      });
+
+      // =========================================================
+      // Phase B: Multi-page document type — create, fill, render
+      // =========================================================
+
+      await step('go-to-doc-types-for-multipage', 'Navigate to /document-types to create a multi-page type', async () => {
+        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
+      });
+
+      await step('open-multipage-wizard', 'Click "+ New" to start the multi-page type wizard', async () => {
+        await page.click('[data-testid="create-type-btn"]');
+        await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
+      });
+
+      await step('name-project-brief', 'Name the type "Project Brief" with description', async () => {
+        await page.fill('[data-testid="name-input"]', 'Project Brief');
+        const desc = await page.$('[data-testid="description-input"]');
+        if (desc) await desc.fill('Multi-page project brief with overview, technical details, and decisions.');
+      });
+
+      await step('advance-to-sections', 'Click Next to advance to the Sections step', async () => {
+        await page.click('[data-testid="wizard-next"]');
+        await page.waitForSelector('[data-testid^="add-field-"]', { timeout: 8_000 });
+      });
+
+      // --- Page 1: Overview ---
+      await step('add-rich-text-overview', 'Add a Rich Text section for the project overview', async () => {
+        await clickIfExists(page, '[data-testid="add-field-rich-text"]');
+        await page.waitForTimeout(300);
+        // Rename the section
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('Project Overview');
+        }
+      });
+
+      await step('add-checklist-section', 'Add a Checklist section for key milestones', async () => {
+        await clickIfExists(page, '[data-testid="add-field-checklist"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('Key Milestones');
+        }
+      });
+
+      // --- Add Page 2 ---
+      await step('add-second-page', 'Click "+ Add Page" to create a second page', async () => {
+        await clickIfExists(page, '[data-testid="add-page"]');
+        await page.waitForTimeout(500);
+      });
+
+      await step('name-second-page', 'Name the second page "Technical Details"', async () => {
+        const pageTitles = await page.$('[data-testid^="page-title-"]');
+        if (pageTitles.length >= 2) {
+          await pageTitles[1].fill('');
+          await pageTitles[1].fill('Technical Details');
+        }
+        await page.waitForTimeout(200);
+      });
+
+      await step('add-rich-text-to-page2', 'Add a Rich Text section to the Technical Details page', async () => {
+        await clickIfExists(page, '[data-testid="add-field-rich-text"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('Architecture Notes');
+        }
+      });
+
+      await step('add-diagram-to-page2', 'Add a Diagram section for system diagrams', async () => {
+        await clickIfExists(page, '[data-testid="add-field-diagram"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('System Diagram');
+        }
+      });
+
+      // --- Add Page 3 ---
+      await step('add-third-page', 'Click "+ Add Page" to create a third page', async () => {
+        await clickIfExists(page, '[data-testid="add-page"]');
+        await page.waitForTimeout(500);
+      });
+
+      await step('name-third-page', 'Name the third page "Decisions & Sign-off"', async () => {
+        const pageTitles = await page.$('[data-testid^="page-title-"]');
+        if (pageTitles.length >= 3) {
+          await pageTitles[2].fill('');
+          await pageTitles[2].fill('Decisions & Sign-off');
+        }
+        await page.waitForTimeout(200);
+      });
+
+      await step('add-decisions-to-page3', 'Add a Decisions section to the third page', async () => {
+        await clickIfExists(page, '[data-testid="add-field-decisions"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('Key Decisions');
+        }
+      });
+
+      await step('add-tasks-to-page3', 'Add a Task List section for sign-off items', async () => {
+        await clickIfExists(page, '[data-testid="add-field-tasks"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          const last = fields[fields.length - 1];
+          await last.fill('');
+          await last.fill('Sign-off Tasks');
+        }
+      });
+
+      await step('see-three-page-wizard', 'See the wizard with 3 pages and 6 sections total', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('enable-toc', 'Enable Table of Contents for the multi-page document', async () => {
+        const tocCheckbox = await page.$('[data-testid="page-config-toc"]');
+        if (tocCheckbox) {
+          const isChecked = await tocCheckbox.isChecked();
+          if (!isChecked) await tocCheckbox.click();
+        }
+        await page.waitForTimeout(200);
+      });
+
+      // --- Save the type (advance through Step 3 → finish) ---
+      await step('save-project-brief-type', 'Advance through View Modes and save the type', async () => {
+        for (let i = 0; i < 5; i++) {
+          const next = await page.$('[data-testid="wizard-next"]');
+          if (!next) break;
+          const label = (await page.textContent('[data-testid="wizard-next"]')) ?? '';
+          await next.click();
+          if (/create type|save changes/i.test(label)) break;
+          await page.waitForTimeout(200);
+        }
+        await page.waitForSelector('[data-testid="save-message"], [data-testid="type-list"]', { timeout: 5_000 });
+      });
+
+      await step('see-project-brief-in-list', 'See "Project Brief" in the types sidebar', async () => {
+        await page.waitForFunction(
+          () => Array.from(document.querySelectorAll('[data-testid^="type-item-"]'))
+            .some(el => /project brief/i.test(el.textContent ?? '')),
+          null, { timeout: 5_000 },
+        );
+      });
+
+      // --- Create a document instance from the multi-page type ---
+      await step('go-to-documents-multipage', 'Navigate to /documents to create an instance', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+
+      await step('click-new-doc-multipage', 'Click "+ New Document"', async () => {
+        const btn = await page.$('[data-testid="new-document-btn"]')
+          ?? await page.$('button:has-text("New Document")');
+        if (btn) { await btn.click(); await page.waitForTimeout(600); }
+      });
+
+      await step('select-project-brief-type', 'Choose "Project Brief" from the type picker', async () => {
+        const options = await page.$('[data-testid^="type-option-"]');
+        for (const opt of options) {
+          const text = await opt.textContent();
+          if (/project brief/i.test(text ?? '')) { await opt.click(); break; }
+        }
+        await page.waitForTimeout(300);
+      });
+
+      await step('enter-doc-title-multipage', 'Title: "Q3 Platform Modernization Brief"', async () => {
+        await fillIfExists(page, '[data-testid="new-doc-title"]', 'Q3 Platform Modernization Brief');
+      });
+
+      await step('enter-doc-desc-multipage', 'Add description for the brief', async () => {
+        await fillIfExists(page, '[data-testid="new-doc-description"]', 'Three-page project brief covering scope, architecture, and decision log for the Q3 platform modernization initiative.');
+      });
+
+      await step('submit-multipage-doc', 'Click "Create Document" to create the instance', async () => {
+        const submit = await page.$('[data-testid="new-doc-submit"]');
+        if (submit) {
+          await submit.click();
+          await page.waitForTimeout(1_500);
+        }
+      });
+
+      await step('open-multipage-doc', 'Click the document card to enter the editor', async () => {
+        // Find the card for our new doc
+        const cards = await page.$('[data-testid^="document-card-"]');
+        for (const card of cards) {
+          const text = await card.textContent();
+          if (/platform modernization/i.test(text ?? '')) { await card.click(); break; }
+        }
+        // Fallback: click first card
+        if (cards.length > 0) {
+          await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(async () => {
+            await cards[0].click();
+            await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(() => {});
+          });
+        }
+        await page.waitForTimeout(800);
+      });
+
+      await step('see-multipage-editor', 'See the multi-page document editor with all sections', async () => {
+        await page.waitForTimeout(600);
+      });
+
+      // --- Fill in content across all pages ---
+      await step('fill-overview-section', 'Type content in the Project Overview section', async () => {
+        const editables = await page.$('[contenteditable="true"]');
+        if (editables.length > 0) {
+          await editables[0].click();
+          await page.keyboard.type('The Q3 Platform Modernization initiative aims to migrate our monolithic API to an event-driven architecture. Key drivers: horizontal scaling constraints, deployment coupling, and team autonomy. Target completion: end of Q3 with phased rollout.');
+          await page.waitForTimeout(400);
+        }
+      });
+
+      await step('add-milestone-items', 'Add checklist items for key milestones', async () => {
+        const addBtns = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+        if (addBtns.length > 0) {
+          await addBtns[0].click();
+          await page.waitForTimeout(200);
+          await page.keyboard.type('Phase 1: Service extraction (API gateway + auth) — July 15');
+          await page.waitForTimeout(150);
+
+          const addBtns2 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns2.length > 0) {
+            await addBtns2[0].click();
+            await page.waitForTimeout(200);
+            await page.keyboard.type('Phase 2: Event bus + message queue — Aug 1');
+            await page.waitForTimeout(150);
+          }
+
+          const addBtns3 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns3.length > 0) {
+            await addBtns3[0].click();
+            await page.waitForTimeout(200);
+            await page.keyboard.type('Phase 3: Data migration + cutover — Sept 15');
+          }
+          await page.waitForTimeout(300);
+        }
+      });
+
+      await step('scroll-to-architecture', 'Scroll down to the Architecture Notes section on page 2', async () => {
+        const heading = await page.$('text=Architecture Notes');
+        if (heading) {
+          await heading.scrollIntoViewIfNeeded();
+          await page.waitForTimeout(400);
+        } else {
+          await page.evaluate(() => window.scrollTo({ top: 600, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        }
+      });
+
+      await step('fill-architecture-section', 'Type architecture details', async () => {
+        const editables = await page.$('[contenteditable="true"]');
+        // Find an empty editable (architecture section) — skip the first which has overview text
+        for (const ed of editables) {
+          const text = await ed.textContent();
+          if (!text || text.trim().length === 0) {
+            await ed.click();
+            await page.keyboard.type('Architecture: API Gateway (Kong) → Event Bus (NATS JetStream) → Microservices (Go + Node.js). Each service owns its data store. CQRS pattern for read-heavy endpoints. Saga orchestrator for cross-service transactions.');
+            break;
+          }
+        }
+        await page.waitForTimeout(400);
+      });
+
+      await step('scroll-to-decisions-page', 'Scroll to the Decisions section on page 3', async () => {
+        const heading = await page.$('text=Key Decisions');
+        if (heading) {
+          await heading.scrollIntoViewIfNeeded();
+          await page.waitForTimeout(400);
+        } else {
+          await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        }
+      });
+
+      await step('add-decision-entry', 'Add a decision to the Key Decisions section', async () => {
+        const addBtn = await page.$('button:has-text("+ Add decision")');
+        if (addBtn) {
+          await addBtn.click();
+          await page.waitForTimeout(400);
+          const inputs = await page.$('[contenteditable="true"]');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            await lastInput.click();
+            await page.keyboard.type('Adopt NATS JetStream over Kafka — lower operational overhead, native Go client, sufficient throughput for our scale (< 50k msg/s).');
+          }
+          await page.waitForTimeout(200);
+        }
+      });
+
+      await step('add-signoff-task', 'Add sign-off tasks', async () => {
+        const addBtns = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+        // Find the last "Add item" button (for the sign-off tasks section)
+        if (addBtns.length > 0) {
+          const btn = addBtns[addBtns.length - 1];
+          await btn.click();
+          await page.waitForTimeout(200);
+          await page.keyboard.type('Engineering lead sign-off — @alice');
+          await page.waitForTimeout(150);
+        }
+        const addBtns2 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+        if (addBtns2.length > 0) {
+          const btn = addBtns2[addBtns2.length - 1];
+          await btn.click();
+          await page.waitForTimeout(200);
+          await page.keyboard.type('Product owner approval — @bob');
+        }
+        await page.waitForTimeout(300);
+      });
+
+      // --- Show the rendered document to end users ---
+      await step('scroll-to-top-final', 'Scroll to the top to see the full document', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        await page.waitForTimeout(600);
+      });
+
+      await step('see-full-multipage-doc-editor', 'See the complete multi-page document with all sections filled', async () => {
+        await page.waitForTimeout(500);
+      });
+
+      await step('switch-to-reader-multipage', 'Switch to Reader mode to see how end users see the document', async () => {
+        const readBtn = await page.$('[data-testid="mode-btn-reader"]')
+          ?? await page.$('button:has-text("Read")');
+        if (readBtn) await readBtn.click();
+        await page.waitForTimeout(800);
+      });
+
+      await step('see-reader-page1', 'See the rendered Page 1 with overview and milestones in reader mode', async () => {
+        await page.waitForTimeout(500);
+      });
+
+      await step('scroll-reader-to-page2', 'Scroll to see Page 2 — Architecture Notes and System Diagram', async () => {
+        const heading = await page.$('text=Architecture Notes');
+        if (heading) {
+          await heading.scrollIntoViewIfNeeded();
+        } else {
+          await page.evaluate(() => window.scrollTo({ top: 500, behavior: 'smooth' }));
+        }
+        await page.waitForTimeout(500);
+      });
+
+      await step('see-reader-page2', 'See the rendered architecture section in reader mode', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('scroll-reader-to-page3', 'Scroll to see Page 3 — Decisions and Sign-off', async () => {
+        const heading = await page.$('text=Key Decisions');
+        if (heading) {
+          await heading.scrollIntoViewIfNeeded();
+        } else {
+          await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+        }
+        await page.waitForTimeout(500);
+      });
+
+      await step('see-reader-page3', 'See the decisions and sign-off tasks rendered for the end user', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('switch-to-review-multipage', 'Switch to Review mode to show the review workflow on multi-page', async () => {
+        const reviewBtn = await page.$('[data-testid="mode-btn-ack"]')
+          ?? await page.$('button:has-text("Review")');
+        if (reviewBtn) await reviewBtn.click();
+        await page.waitForTimeout(800);
+      });
+
+      await step('see-review-multipage', 'See the multi-page document in review mode with section-level review controls', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
         await page.waitForTimeout(500);
       });
     },
@@ -1047,37 +1513,49 @@ const JOURNEYS = [
         await page.waitForTimeout(200);
       });
 
-      // --- Phase 4: Add nodes via keyboard shortcuts ---
-      await step('add-llm-node-via-shortcut', 'Press keyboard shortcut 2 to add an LLM node', async () => {
+      // --- Phase 4: Build a connected pipeline via dev bridge ---
+      await step('build-connected-pipeline', 'Use the dev bridge to insert LLM, Transform, Condition, and Action nodes at explicit positions', async () => {
         await page.keyboard.press('Escape');
         await page.waitForTimeout(200);
-        await page.keyboard.press('2');
-        await page.waitForTimeout(600);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
+        await page.evaluate(() => {
+          const bridge = window.__pipelineEditor;
+          if (!bridge) return;
+          const triggerId = bridge.findNodeIdByType('trigger');
+          const llmId = bridge.insertNode('llm', { x: 360, y: 120 });
+          const transformId = bridge.insertNode('transform', { x: 640, y: 120 });
+          const conditionId = bridge.insertNode('condition', { x: 920, y: 120 });
+          const actionOk = bridge.insertNode('action', { x: 1200, y: 40 });
+          const actionFail = bridge.insertNode('action', { x: 1200, y: 220 });
+          // Connect: trigger → llm → transform → condition → action (ok/fail)
+          if (triggerId) bridge.connect(triggerId, llmId);
+          bridge.connect(llmId, transformId);
+          bridge.connect(transformId, conditionId);
+          bridge.connect(conditionId, actionOk, { sourceHandle: 'true' });
+          bridge.connect(conditionId, actionFail, { sourceHandle: 'false' });
+          // Label the action nodes
+          bridge.updateNodeData(actionOk, { label: 'Publish Results' });
+          bridge.updateNodeData(actionFail, { label: 'Send Alert' });
+          bridge.updateNodeData(llmId, { label: 'Analyze Content' });
+          bridge.updateNodeData(transformId, { label: 'Format Output' });
+          bridge.updateNodeData(conditionId, { label: 'Quality Check' });
+        });
+        await page.waitForTimeout(800);
       });
-      await step('add-transform-node', 'Press 3 to add a Transform node', async () => {
-        await page.keyboard.press('3');
-        await page.waitForTimeout(600);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('add-condition-node', 'Press 4 to add a Condition node', async () => {
-        await page.keyboard.press('4');
-        await page.waitForTimeout(600);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('add-action-node', 'Press 7 to add an Action node', async () => {
-        await page.keyboard.press('7');
-        await page.waitForTimeout(600);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
+
+      await step('see-connected-nodes', 'See all five nodes with edges connecting them in a proper DAG', async () => {
+        await page.waitForTimeout(400);
       });
 
       // --- Phase 5: Auto-arrange and config panel ---
-      await step('auto-arrange-nodes', 'Click auto-arrange to organize the nodes on the canvas', async () => {
+      await step('auto-arrange-nodes', 'Click auto-arrange to lay out nodes in clean columns', async () => {
         await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
+        await page.waitForTimeout(600);
+        // Fit view to show the full pipeline
+        const fitBtn = await page.$('button[title="Fit view"], button[aria-label="Fit view"]');
+        if (fitBtn) { await fitBtn.click(); await page.waitForTimeout(500); }
+      });
+
+      await step('see-dag-layout', 'See the auto-arranged DAG: trigger → LLM → transform → condition → actions', async () => {
         await page.waitForTimeout(500);
       });
       await step('click-llm-node', 'Click the LLM node on the canvas to open its config panel', async () => {
@@ -1166,6 +1644,58 @@ const JOURNEYS = [
         await page.waitForTimeout(400);
       });
 
+      // --- Phase 8b: Publish and execute the pipeline ---
+      await step('publish-pipeline', 'Publish the pipeline via the overflow menu', async () => {
+        await clickIfExists(page, '[data-testid="overflow-menu-btn"]');
+        await page.waitForTimeout(400);
+        const publishItem = await page.$('button:has-text("Publish")');
+        if (publishItem) {
+          await publishItem.click();
+          await page.waitForTimeout(400);
+          // Confirm in the publish modal
+          const confirmBtn = await page.$('button:has-text("Publish")');
+          if (confirmBtn) await confirmBtn.click();
+          await page.waitForTimeout(600);
+        }
+      });
+
+      await step('see-published-badge', 'See the version badge update to "Published"', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('click-run-button', 'Click the Run button to execute the pipeline', async () => {
+        const runBtn = await page.$('[data-testid="run-button"]');
+        if (runBtn) {
+          await runBtn.click();
+          await page.waitForTimeout(2_000);
+        }
+      });
+
+      await step('see-execution-running', 'See the execution log updating with step events', async () => {
+        await page.waitForTimeout(1_500);
+      });
+
+      await step('wait-for-execution-complete', 'Wait for the pipeline execution to finish', async () => {
+        // Wait up to 10s for completion events
+        for (let i = 0; i < 10; i++) {
+          const logText = await page.textContent('[data-testid="execution-log"]').catch(() => '');
+          if (/completed|failed/i.test(logText ?? '')) break;
+          await page.waitForTimeout(1_000);
+        }
+        await page.waitForTimeout(500);
+      });
+
+      await step('see-execution-results', 'See the completed execution log with step results and edge highlights', async () => {
+        // Expand the log if collapsed
+        const toggle = await page.$('[data-testid="execution-log-toggle"], [data-testid="exec-log-chevron"]');
+        if (toggle) { await toggle.click(); await page.waitForTimeout(300); }
+        await page.waitForTimeout(500);
+      });
+
+      await step('see-node-success-states', 'See nodes highlighted green for success on the canvas', async () => {
+        await page.waitForTimeout(400);
+      });
+
       // Capture pipeline ID for runs/stats pages
       const pipelineUrl = page.url();
       const pipelineId = pipelineUrl.split('/pipelines/')[1]?.split(/[?#/]/)[0] ?? 'unknown';
@@ -1179,17 +1709,19 @@ const JOURNEYS = [
         await fillIfExists(page, '[data-testid="runs-search-input"]', 'content review');
         await page.waitForTimeout(200);
       });
-      await step('click-status-chip-completed', 'Click the completed status filter chip', async () => {
+      await step('open-status-dropdown', 'Open the Status filter dropdown and select Completed + Failed', async () => {
+        await clickIfExists(page, '[data-testid="runs-status-chip-dropdown"]');
+        await page.waitForTimeout(300);
         await clickIfExists(page, '[data-testid="runs-status-chip-completed"]');
-        await page.waitForTimeout(200);
-      });
-      await step('click-status-chip-failed', 'Click the failed status filter chip', async () => {
+        await page.waitForTimeout(150);
         await clickIfExists(page, '[data-testid="runs-status-chip-failed"]');
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(300);
       });
-      await step('click-trigger-chip-manual', 'Click the manual trigger type filter chip', async () => {
+      await step('open-trigger-dropdown', 'Open the Trigger filter dropdown and select Manual', async () => {
+        await clickIfExists(page, '[data-testid="runs-trigger-chip-dropdown"]');
+        await page.waitForTimeout(300);
         await clickIfExists(page, '[data-testid="runs-trigger-chip-manual"]');
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(300);
       });
       await step('click-range-24h', 'Click the 24h date range pill', async () => {
         await clickIfExists(page, '[data-testid="runs-range-24h"]');
@@ -1260,41 +1792,48 @@ const JOURNEYS = [
         await page.waitForTimeout(800);
       });
 
-      // --- Phase 12: Add 6 node types to second pipeline ---
-      await step('add-llm-to-second', 'Add an LLM node via shortcut 2', async () => {
+      // --- Phase 12: Build connected second pipeline via dev bridge ---
+      await step('build-second-pipeline', 'Insert and connect nodes for a data ingestion pipeline', async () => {
         await page.keyboard.press('Escape');
         await page.waitForTimeout(200);
-        await page.keyboard.press('2');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
+        await page.evaluate(() => {
+          const bridge = window.__pipelineEditor;
+          if (!bridge) return;
+          const triggerId = bridge.findNodeIdByType('trigger');
+          const llmId = bridge.insertNode('llm', { x: 360, y: 120 });
+          const forkId = bridge.insertNode('fork', { x: 640, y: 120 });
+          const transformA = bridge.insertNode('transform', { x: 920, y: 40 });
+          const transformB = bridge.insertNode('transform', { x: 920, y: 220 });
+          const joinId = bridge.insertNode('join', { x: 1200, y: 120 });
+          const approvalId = bridge.insertNode('approval', { x: 1480, y: 120 });
+          const actionId = bridge.insertNode('action', { x: 1760, y: 120 });
+          // Connect: trigger → llm → fork → [transformA, transformB] → join → approval → action
+          if (triggerId) bridge.connect(triggerId, llmId);
+          bridge.connect(llmId, forkId);
+          bridge.connect(forkId, transformA, { sourceHandle: 'branch-0' });
+          bridge.connect(forkId, transformB, { sourceHandle: 'branch-1' });
+          bridge.connect(transformA, joinId);
+          bridge.connect(transformB, joinId);
+          bridge.connect(joinId, approvalId);
+          bridge.connect(approvalId, actionId, { sourceHandle: 'approved' });
+          // Label nodes
+          bridge.updateNodeData(llmId, { label: 'Parse Input' });
+          bridge.updateNodeData(transformA, { label: 'Validate Schema' });
+          bridge.updateNodeData(transformB, { label: 'Enrich Metadata' });
+          bridge.updateNodeData(approvalId, { label: 'Review Gate' });
+          bridge.updateNodeData(actionId, { label: 'Write to Store' });
+        });
+        await page.waitForTimeout(800);
       });
-      await step('add-transform-to-second', 'Add a Transform node via shortcut 3', async () => {
-        await page.keyboard.press('3');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('add-fork-to-second', 'Add a Fork node via shortcut 5', async () => {
-        await page.keyboard.press('5');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('add-join-to-second', 'Add a Join node via shortcut 6', async () => {
-        await page.keyboard.press('6');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('add-approval-to-second', 'Add an Approval node via shortcut 8', async () => {
-        await page.keyboard.press('8');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(200);
-      });
-      await step('auto-arrange-second', 'Auto-arrange the second pipeline nodes', async () => {
+
+      await step('auto-arrange-second', 'Auto-arrange to show the fork/join DAG layout', async () => {
         await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
+        await page.waitForTimeout(600);
+        const fitBtn = await page.$('button[title="Fit view"], button[aria-label="Fit view"]');
+        if (fitBtn) { await fitBtn.click(); await page.waitForTimeout(500); }
+      });
+
+      await step('see-second-pipeline-dag', 'See the data ingestion pipeline with fork/join branches', async () => {
         await page.waitForTimeout(500);
       });
 
