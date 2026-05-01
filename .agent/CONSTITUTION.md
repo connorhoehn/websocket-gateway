@@ -68,36 +68,21 @@ frontend into a working product.
 
 ## Current phase
 
-**Phase 51: Document Types & Fields.** Phases A through E shipped:
-- **Phase A** (hub#48, SHA `42b27d8`): DDB-backed repos, CRUD routes,
-  `TypedDocumentForm` auto-form, `TypedDocumentsPage`.
-- **Phase A.5**: `useDocumentTypes` dual-writes to server when
-  `idToken` is present; localStorage remains authoritative.
-- **Phase B**: `number`, `date`, `boolean` field types with
-  `number_input`, `date_picker`, `checkbox` widgets.
-- **Phase C**: `enum` (select from options) + `reference` (pick from
-  another typed-document) field types with async validation.
-- **Phase D**: per-field `validation` (min/max/regex/requireTrue) +
-  `showWhen` conditional visibility; enforced client + server.
-- **Phase E**: `displayModes` per field (full/teaser/list); mode
-  picker on `TypedDocumentsPage`.
-- Phase decomposition lives at `.planning/PHASE-51-DOCUMENT-TYPES.md`
+**Phase 51: COMPLETE.** All phases A through G shipped (commit `4db1f34`):
+- **Phase A** (hub#48): DDB-backed repos, CRUD routes, auto-form.
+- **Phase A.5**: Wizard dual-writes to server.
+- **Phase B**: `number`, `date`, `boolean` field types.
+- **Phase C**: `enum` + `reference` field types with async validation.
+- **Phase D**: per-field validation rules + `showWhen` conditional.
+- **Phase E**: `displayModes` (full/teaser/list).
+- **Phase F** (hub#169, blocker #26): **Option B chosen** — TypedDocument
+  and Document (CRDT) remain parallel systems, no bridge.
+- **Phase G** (hub#170): JSON Schema export + bulk CSV import.
+- Phase decomposition: `.planning/PHASE-51-DOCUMENT-TYPES.md`
 
-Phase 50 is shipped + hardened (operator preview/redrive UX, error
-taxonomy, route-level test coverage all closed by self-driven hub#43,
-#44, #46). Phase 50 polish backlog is empty.
+Phase 50 shipped + hardened. Phase 51 shipped + stable.
 
 Tests green: gateway 372 / social-api 359 / frontend 1006.
-
-## Phase north-star
-
-Phase 51 lets tenant admins define document shapes (types) and end-users
-create instances against those shapes — without engineering. Phases A–E
-are shipped: the UI supports 5 primitive types (text, long_text, number,
-date, boolean) plus enum and reference fields, with validation rules,
-conditional visibility, and display modes. The remaining "done" state
-for Phase 51: Phase F (bridge decision — do typed documents subsume CRDT
-docs?) and Phase G (bulk ops + JSON Schema export).
 
 ## Self-driven backlog (in priority order, ranked)
 
@@ -105,16 +90,13 @@ When the dispatched queue is empty AND no unread handoffs are open,
 draw from these ranked items. Each item must still satisfy the
 "Good-enhancement criteria" below before being claimed.
 
-1. **Phase 51 Phase F**: bridge decision — do typed documents subsume
-   the existing CRDT documents, or remain parallel? Operator-input
-   needed; file as a planning task with options before code. ~planning
-   only.
-2. **Phase 51 Phase G**: bulk operations + JSON Schema export.
-   Phases B–E have shipped and the schema model is stable. ~250 LOC.
-3. **distributed-core v0.14.0 adoption**: surface-narrowing release;
+1. **distributed-core v0.14.0 adoption**: surface-narrowing release;
    no gateway breakage confirmed. Pin bump from v0.11.0 is safe but
-   not urgent. Adopt deliberately as a standalone task.
-4. **Pipeline / Phase 50 leftovers** (carry-over):
+   not urgent. Adopt deliberately as a standalone task. ~150 LOC.
+2. **Frontend UI for Phase G endpoints**: add "Export Schema" button to
+   DocumentTypeWizard, "Bulk Import" button to TypedDocumentsPage that
+   triggers file picker + calls POST /bulk-import. ~80 LOC.
+3. **Pipeline / Phase 50 leftovers** (carry-over):
    - `T2 IdempotentProducer` adoption — only if duplicate-trigger
      incidents are observed. Don't pre-adopt.
    - `T6 ConsumerGroup` adoption — only if multi-node trigger fires.

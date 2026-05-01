@@ -1,7 +1,7 @@
 # Phase 51 — Document Types & Fields (Drupal Fields-UI / Webforms style)
 
-**Status:** Phases A through E shipped. Phase F (bridge decision) and
-Phase G (bulk ops + JSON Schema export) remain.
+**Status:** Phases A through G **SHIPPED**. Phase F decision: Option B
+(parallel systems — typed documents and CRDT documents remain separate).
 
 ## North star
 
@@ -136,15 +136,16 @@ DDB table: **`typed-documents`** (new).
   - The pipeline state machine is for orchestration runs, not
     application data — orthogonal.
 
-### Cross-cutting decision: no link to existing CRDT documents in Phase A
+### Phase F decision: TypedDocument and Document remain separate (Option B)
 
-Existing Documents are CRDT/Yjs-backed collaborative surfaces (see
-`useDocuments`, `useYjsDoc`). TypedDocument is **a separate entity**
-in Phase A. The decision of "should TypedDocument fields delegate to
-CRDT for collaborative editing" is deferred to Phase F. Reasoning:
-each system is internally consistent today; bridging them prematurely
-risks half-working semantics in both. We get a clean cut for Phase A
-and revisit once the schema model has shipped.
+**Operator decision (via blocker #26, 2026-05-01):** TypedDocument and
+Document (CRDT/Yjs-backed) remain **parallel systems** — no bridge, no
+subsumption. Rationale: Phases A–E demonstrated that the two surfaces
+solve distinct problems (structured data collection with validation vs.
+collaborative unstructured editing). They don't overlap in current usage;
+forcing convergence would be high-cost for low immediate benefit. The two
+systems coexist: TypedDocument for intake forms / registry / taxonomy,
+Document for narrative / freeform collaborative surfaces.
 
 ## Phase decomposition
 
@@ -156,8 +157,8 @@ and revisit once the schema model has shipped.
 | C     | Reference / taxonomy / enum fields             | Field that picks from another typed-document or a controlled vocabulary           | **SHIPPED** |
 | D     | Validation rules + required/conditional logic  | Required + min/max + regex + show-this-field-when                                 | **SHIPPED** |
 | E     | Display modes (full / teaser / list)           | Admin picks which fields show in each render context                              | **SHIPPED** |
-| F     | Bridge to CRDT documents (decision phase)      | Decide: do typed documents subsume CRDT docs, OR do they remain parallel?         |             |
-| G     | Bulk import/export, JSON Schema export         | Admin exports a type as JSON Schema; bulk-import instances from CSV               |             |
+| F     | Bridge to CRDT documents (decision phase)      | Decide: do typed documents subsume CRDT docs, OR do they remain parallel?         | **SHIPPED (Option B: parallel)** |
+| G     | Bulk import/export, JSON Schema export         | Admin exports a type as JSON Schema; bulk-import instances from CSV               | **SHIPPED** |
 
 This list is the menu, not a commitment. Phases B–G get filed as
 separate hub tasks. Each is bounded; none is more than ~300 LOC.
