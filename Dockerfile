@@ -4,6 +4,7 @@ WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps
 COPY frontend/ ./
+COPY schemas/ /build/schemas/
 RUN npx vite build
 
 # Stage 2: Production server
