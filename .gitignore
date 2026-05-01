@@ -1,6 +1,7 @@
 # Compiled JavaScript files (except specific files)
 *.js
 !jest.config.js
+!social-api/jest.setup.js
 !src/**/*.js
 !test/**/*.js
 !scripts/**/*.js
