@@ -31,6 +31,10 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [displayMode, setDisplayMode] = useState<ApiDisplayMode>('full');
 
+  // Phase 51 Phase G — bulk CSV import state
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; failed: number; errors: Array<{ row: number; reason: string }> } | null>(null);
+
   // Fetch the list of document types from the backend.
   useEffect(() => {
     if (!idToken) return;
@@ -63,10 +67,39 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
 
   const selectedType = types.find((t) => t.typeId === selectedTypeId) ?? null;
 
-  const { documents, loading: docsLoading, error: docsError, createDocument } = useTypedDocuments({
+  const { documents, loading: docsLoading, error: docsError, createDocument, refresh } = useTypedDocuments({
     idToken,
     typeId: selectedTypeId,
   });
+
+  // Phase 51 Phase G — bulk CSV import handler
+  const handleBulkImport = async (file: File) => {
+    if (!idToken || !selectedTypeId) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${getBaseUrl()}/api/typed-documents/bulk-import?typeId=${encodeURIComponent(selectedTypeId)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(errorData.error || `Import failed (${res.status})`);
+      }
+      const result = await res.json() as { imported: number; failed: number; errors: Array<{ row: number; reason: string }> };
+      setImportResult(result);
+      if (result.imported > 0) {
+        refresh();
+      }
+    } catch (e) {
+      alert(`Import failed: ${(e as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   // Phase C — pre-fetch instances of any DocumentType referenced by the
   // selected type's `reference`-kind fields so the picker has a populated
@@ -176,20 +209,84 @@ export function TypedDocumentsPage({ idToken }: Props): JSX.Element {
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
                   {selectedType.name} documents ({documents.length})
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
-                  Display:
-                  <select
-                    data-testid="display-mode-picker"
-                    value={displayMode}
-                    onChange={(e) => setDisplayMode(e.target.value as ApiDisplayMode)}
-                    style={{ fontFamily: 'inherit', fontSize: 12, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff' }}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
+                    Display:
+                    <select
+                      data-testid="display-mode-picker"
+                      value={displayMode}
+                      onChange={(e) => setDisplayMode(e.target.value as ApiDisplayMode)}
+                      style={{ fontFamily: 'inherit', fontSize: 12, padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff' }}
+                    >
+                      {ALL_DISPLAY_MODES.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    style={{
+                      cursor: importing ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+                      padding: '5px 12px', borderRadius: 5,
+                      background: '#fff', color: '#646cff', border: '1px solid #646cff',
+                      opacity: importing ? 0.5 : 1,
+                    }}
                   >
-                    {ALL_DISPLAY_MODES.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
-                  </select>
-                </label>
+                    {importing ? 'Importing…' : 'Bulk Import'}
+                    <input
+                      type="file"
+                      accept=".csv"
+                      disabled={importing}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleBulkImport(file);
+                        e.target.value = '';
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
               </div>
+              {importResult && (
+                <div
+                  data-testid="import-result"
+                  style={{
+                    marginBottom: 12, padding: 12, borderRadius: 8,
+                    background: importResult.failed > 0 ? '#fef2f2' : '#f0fdf4',
+                    border: `1px solid ${importResult.failed > 0 ? '#fca5a5' : '#86efac'}`,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600, color: importResult.failed > 0 ? '#dc2626' : '#16a34a', marginBottom: 6 }}>
+                    Import {importResult.failed > 0 ? 'Partially' : 'Successfully'} Completed
+                  </div>
+                  <div style={{ fontSize: 12, color: '#0f172a' }}>
+                    {importResult.imported} imported, {importResult.failed} failed
+                  </div>
+                  {importResult.errors.length > 0 && (
+                    <details style={{ marginTop: 8, fontSize: 12 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#dc2626' }}>
+                        {importResult.errors.length} error{importResult.errors.length !== 1 ? 's' : ''}
+                      </summary>
+                      <ul style={{ margin: '6px 0 0 0', padding: '0 0 0 20px', maxHeight: 150, overflowY: 'auto' }}>
+                        {importResult.errors.map((err, i) => (
+                          <li key={i} style={{ marginTop: 4 }}>
+                            <span style={{ fontWeight: 600 }}>Row {err.row}:</span> {err.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <button
+                    onClick={() => setImportResult(null)}
+                    style={{
+                      marginTop: 8, fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                      background: 'none', border: '1px solid #cbd5e1', cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
               {docsLoading && <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading…</div>}
               {docsError && (
                 <div data-testid="documents-error" role="alert" style={{ color: '#dc2626', fontSize: 13 }}>

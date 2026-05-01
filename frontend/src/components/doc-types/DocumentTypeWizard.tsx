@@ -949,6 +949,25 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
     onSave({ name: name.trim(), description, icon, fields, pages, pageConfig });
   };
 
+  // Phase 51 Phase G — JSON Schema export
+  const handleExportSchema = async () => {
+    if (!initialType?.id) return;
+    try {
+      const res = await fetch(`/api/document-types/${initialType.id}/schema`);
+      if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
+      const schema = await res.json();
+      const blob = new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name.trim().replace(/\s+/g, '-').toLowerCase()}-schema.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Export failed: ${(e as Error).message}`);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Step indicator */}
@@ -984,9 +1003,16 @@ export function DocumentTypeWizard({ initialType, onSave, onCancel }: DocumentTy
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         paddingTop: 16, borderTop: '1px solid #e2e8f0', marginTop: 16, flexShrink: 0,
       }}>
-        <button type="button" onClick={onCancel} style={btn('ghost')}>
-          Cancel
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={onCancel} style={btn('ghost')}>
+            Cancel
+          </button>
+          {initialType?.id && (
+            <button type="button" onClick={handleExportSchema} style={btn('secondary')} title="Download JSON Schema">
+              Export Schema
+            </button>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {step > 1 && (
             <button type="button" onClick={() => setStep(s => s - 1)} style={btn('secondary')}>
