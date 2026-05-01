@@ -268,6 +268,7 @@ export default function DocumentListPage({
       >
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1e293b' }}>Documents</h1>
         <button
+          data-testid="new-document-btn"
           onClick={() => setShowModal(true)}
           style={{
             display: 'flex',

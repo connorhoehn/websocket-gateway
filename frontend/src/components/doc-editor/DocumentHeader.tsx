@@ -241,6 +241,7 @@ export default function DocumentHeader({
             <button
               key={m}
               type="button"
+              data-testid={`mode-btn-${m}`}
               style={modeBtnStyle(mode === m)}
               onClick={() => onModeChange(m)}
             >

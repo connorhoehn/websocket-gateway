@@ -311,7 +311,7 @@ export default function ParticipantAvatars({
   if (participants.length === 0) return null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+    <div data-testid="participant-avatars" style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
       <div style={rowStyle}>
         {participants.filter((p, i, arr) => arr.findIndex(x => (x.userId || x.clientId) === (p.userId || p.clientId)) === i).map((p) => (
           <AvatarItem

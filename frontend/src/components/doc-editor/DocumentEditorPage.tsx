@@ -707,7 +707,7 @@ export default function DocumentEditorPage({
   ) : null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div data-testid="document-editor-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {videoPortal}
       <DocumentHeader
         meta={headerMeta}

@@ -254,7 +254,7 @@ export default function SectionBlock({
   const [commentHovered, setCommentHovered] = useState(false);
 
   return (
-    <div id={`section-${section.id}`} style={sectionOuterStyle} onClickCapture={onFocus} onFocusCapture={onFocus}>
+    <div id={`section-${section.id}`} data-testid={`section-block-${section.id}`} style={sectionOuterStyle} onClickCapture={onFocus} onFocusCapture={onFocus}>
       {/* Comment icon button — top-right of section card */}
       {onOpenComments && (
         <button

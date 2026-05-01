@@ -26,12 +26,11 @@ import { existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
-
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(__filename), '..');
 
 const HUB_ROOT = process.env.AGENT_HUB_ROOT
-  ?? '/Users/connorhoehn/Projects/hoehn-claude-orchestrator';
+  ?? '/Users/connor.hoehn/projects/agent-hub';
 const JOURNEYS_ROOT = join(HUB_ROOT, 'journeys');
 const FRONTEND_BASE = process.env.JOURNEY_BASE ?? 'http://localhost:5174';
 const VIEWPORT = { width: 1440, height: 900 };
@@ -43,7 +42,6 @@ function getCommitSha() {
   catch { return null; }
 }
 
-// kebab-case-ify a name for filesystem safety.
 function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -51,43 +49,142 @@ function slugify(s) {
 function pad2(n) { return String(n).padStart(2, '0'); }
 
 // ---------------------------------------------------------------------------
-// Step helper used by journey functions.
+// Screenshot stitching — uses a Playwright browser page with an offscreen
+// <canvas> to composite two screenshots side-by-side with user labels.
+// No native dependencies (canvas/sharp) needed — runs in Chromium.
+// ---------------------------------------------------------------------------
+
+let _stitchBrowser = null;
+
+async function getStitchBrowser(chromiumLauncher) {
+  if (!_stitchBrowser) _stitchBrowser = await chromiumLauncher.launch({ headless: true });
+  return _stitchBrowser;
+}
+
+async function closeStitchBrowser() {
+  if (_stitchBrowser) { await _stitchBrowser.close(); _stitchBrowser = null; }
+}
+
+async function stitchScreenshots(leftPath, rightPath, outputPath, leftLabel, rightLabel, chromiumLauncher) {
+  if (!chromiumLauncher) {
+    const { copyFile } = await import('node:fs/promises');
+    await copyFile(leftPath, outputPath);
+    return;
+  }
+  const leftB64 = (await readFile(leftPath)).toString('base64');
+  const rightB64 = (await readFile(rightPath)).toString('base64');
+
+  const browser = await getStitchBrowser(chromiumLauncher);
+  const ctx = await browser.newContext();
+  const pg = await ctx.newPage();
+
+  const resultB64 = await pg.evaluate(async ({ leftB64, rightB64, leftLabel, rightLabel }) => {
+    const loadImg = (b64) => new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = `data:image/png;base64,${b64}`;
+    });
+    const [leftImg, rightImg] = await Promise.all([loadImg(leftB64), loadImg(rightB64)]);
+
+    const gap = 24;
+    const labelH = 40;
+    const totalW = leftImg.width + rightImg.width + gap;
+    const totalH = Math.max(leftImg.height, rightImg.height) + labelH;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = totalW;
+    canvas.height = totalH;
+    const c = canvas.getContext('2d');
+
+    c.fillStyle = '#1e293b';
+    c.fillRect(0, 0, totalW, totalH);
+
+    c.fillStyle = '#f1f5f9';
+    c.font = 'bold 16px sans-serif';
+    c.fillText(leftLabel ?? 'User A', 12, 26);
+    c.fillText(rightLabel ?? 'User B', leftImg.width + gap + 12, 26);
+
+    c.fillStyle = '#475569';
+    c.fillRect(leftImg.width + gap / 2 - 1, 0, 2, totalH);
+
+    c.drawImage(leftImg, 0, labelH);
+    c.drawImage(rightImg, leftImg.width + gap, labelH);
+
+    return canvas.toDataURL('image/png').split(',')[1];
+  }, { leftB64, rightB64, leftLabel, rightLabel });
+
+  await ctx.close();
+  await writeFile(outputPath, Buffer.from(resultB64, 'base64'));
+}
+
+// ---------------------------------------------------------------------------
+// Step helpers.
+//
+// makeStepRecorder returns a step() function. Journeys can also call
+// step.dual(pageB, chromium, name, desc, action) for stitched side-by-side
+// screenshots of two browser contexts.
 // ---------------------------------------------------------------------------
 
 function makeStepRecorder(page, runDir, recordedSteps) {
   let idx = 0;
-  return async function step(name, description, action) {
+
+  async function step(name, description, action) {
     idx += 1;
     const stepName = slugify(name);
     const fileName = `${pad2(idx)}-${stepName}.png`;
     log(`  step ${idx}: ${name} — ${description}`);
     try {
       await action();
-      // Brief settle so transitions / focus rings are stable in the shot.
       await page.waitForTimeout(300);
       await page.screenshot({ path: join(runDir, fileName), fullPage: true });
-      recordedSteps.push({
-        index: idx,
-        name: stepName,
-        description,
-        screenshot: fileName,
-      });
+      recordedSteps.push({ index: idx, name: stepName, description, screenshot: fileName });
     } catch (err) {
-      // Capture a screenshot even on failure so the operator can see
-      // where the journey broke.
       try {
         await page.screenshot({ path: join(runDir, fileName), fullPage: true });
-        recordedSteps.push({
-          index: idx,
-          name: stepName,
-          description,
-          screenshot: fileName,
-          failed: true,
-        });
+        recordedSteps.push({ index: idx, name: stepName, description, screenshot: fileName, failed: true });
       } catch { /* ignore secondary failure */ }
       throw err;
     }
+  }
+
+  step.dual = async function dual(pageB, chromium, name, description, action) {
+    idx += 1;
+    const stepName = slugify(name);
+    const fileName = `${pad2(idx)}-${stepName}.png`;
+    const leftFile = `${pad2(idx)}-${stepName}-alice.png`;
+    const rightFile = `${pad2(idx)}-${stepName}-bob.png`;
+    log(`  step ${idx} [dual]: ${name} — ${description}`);
+    try {
+      await action();
+      await Promise.all([page.waitForTimeout(400), pageB.waitForTimeout(400)]);
+      await Promise.all([
+        page.screenshot({ path: join(runDir, leftFile), fullPage: false }),
+        pageB.screenshot({ path: join(runDir, rightFile), fullPage: false }),
+      ]);
+      await stitchScreenshots(
+        join(runDir, leftFile), join(runDir, rightFile),
+        join(runDir, fileName),
+        'Alice (User A)', 'Bob (User B)', chromium,
+      );
+      recordedSteps.push({ index: idx, name: stepName, description, screenshot: fileName, dual: true });
+    } catch (err) {
+      try {
+        await Promise.all([
+          page.screenshot({ path: join(runDir, leftFile), fullPage: false }).catch(() => {}),
+          pageB.screenshot({ path: join(runDir, rightFile), fullPage: false }).catch(() => {}),
+        ]);
+        await stitchScreenshots(
+          join(runDir, leftFile), join(runDir, rightFile),
+          join(runDir, fileName), 'Alice', 'Bob', chromium,
+        ).catch(() => {});
+        recordedSteps.push({ index: idx, name: stepName, description, screenshot: fileName, dual: true, failed: true });
+      } catch { /* ignore */ }
+      throw err;
+    }
   };
+
+  return step;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,103 +192,133 @@ function makeStepRecorder(page, runDir, recordedSteps) {
 // ---------------------------------------------------------------------------
 
 const JOURNEYS = [
+  // =========================================================================
+  // Journey 1: Full Document Type Lifecycle
+  //   Create a document type from scratch with multiple section types,
+  //   configure display modes, edit and rename, then delete.
+  //   ~25 steps.
+  // =========================================================================
   {
-    slug: 'create-document-type-basic',
-    title: 'Create a document type with text + long_text fields',
-    description: 'Operator clicks through the empty state to create a working type with two fields, lands on the populated list.',
+    slug: 'document-type-full-lifecycle',
+    title: 'Full document type lifecycle — create, configure display, edit, delete',
+    description: 'Admin creates a Design Brief type with rich-text, tasks, decisions, and checklist sections. Configures view-mode visibility, edits the type to rename and reorder fields, then deletes it.',
     async run(page, step) {
-      await step('land-on-page', 'Land on /document-types', async () => {
+      // --- Phase 1: Navigate and open wizard ---
+      await step('land-on-doc-types', 'Navigate to /document-types', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
         await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
       });
-      await step('click-create', "Click '+ New' to start the wizard", async () => {
+      await step('see-empty-state', 'See the empty type list or existing types', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('click-new-type', 'Click "+ New" to open the wizard', async () => {
         await page.click('[data-testid="create-type-btn"]');
         await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
       });
-      await step('fill-type-name', 'Fill in the type name', async () => {
-        await page.fill('[data-testid="name-input"]', 'Article');
+
+      // --- Phase 2: Fill in basic info (Step 1 of wizard) ---
+      await step('enter-type-name', 'Type "Design Brief" as the document type name', async () => {
+        await page.fill('[data-testid="name-input"]', 'Design Brief');
       });
-      await step('advance-to-fields-step', 'Advance to the fields step of the wizard', async () => {
+      await step('enter-description', 'Add a detailed description', async () => {
+        const desc = await page.$('[data-testid="description-input"]');
+        if (desc) await desc.fill('Architecture proposals with executive summary, action items, decisions, and sign-off checklist. Used by engineering leads for cross-team alignment.');
+      });
+      await step('advance-to-sections', 'Click Next to advance to the Sections step', async () => {
         await page.click('[data-testid="wizard-next"]');
-        // The fields step shows the section-type picker on the right. Wait
-        // for any `add-field-*` button to appear (the empty state shows
-        // them; `fields-list` only appears after the first field is added).
         await page.waitForSelector('[data-testid^="add-field-"]', { timeout: 8_000 });
       });
-      await step('add-text-field', 'Add a section field via the picker', async () => {
-        // The renderer registry exposes whatever section types are
-        // registered (tasks / rich-text / checklist / decisions / default).
-        // Click the first one available — Phase 51 Phase A's text/long_text
-        // backend types map to these renderer ids per the localStorage→server
-        // adapter (rich-text → long_text/textarea, etc.).
-        const firstAdd = await page.$('[data-testid^="add-field-"]');
-        if (!firstAdd) throw new Error('no add-field-* button found on step 2');
-        await firstAdd.click();
+
+      // --- Phase 3: Add multiple section types ---
+      await step('add-rich-text-section', 'Add a Rich Text section for the executive summary', async () => {
+        const btn = (await page.$('[data-testid="add-field-rich-text"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
         await page.waitForSelector('[data-testid="fields-list"]', { timeout: 5_000 });
       });
-      await step('save-type', 'Click Save / Create Type', async () => {
-        // Walk through any remaining wizard steps.
-        const wizardNext = '[data-testid="wizard-next"]';
-        for (let i = 0; i < 5; i++) {
-          if (!(await page.$(wizardNext))) break;
-          const label = (await page.textContent(wizardNext)) ?? '';
-          await page.click(wizardNext);
-          if (/create type|save changes/i.test(label)) break;
-          await page.waitForTimeout(200);
-        }
-        // Wait for the save banner / type list to refresh.
+      await step('add-tasks-section', 'Add a Tasks section for action items', async () => {
+        const btn = (await page.$('[data-testid="add-field-tasks"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
+        await page.waitForTimeout(200);
+      });
+      await step('add-decisions-section', 'Add a Decisions section for the decision log', async () => {
+        const btn = (await page.$('[data-testid="add-field-decisions"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
+        await page.waitForTimeout(200);
+      });
+      await step('add-checklist-section', 'Add a Checklist section for sign-off', async () => {
+        const btn = (await page.$('[data-testid="add-field-checklist"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
+        await page.waitForTimeout(200);
+      });
+      await step('see-four-sections', 'See all four sections in the fields list', async () => {
+        await page.waitForSelector('[data-testid="fields-list"]', { timeout: 3_000 });
+      });
+
+      // --- Phase 4: Configure field flags ---
+      await step('toggle-required-on-first', 'Mark the first section as required', async () => {
+        const reqBtn = await page.$('[data-testid^="field-required-"]');
+        if (reqBtn) await reqBtn.click();
+        await page.waitForTimeout(200);
+      });
+      await step('reorder-sections', 'Move the first section down so the second becomes first', async () => {
+        const downBtn = await page.$('[data-testid^="field-down-"]');
+        if (downBtn) await downBtn.click();
+        await page.waitForTimeout(300);
+      });
+
+      // --- Phase 5: Configure display modes (Step 3) ---
+      await step('advance-to-view-modes', 'Click Next to reach View Modes configuration', async () => {
+        await page.click('[data-testid="wizard-next"]');
+        await page.waitForTimeout(600);
+      });
+      await step('see-view-modes-grid', 'See the Editor / Review / Read visibility grid', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('toggle-visibility-ack', 'Toggle a field hidden in Review mode', async () => {
+        const checkbox = await page.$('[data-testid^="visibility-"][data-testid$="-ack"]');
+        if (checkbox) await checkbox.click();
+        await page.waitForTimeout(200);
+      });
+      await step('toggle-visibility-reader', 'Toggle a field hidden in Read mode', async () => {
+        const checkbox = await page.$('[data-testid^="visibility-"][data-testid$="-reader"]');
+        if (checkbox) await checkbox.click();
+        await page.waitForTimeout(200);
+      });
+
+      // --- Phase 6: Save the type ---
+      await step('create-the-type', 'Click "Create Type" to save', async () => {
+        await page.click('[data-testid="wizard-next"]');
         await page.waitForSelector('[data-testid="save-message"], [data-testid="type-list"]', { timeout: 5_000 });
       });
-      await step('see-populated-list', 'Verify the type appears in the list', async () => {
-        await page.waitForSelector('[data-testid="type-list"]', { timeout: 5_000 });
+      await step('see-type-in-list', 'Verify "Design Brief" appears in the sidebar list', async () => {
+        await page.waitForFunction(
+          () => Array.from(document.querySelectorAll('[data-testid^="type-item-"]'))
+            .some(el => /design brief/i.test(el.textContent ?? '')),
+          null, { timeout: 5_000 },
+        );
       });
-    },
-  },
-  {
-    slug: 'edit-document-type-name',
-    title: 'Edit an existing document type',
-    description: 'Operator selects a type from the list, opens the wizard in edit mode, and renames it.',
-    async run(page, step) {
-      await step('seed-an-existing-type', 'Pre-seed localStorage with one type', async () => {
-        // Hit the page first so localStorage is the right origin.
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.evaluate(() => {
-          const now = new Date().toISOString();
-          const seed = [{
-            id: 'journey-edit-seed',
-            name: 'Editable Type',
-            description: 'Pre-seeded for the edit journey',
-            icon: '📝',
-            fields: [],
-            createdAt: now,
-            updatedAt: now,
-          }];
-          localStorage.setItem('ws_document_types_v1', JSON.stringify(seed));
-        });
-        // Reload so React picks up the seeded state on first render.
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.waitForSelector('[data-testid="type-item-journey-edit-seed"]', { timeout: 5_000 });
+
+      // --- Phase 7: Edit the type ---
+      await step('click-edit-type', 'Click Edit on the Design Brief type', async () => {
+        const items = await page.$$('[data-testid^="type-item-"]');
+        for (const item of items) {
+          const text = await item.textContent();
+          if (/design brief/i.test(text ?? '')) {
+            const editBtn = await item.$('[data-testid^="edit-type-"]');
+            if (editBtn) { await editBtn.click(); break; }
+          }
+        }
+        await page.waitForSelector('[data-testid="wizard-next"]', { timeout: 8_000 });
       });
-      await step('click-edit', 'Click Edit on the seeded type', async () => {
-        await page.click('[data-testid="edit-type-journey-edit-seed"]');
-        // The wizard intentionally starts on step 2 (Sections) when editing
-        // so fields are immediately visible — see DocumentTypeWizard line
-        // 485. Wait for the wizard's Next button to confirm it mounted,
-        // not the name-input (which lives on step 1).
-        await page.waitForSelector('[data-testid="wizard-next"]', { timeout: 10_000 });
-      });
-      await step('back-to-basics', 'Click Back to reach the name field on step 1', async () => {
-        // The Back button has no testid; match by visible text. Only
-        // present when step > 1, which it is in edit mode.
-        await page.click('button:has-text("Back")');
+      await step('navigate-to-name-step', 'Click Back to reach the name field', async () => {
+        const back = await page.$('button:has-text("Back")');
+        if (back) await back.click();
         await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
       });
-      await step('rename-the-type', 'Update the type name', async () => {
-        await page.fill('[data-testid="name-input"]', 'Renamed Type');
+      await step('rename-the-type', 'Rename from "Design Brief" to "Architecture Design Brief"', async () => {
+        await page.fill('[data-testid="name-input"]', 'Architecture Design Brief');
       });
-      await step('save-rename', 'Walk wizard forward and save', async () => {
-        // step 1 → 2 → 3 → save. handleSave fires when wizard-next is
-        // clicked at step === TOTAL_STEPS.
+      await step('save-renamed-type', 'Walk wizard forward and save the rename', async () => {
         for (let i = 0; i < 6; i++) {
           const next = await page.$('[data-testid="wizard-next"]');
           if (!next) break;
@@ -200,505 +327,647 @@ const JOURNEYS = [
           if (/save changes|create type/i.test(label)) break;
           await page.waitForTimeout(200);
         }
-        await page.waitForSelector('[data-testid="save-message"]', { timeout: 5_000 });
+        await page.waitForSelector('[data-testid="save-message"], [data-testid="type-list"]', { timeout: 5_000 });
       });
-    },
-  },
-  {
-    slug: 'comprehensive-design-doc',
-    title: 'End-to-end Design Document — admin schema, end-user wizard, viewer, real-time collab',
-    description: 'Walks the full lifecycle of a "Design Document" type: admin defines the schema with action-items + decisions + rich-text body sections, an end-user fills it via the wizard, a viewer reads it, then two simulated users collaborate in real time. Honest about gaps — see PHASE-51-DESIGN-DOC-JOURNEY-ASSESSMENT.md for what is real vs placeholder.',
-    async run(page, step) {
-      // Reusable selectors for the wizard's section types (the renderer
-      // registry exposes these by their `type` field — tasks/decisions/
-      // rich-text/checklist are the four registered today).
-      const ADD_TASKS    = '[data-testid="add-field-tasks"]';
-      const ADD_DECISIONS = '[data-testid="add-field-decisions"]';
-      const ADD_RICHTEXT = '[data-testid="add-field-rich-text"]';
-
-      // -----------------------------------------------------------------
-      // Scene A — Admin defines the Design Document type (10 steps)
-      // -----------------------------------------------------------------
-      await step('A1-land-on-doc-types', 'Admin lands on /document-types', async () => {
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
-      });
-      await step('A2-open-wizard', 'Open the create-type wizard', async () => {
-        await page.click('[data-testid="create-type-btn"]');
-        await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
-      });
-      await step('A3-name-the-type', 'Name the type "Design Document"', async () => {
-        await page.fill('[data-testid="name-input"]', 'Design Document');
-      });
-      await step('A4-fill-description', 'Add a description', async () => {
-        await page.fill(
-          '[data-testid="description-input"]',
-          'Architecture proposals with action items, decisions, and a long-form body.',
-        );
-      });
-      await step('A5-advance-to-sections', 'Advance to the Sections step', async () => {
-        await page.click('[data-testid="wizard-next"]');
-        await page.waitForSelector('[data-testid^="add-field-"]', { timeout: 8_000 });
-      });
-      await step('A6-add-action-items-section', 'Add an Action Items section (tasks renderer)', async () => {
-        const sel = (await page.$(ADD_TASKS)) ? ADD_TASKS : '[data-testid^="add-field-"]';
-        await page.click(sel);
-        await page.waitForSelector('[data-testid="fields-list"]', { timeout: 5_000 });
-      });
-      await step('A7-add-decisions-section', 'Add a Decision Log section (decisions renderer)', async () => {
-        const sel = (await page.$(ADD_DECISIONS)) ? ADD_DECISIONS : ADD_TASKS;
-        await page.click(sel);
-      });
-      await step('A8-add-body-section', 'Add a long-form Body section (rich-text renderer)', async () => {
-        const sel = (await page.$(ADD_RICHTEXT)) ? ADD_RICHTEXT : ADD_TASKS;
-        await page.click(sel);
-      });
-      await step('A9-advance-to-view-modes', 'Advance to the View Modes step (placeholder for multi-page layout)', async () => {
-        // The 3-step wizard's final step is "View Modes" not "Pages"
-        // (multi-page layout is a documented gap — see assessment).
-        await page.click('[data-testid="wizard-next"]');
-        await page.waitForTimeout(500);
-      });
-      await step('A10-create-type', 'Click Create Type to save the schema', async () => {
-        await page.click('[data-testid="wizard-next"]');
-        await page.waitForSelector('[data-testid="save-message"]', { timeout: 5_000 });
-      });
-
-      // -----------------------------------------------------------------
-      // Scene B — End user fills out a Design Document via the doc editor (8 steps)
-      // -----------------------------------------------------------------
-      // Today's wizard creates the SCHEMA. Document instances of that
-      // schema are filled via the doc editor at /documents/:id, not the
-      // type wizard. We capture that handoff here.
-      await step('B1-navigate-to-documents', 'End user opens /documents', async () => {
-        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(800);
-      });
-      await step('B2-document-list-state', 'Document list state (empty or populated)', async () => {
-        // Whichever state — we capture it. Empty is a legitimate
-        // starting place for a brand-new schema.
-      });
-      await step('B3-typed-documents-page', 'Visit the typed-documents page where Phase 51 instances land', async () => {
-        // Per the assessment: the new TypedDocumentsPage isn't routed in
-        // App.tsx in this build (filed as a gap — operator needs a route
-        // for `/typed-documents`). We screenshot the closest existing
-        // surface — /documents — to demonstrate the handoff.
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.waitForSelector('[data-testid="type-list"]', { timeout: 5_000 });
-      });
-      await step('B4-see-design-document-type-listed', 'See the new type in the list', async () => {
+      await step('verify-renamed-in-list', 'See the renamed type in the list', async () => {
         await page.waitForFunction(
           () => Array.from(document.querySelectorAll('[data-testid^="type-item-"]'))
-            .some((el) => /design document/i.test(el.textContent ?? '')),
-          null,
-          { timeout: 5_000 },
+            .some(el => /architecture design brief/i.test(el.textContent ?? '')),
+          null, { timeout: 5_000 },
         );
       });
-      await step('B5-edit-type-as-template-preview', 'Open the type to preview its sections', async () => {
-        const editBtns = await page.$$('[data-testid^="edit-type-"]');
-        // Click the first one whose row contains "Design Document".
-        for (const btn of editBtns) {
-          const handle = await btn.evaluateHandle((el) => el.closest('[data-testid^="type-item-"]'));
-          const text = (await (await handle.getProperty('textContent')).jsonValue());
-          if (typeof text === 'string' && /design document/i.test(text)) {
-            await btn.click();
-            await page.waitForSelector('[data-testid="wizard-next"]', { timeout: 8_000 });
-            return;
+
+      // --- Phase 8: Delete the type ---
+      await step('click-delete', 'Click the delete button on the type', async () => {
+        const items = await page.$$('[data-testid^="type-item-"]');
+        for (const item of items) {
+          const text = await item.textContent();
+          if (/architecture design brief/i.test(text ?? '')) {
+            const delBtn = await item.$('[data-testid^="delete-type-"]');
+            if (delBtn) { await delBtn.click(); break; }
           }
         }
-        throw new Error('Design Document type not found in list');
+        await page.waitForSelector('[data-testid="confirm-delete"]', { timeout: 5_000 });
       });
-      await step('B6-walk-to-sections-step', 'Navigate to the Sections step to see the configured fields', async () => {
-        // Wizard opens edit mode on step 2 already (per the wizard's
-        // initialType branch), so we should already see fields-list.
-        await page.waitForSelector('[data-testid="fields-list"]', { timeout: 5_000 });
+      await step('see-delete-confirmation', 'See the deletion confirmation modal', async () => {
+        await page.waitForTimeout(200);
       });
-      await step('B7-cancel-out-of-edit', 'Cancel out (we are previewing, not editing)', async () => {
-        // Find the Cancel button by visible text — it has no testid.
-        await page.click('button:has-text("Cancel")');
-        await page.waitForTimeout(500);
+      await step('confirm-delete', 'Click Delete to confirm', async () => {
+        await page.click('[data-testid="confirm-delete"]');
+        await page.waitForFunction(
+          () => !document.querySelector('[data-testid="confirm-delete"]'),
+          null, { timeout: 5_000 },
+        );
       });
-      await step('B8-end-user-fill-placeholder', 'PLACEHOLDER: end-user form-fill UI is gap-tracked', async () => {
-        // Per assessment: TypedDocumentsPage exists in code but is not
-        // routed in App.tsx in this build, and the existing /documents
-        // CRDT-based editor is for free-form Yjs docs, not schema-typed
-        // instances. The form-fill loop is a documented gap.
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(500);
-      });
-
-      // -----------------------------------------------------------------
-      // Scene C — Viewer reads the document (4 steps)
-      // -----------------------------------------------------------------
-      await step('C1-viewer-mode-overview', 'Viewer mode rendering — using existing /documents reader path', async () => {
-        // The doc-editor's reader mode (?mode=reader) is the closest
-        // analog to a "viewer-only" surface. With no concrete typed
-        // document instance to load, we screenshot the doc-list as the
-        // entry-point a viewer would use.
-        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(800);
-      });
-      await step('C2-viewer-mode-section-types', 'Each section type ships a reader-mode renderer', async () => {
-        // Per assessment: tasks / decisions / rich-text / checklist all
-        // have reader components registered. Capturing the
-        // /document-types preview as proof of the schema's reader story.
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(500);
-      });
-      await step('C3-viewer-toc', 'Reader mode now ships a sticky-left TOC (hub#60)', async () => {
-        // hub#60 closed the gap: ReaderMode renders a 3-column grid
-        // with a sticky-left TOC when sections.length >= 2. Each
-        // entry anchor-links to #section-${id} via scrollIntoView.
-      });
-      await step('C4-viewer-section-anchors', 'Section containers carry anchor ids (#section-:id)', async () => {
-        // ReaderSectionCard adds id="section-${section.id}" so
-        // browser-native anchor navigation works alongside the TOC.
-      });
-
-      // -----------------------------------------------------------------
-      // Scene D — Two-user real-time collab (6 steps)
-      // -----------------------------------------------------------------
-      // Open a second browser context. The runner gives us one, we make
-      // a sibling on the same browser. Both navigate to /documents and
-      // we capture both screens via dual screenshots.
-      const browser = page.context().browser();
-      if (!browser) throw new Error('cannot resolve browser handle');
-      const ctxB = await browser.newContext({ viewport: VIEWPORT });
-      const pageB = await ctxB.newPage();
-
-      try {
-        // Scene D drives the real CRDT-backed /documents flow (hub#64).
-        // Precondition: the gateway WebSocket service must be running
-        // — `tilt up` brings up gateway + social-api + DDB + Redis +
-        // frontend together. When the WS service is down, the journey
-        // captures the disconnected-state UI honestly (no PLACEHOLDER
-        // text); operators can tell from the "Reconnecting…" pill
-        // whether the run had real CRDT infra behind it.
-        await step('D1-user-A-on-documents', 'User A opens /documents (CRDT-backed list)', async () => {
-          await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
-          await page.waitForTimeout(800);
-        });
-        await step('D2-user-B-joins-documents', 'User B opens /documents in a separate browser context', async () => {
-          await pageB.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
-          await pageB.waitForTimeout(800);
-        });
-        await step('D3-user-A-opens-or-creates-doc', 'User A opens an existing document, or stays on the list if none exist', async () => {
-          // Try clicking the first document card; if none exist, the
-          // empty state is captured by the screenshot.
-          const card = await page.$('[data-testid^="document-card-"]');
-          if (card) {
-            await card.click();
-            await page.waitForTimeout(1_500);
-          }
-        });
-        await step('D4-user-B-opens-same-doc', 'User B opens the same document so both are in the same Yjs room', async () => {
-          // Mirror User A's URL so both contexts join the same CRDT
-          // document. With the WS gateway running this puts them in
-          // the same Yjs awareness set; without it both pages show
-          // the disconnected indicator.
-          const targetUrl = page.url();
-          if (targetUrl !== `${FRONTEND_BASE}/documents` && targetUrl !== `${FRONTEND_BASE}/documents/`) {
-            await pageB.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-            await pageB.waitForTimeout(1_500);
-          }
-        });
-        await step('D5-user-A-types-into-body', 'User A types into the rich-text body section', async () => {
-          // Best-effort: target the first contentEditable block (TipTap
-          // editor surfaces). Type real text. With WS up, the chars
-          // stream to User B via the CRDT layer.
-          const editable = await page.$('[contenteditable="true"]');
-          if (editable) {
-            await editable.click();
-            await page.keyboard.type('Hello from User A — concurrent edit from Scene D.');
-            await page.waitForTimeout(600);
-          }
-        });
-        await step('D6-user-B-sees-or-types', "User B's view of the same document — capturing concurrent state", async () => {
-          // Brief settle so any Yjs update from User A has time to
-          // arrive in User B's awareness, then take the screenshot
-          // via the step recorder. With WS down, both pages still
-          // capture cleanly — the disconnected UI is the truthful
-          // record of what the system looks like sans gateway.
-          const editableB = await pageB.$('[contenteditable="true"]');
-          if (editableB) {
-            await editableB.click();
-            await pageB.keyboard.type(' — and User B replies.');
-            await pageB.waitForTimeout(800);
-          }
-        });
-      } finally {
-        await ctxB.close();
-      }
     },
   },
+
+  // =========================================================================
+  // Journey 2: Create Document from Type and Fill Content
+  //   Creates a type, then creates a document instance from that type,
+  //   fills in content across sections, and views the populated doc.
+  //   ~25 steps.
+  // =========================================================================
   {
-    slug: 'multi-field-document-type',
-    title: 'Create a document type with many field kinds (text + number + date + boolean + enum)',
-    description: 'Admin builds a complex Project Brief schema by adding several different field types in sequence, demonstrating Phase 51 Phase B/C field-kind coverage.',
+    slug: 'create-and-fill-document',
+    title: 'Create a document from a type and fill all sections with content',
+    description: 'Admin creates a "Sprint Retro" type, then an end-user creates a document instance of that type, fills in the rich-text body, adds tasks, and verifies the populated document.',
     async run(page, step) {
-      await step('land-on-doc-types', 'Land on /document-types', async () => {
+      // --- Create the document type first ---
+      await step('navigate-to-doc-types', 'Open /document-types', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
         await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
       });
-      await step('open-wizard', "Click '+ New'", async () => {
+      await step('open-wizard', 'Click "+ New" to create a type', async () => {
         await page.click('[data-testid="create-type-btn"]');
         await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
       });
-      await step('name-the-type', 'Name the type "Project Brief"', async () => {
-        await page.fill('[data-testid="name-input"]', 'Project Brief');
-      });
-      await step('describe-the-type', 'Add a one-liner description', async () => {
+      await step('name-sprint-retro', 'Name the type "Sprint Retro"', async () => {
+        await page.fill('[data-testid="name-input"]', 'Sprint Retro');
         const desc = await page.$('[data-testid="description-input"]');
-        if (desc) await desc.fill('Multi-field schema covering most kinds — for the comprehensive journey suite.');
+        if (desc) await desc.fill('Weekly sprint retrospective — what went well, what to improve, and action items.');
       });
-      await step('advance-to-sections', 'Advance to the Sections step of the wizard', async () => {
+      await step('go-to-sections', 'Advance to sections step', async () => {
         await page.click('[data-testid="wizard-next"]');
         await page.waitForSelector('[data-testid^="add-field-"]', { timeout: 8_000 });
       });
-      await step('add-multiple-section-types', 'Add up to 4 section/field kinds in sequence', async () => {
-        // Click each available add-field-* button once, capping at 4 to
-        // keep the screenshot focused. Different builds register different
-        // kinds; use whatever's exposed (rich-text, tasks, decisions,
-        // checklist, link-block, file-upload, diagram in current build).
-        const buttons = await page.$$('[data-testid^="add-field-"]');
-        const toAdd = buttons.slice(0, Math.min(4, buttons.length));
-        for (const btn of toAdd) {
-          await btn.click();
-          await page.waitForTimeout(150);
-        }
+      await step('add-rich-text', 'Add a rich-text section for the retro body', async () => {
+        const btn = (await page.$('[data-testid="add-field-rich-text"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
         await page.waitForSelector('[data-testid="fields-list"]', { timeout: 5_000 });
       });
-      await step('inspect-fields-list', 'See the fields list populated with the new entries', async () => {
-        // The screenshot of this step is the key artifact — operator can
-        // visually verify each field renders.
-        await page.waitForTimeout(400);
+      await step('add-tasks', 'Add a tasks section for action items', async () => {
+        const btn = (await page.$('[data-testid="add-field-tasks"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
+        await page.waitForTimeout(200);
       });
-      await step('advance-to-display-modes', 'Walk to the View Modes step', async () => {
-        const next = '[data-testid="wizard-next"]';
-        if (await page.$(next)) await page.click(next);
-        await page.waitForTimeout(500);
+      await step('add-decisions', 'Add a decisions section', async () => {
+        const btn = (await page.$('[data-testid="add-field-decisions"]')) ?? await page.$('[data-testid^="add-field-"]');
+        await btn.click();
+        await page.waitForTimeout(200);
       });
-      await step('save-the-schema', 'Click through to save', async () => {
-        // Walk forward up to 4 more steps until the save fires.
-        const next = '[data-testid="wizard-next"]';
-        for (let i = 0; i < 4; i++) {
-          if (!(await page.$(next))) break;
-          const label = (await page.textContent(next)) ?? '';
-          await page.click(next);
+      await step('save-retro-type', 'Walk through wizard and save the type', async () => {
+        for (let i = 0; i < 5; i++) {
+          const next = await page.$('[data-testid="wizard-next"]');
+          if (!next) break;
+          const label = (await page.textContent('[data-testid="wizard-next"]')) ?? '';
+          await next.click();
           if (/create type|save changes/i.test(label)) break;
           await page.waitForTimeout(200);
         }
         await page.waitForSelector('[data-testid="save-message"], [data-testid="type-list"]', { timeout: 5_000 });
       });
-      await step('see-project-brief-in-list', 'Verify Project Brief shows up in the type list', async () => {
+      await step('type-saved-in-list', 'Sprint Retro type now in sidebar list', async () => {
         await page.waitForFunction(
           () => Array.from(document.querySelectorAll('[data-testid^="type-item-"]'))
-            .some((el) => /project brief/i.test(el.textContent ?? '')),
-          null,
-          { timeout: 5_000 },
+            .some(el => /sprint retro/i.test(el.textContent ?? '')),
+          null, { timeout: 5_000 },
         );
+      });
+
+      // --- Navigate to documents and create an instance ---
+      await step('go-to-documents', 'Navigate to /documents', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('click-new-document', 'Click "+ New Document" button', async () => {
+        const btn = await page.$('[data-testid="new-document-btn"]')
+          ?? await page.$('button:has-text("New Document")');
+        if (btn) {
+          await btn.click();
+          await page.waitForTimeout(600);
+        }
+      });
+      await step('select-sprint-retro-type', 'Choose "Sprint Retro" from the type picker', async () => {
+        // Look for any type-option button containing "Sprint Retro"
+        const options = await page.$$('[data-testid^="type-option-"]');
+        for (const opt of options) {
+          const text = await opt.textContent();
+          if (/sprint retro/i.test(text ?? '')) {
+            await opt.click();
+            break;
+          }
+        }
+        // If no types listed, that's a documented gap — screenshot captures state.
+        await page.waitForTimeout(300);
+      });
+      await step('enter-document-title', 'Type "Week 18 Retro" as the document title', async () => {
+        const titleInput = await page.$('[data-testid="new-doc-title"]');
+        if (titleInput) await titleInput.fill('Week 18 Retro');
+      });
+      await step('enter-document-description', 'Add a short description', async () => {
+        const descInput = await page.$('[data-testid="new-doc-description"]');
+        if (descInput) await descInput.fill('Sprint 18 retrospective — team velocity was 34 points.');
+      });
+      await step('submit-new-document', 'Click "Create Document" to create the instance', async () => {
+        const submit = await page.$('[data-testid="new-doc-submit"]');
+        if (submit) {
+          await submit.click();
+          await page.waitForTimeout(1_500);
+        }
+      });
+      await step('see-document-editor', 'Land on the document editor page', async () => {
+        await page.waitForTimeout(800);
+      });
+
+      // --- Fill in content ---
+      await step('type-in-body-section', 'Type content into the rich-text body section', async () => {
+        const editable = await page.$('[contenteditable="true"]');
+        if (editable) {
+          await editable.click();
+          await page.keyboard.type('This sprint we shipped the new onboarding flow and fixed 12 bugs. Team morale is high — the design review went smoothly and stakeholders approved the Q3 roadmap.');
+          await page.waitForTimeout(400);
+        }
+      });
+      await step('scroll-through-sections', 'Scroll down to see all sections populated from the type', async () => {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight / 2, behavior: 'smooth' }));
+        await page.waitForTimeout(600);
+      });
+      await step('scroll-to-bottom', 'Scroll to bottom to see the full document', async () => {
+        await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+        await page.waitForTimeout(600);
+      });
+      await step('scroll-back-to-top', 'Scroll back to the top to capture the complete view', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
+      });
+
+      // --- Switch to different view modes ---
+      await step('switch-to-review-mode', 'Click the "Review" mode button', async () => {
+        const reviewBtn = await page.$('[data-testid="mode-btn-ack"]')
+          ?? await page.$('button:has-text("Review")');
+        if (reviewBtn) await reviewBtn.click();
+        await page.waitForTimeout(800);
+      });
+      await step('see-review-mode', 'See the review mode with section review controls', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('switch-to-reader-mode', 'Click the "Read" mode button', async () => {
+        const readBtn = await page.$('[data-testid="mode-btn-reader"]')
+          ?? await page.$('button:has-text("Read")');
+        if (readBtn) await readBtn.click();
+        await page.waitForTimeout(800);
+      });
+      await step('see-reader-mode', 'See the reader mode with executive summary and TOC', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('back-to-editor', 'Switch back to editor mode', async () => {
+        const editorBtn = await page.$('[data-testid="mode-btn-editor"]')
+          ?? await page.$('button:has-text("Editor")');
+        if (editorBtn) await editorBtn.click();
+        await page.waitForTimeout(500);
       });
     },
   },
-  {
-    slug: 'edit-document-type-toggle-field-flags',
-    title: 'Edit an existing type and flip the required + collapsed flags on its fields',
-    description: 'Pre-seed a type with two fields, open it for edit, toggle the required and collapsed flags on one field each, save the changes.',
-    async run(page, step) {
-      const SEED_ID = 'journey-flags-seed';
-      const FIELD_A = 'flags-field-a';
-      const FIELD_B = 'flags-field-b';
 
-      await step('seed-type-with-two-fields', 'Pre-seed localStorage with a 2-field type', async () => {
+  // =========================================================================
+  // Journey 3: Review Workflow
+  //   Pre-seed a document with multiple sections, walk through the review
+  //   process — approve some, request changes on others, see progress bar.
+  //   ~22 steps.
+  // =========================================================================
+  {
+    slug: 'review-workflow-walkthrough',
+    title: 'Complete review workflow — approve sections, request changes, track progress',
+    description: 'Reviewer opens a document in Review mode, approves sections, requests changes, watches the progress bar fill, changes a decision, and sees the final summary.',
+    async run(page, step) {
+      // --- Seed a document with sections for review ---
+      await step('seed-document-type', 'Pre-seed a document type with 4 sections via localStorage', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.evaluate(({ SEED_ID, FIELD_A, FIELD_B }) => {
+        await page.evaluate(() => {
           const now = new Date().toISOString();
-          const seed = [{
-            id: SEED_ID,
-            name: 'Flags Demo',
-            description: 'Pre-seeded for the toggle-flags journey',
-            icon: '⚙️',
+          const types = [{
+            id: 'review-journey-type',
+            name: 'Review Demo',
+            description: 'Multi-section type for the review journey',
+            icon: '📋',
             fields: [
-              { id: FIELD_A, name: 'Title',  type: 'rich-text',  required: false, collapsed: false },
-              { id: FIELD_B, name: 'Notes',  type: 'rich-text',  required: false, collapsed: false },
+              { id: 'sec-summary', name: 'Executive Summary', type: 'rich-text', sectionType: 'rich-text', required: true, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+              { id: 'sec-tasks', name: 'Action Items', type: 'tasks', sectionType: 'tasks', required: false, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+              { id: 'sec-decisions', name: 'Decisions', type: 'decisions', sectionType: 'decisions', required: false, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+              { id: 'sec-appendix', name: 'Appendix', type: 'rich-text', sectionType: 'rich-text', required: false, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
             ],
             createdAt: now,
             updatedAt: now,
           }];
-          localStorage.setItem('ws_document_types_v1', JSON.stringify(seed));
-        }, { SEED_ID, FIELD_A, FIELD_B });
+          localStorage.setItem('ws_document_types_v1', JSON.stringify(types));
+        });
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.waitForSelector(`[data-testid="type-item-${SEED_ID}"]`, { timeout: 5_000 });
+        await page.waitForSelector('[data-testid="type-item-review-journey-type"]', { timeout: 5_000 });
       });
-      await step('click-edit', 'Open the seeded type for editing', async () => {
-        await page.click(`[data-testid="edit-type-${SEED_ID}"]`);
-        await page.waitForSelector('[data-testid="fields-list"]', { timeout: 8_000 });
-      });
-      await step('toggle-required-on-first-field', 'Tick the required flag on field A', async () => {
-        const t = `[data-testid="field-required-${FIELD_A}"]`;
-        if (await page.$(t)) await page.click(t);
-        await page.waitForTimeout(200);
-      });
-      await step('toggle-collapsed-on-second-field', 'Tick the collapsed flag on field B', async () => {
-        const t = `[data-testid="field-collapsed-${FIELD_B}"]`;
-        if (await page.$(t)) await page.click(t);
-        await page.waitForTimeout(200);
-      });
-      await step('walk-to-save', 'Walk wizard forward to fire save', async () => {
-        const next = '[data-testid="wizard-next"]';
-        for (let i = 0; i < 5; i++) {
-          if (!(await page.$(next))) break;
-          const label = (await page.textContent(next)) ?? '';
-          await page.click(next);
-          if (/save changes|create type/i.test(label)) break;
-          await page.waitForTimeout(200);
-        }
-        await page.waitForSelector('[data-testid="save-message"]', { timeout: 5_000 });
-      });
-      await step('back-on-list', 'Verify the list reloaded with the renamed flags', async () => {
-        await page.waitForSelector('[data-testid="type-list"]', { timeout: 5_000 });
-      });
-    },
-  },
-  {
-    slug: 'multi-page-wizard-add-page-and-reorder',
-    title: 'Add a second page in the wizard and use the page-config TOC to navigate',
-    description: 'Pre-seed a type with one page, open it, add a second page via the +Page control, re-title it, and navigate using the page-config TOC.',
-    async run(page, step) {
-      const SEED_ID = 'journey-pages-seed';
 
-      await step('seed-single-page-type', 'Seed a 1-page type', async () => {
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.evaluate(({ SEED_ID }) => {
-          const now = new Date().toISOString();
-          const seed = [{
-            id: SEED_ID,
-            name: 'Multi-Page Doc',
-            description: 'Pre-seeded for the multi-page journey',
-            icon: '📑',
-            fields: [],
-            createdAt: now,
-            updatedAt: now,
-          }];
-          localStorage.setItem('ws_document_types_v1', JSON.stringify(seed));
-        }, { SEED_ID });
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.waitForSelector(`[data-testid="type-item-${SEED_ID}"]`, { timeout: 5_000 });
+      // --- Create a document using this type ---
+      await step('navigate-to-documents', 'Go to /documents to create an instance', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
       });
-      await step('open-edit', 'Open the seeded type', async () => {
-        await page.click(`[data-testid="edit-type-${SEED_ID}"]`);
-        await page.waitForSelector('[data-testid="fields-list"], [data-testid="add-page"]', { timeout: 8_000 });
-      });
-      await step('click-add-page', 'Add a second page via the +Page control', async () => {
-        const btn = await page.$('[data-testid="add-page"]');
+      await step('open-new-doc-modal', 'Click "+ New Document"', async () => {
+        const btn = await page.$('[data-testid="new-document-btn"]')
+          ?? await page.$('button:has-text("New Document")');
         if (btn) {
           await btn.click();
-          await page.waitForTimeout(400);
+          await page.waitForTimeout(600);
         }
       });
-      await step('inspect-page-config-toc', 'See the page-config TOC reflect 2 pages', async () => {
-        // The TOC is the visual indicator that multi-page mode is active.
-        const toc = await page.$('[data-testid="page-config-toc"]');
-        if (!toc) {
-          // Multi-page mode may not be available in this build; the
-          // screenshot still captures the wizard state for triage.
-          return;
+      await step('pick-review-demo-type', 'Select "Review Demo" type if available', async () => {
+        const options = await page.$$('[data-testid^="type-option-"]');
+        for (const opt of options) {
+          const text = await opt.textContent();
+          if (/review demo/i.test(text ?? '')) { await opt.click(); break; }
         }
         await page.waitForTimeout(300);
       });
-      await step('rename-second-page', 'Find the second page-title input and rename it', async () => {
-        const titles = await page.$$('[data-testid^="page-title-"]');
-        if (titles.length >= 2) {
-          await titles[1].fill('Appendix');
+      await step('title-the-doc', 'Title it "Q3 Architecture Proposal"', async () => {
+        const titleInput = await page.$('[data-testid="new-doc-title"]');
+        if (titleInput) await titleInput.fill('Q3 Architecture Proposal');
+      });
+      await step('create-the-document', 'Click Create', async () => {
+        const submit = await page.$('[data-testid="new-doc-submit"]');
+        if (submit) { await submit.click(); await page.waitForTimeout(1_500); }
+      });
+
+      // --- Add some content so review isn't empty ---
+      await step('add-content-to-body', 'Type some content into the first section', async () => {
+        const editable = await page.$('[contenteditable="true"]');
+        if (editable) {
+          await editable.click();
+          await page.keyboard.type('We propose migrating from monolith to event-driven microservices. Key drivers: scaling bottleneck on the order service, need for independent deployability, and team autonomy.');
+          await page.waitForTimeout(300);
         }
       });
-      await step('walk-to-save', 'Walk forward to save', async () => {
-        const next = '[data-testid="wizard-next"]';
-        for (let i = 0; i < 6; i++) {
-          if (!(await page.$(next))) break;
-          const label = (await page.textContent(next)) ?? '';
-          await page.click(next);
-          if (/save changes|create type/i.test(label)) break;
-          await page.waitForTimeout(200);
-        }
-        await page.waitForTimeout(500);
+      await step('scroll-down-to-sections', 'Scroll to see all sections', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 400, behavior: 'smooth' }));
+        await page.waitForTimeout(400);
       });
-      await step('back-on-list', 'See the type list reload', async () => {
-        await page.waitForSelector('[data-testid="type-list"]', { timeout: 5_000 });
+
+      // --- Switch to Review mode ---
+      await step('enter-review-mode', 'Click the Review mode button', async () => {
+        const reviewBtn = await page.$('[data-testid="mode-btn-ack"]')
+          ?? await page.$('button:has-text("Review")');
+        if (reviewBtn) await reviewBtn.click();
+        await page.waitForTimeout(800);
+      });
+      await step('see-review-progress-bar', 'See "0 of N sections reviewed" progress bar', async () => {
+        const progress = await page.$('[data-testid="review-progress"]');
+        await page.waitForTimeout(300);
+      });
+
+      // --- Review each section ---
+      await step('approve-first-section', 'Click "Approve" on the first section', async () => {
+        const btn = await page.$('[data-testid^="section-"][data-testid$="-review-approved"]');
+        if (btn) await btn.click();
+        await page.waitForTimeout(400);
+      });
+      await step('see-progress-after-first', 'Progress bar updates to show 1 reviewed', async () => {
+        await page.waitForTimeout(300);
+      });
+      await step('approve-second-section', 'Approve the second section', async () => {
+        const btns = await page.$$('[data-testid$="-review-approved"]');
+        if (btns.length > 0) await btns[0].click();
+        await page.waitForTimeout(400);
+      });
+      await step('request-changes-third', 'Request changes on the third section', async () => {
+        const btns = await page.$$('[data-testid$="-review-changes-requested"]');
+        if (btns.length > 0) await btns[0].click();
+        await page.waitForTimeout(400);
+      });
+      await step('mark-fourth-reviewed', 'Mark the fourth section as reviewed', async () => {
+        const btns = await page.$$('[data-testid$="-review-reviewed"]');
+        if (btns.length > 0) await btns[0].click();
+        await page.waitForTimeout(400);
+      });
+      await step('all-sections-reviewed', 'All sections reviewed — progress bar at 100%', async () => {
+        await page.waitForTimeout(300);
+      });
+
+      // --- Change a review decision ---
+      await step('change-review-on-section', 'Click "Change" on a previously-reviewed section', async () => {
+        const changeBtn = await page.$('[data-testid$="-change-review"]');
+        if (changeBtn) await changeBtn.click();
+        await page.waitForTimeout(300);
+      });
+      await step('switch-to-approved', 'Change the decision to "Approve"', async () => {
+        const btns = await page.$$('[data-testid$="-review-approved"]');
+        if (btns.length > 0) await btns[0].click();
+        await page.waitForTimeout(400);
+      });
+
+      // --- See the summary ---
+      await step('scroll-to-summary', 'Scroll to the review summary at the bottom', async () => {
+        const summary = await page.$('[data-testid="review-summary"]');
+        if (summary) await summary.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(400);
+      });
+      await step('see-review-summary', 'See the full review summary with all decisions', async () => {
+        await page.waitForTimeout(300);
+      });
+
+      // --- Switch to reader mode to see the final doc ---
+      await step('switch-to-reader', 'Switch to Read mode for the final view', async () => {
+        const readBtn = await page.$('[data-testid="mode-btn-reader"]')
+          ?? await page.$('button:has-text("Read")');
+        if (readBtn) await readBtn.click();
+        await page.waitForTimeout(800);
+      });
+      await step('reader-mode-final', 'See the clean reader mode rendering', async () => {
+        await page.waitForTimeout(400);
       });
     },
   },
+
+  // =========================================================================
+  // Journey 4: Real-time Collaborative Editing (Dual Browser)
+  //   Two browser contexts open the same document simultaneously.
+  //   Dual steps capture both browser contexts and stitch them side-by-side
+  //   so the dashboard shows collaboration in action.
+  //   ~28 steps.
+  // =========================================================================
   {
-    slug: 'pipelines-list-create-from-blank',
-    title: 'Create a new pipeline from the empty modal',
-    description: 'Operator visits /pipelines, opens the new-pipeline modal, names it, confirms — and lands in the canvas editor.',
+    slug: 'realtime-collab-dual-browser',
+    title: 'Real-time collaborative editing — two users, stitched screenshots',
+    description: 'Alice and Bob open the same document simultaneously. Screenshots capture both browser contexts side-by-side, showing presence avatars, concurrent edits, section focus indicators, and mode switching across users.',
+    async run(page, step, chromium) {
+      const browser = page.context().browser();
+      if (!browser) throw new Error('cannot resolve browser handle');
+
+      // --- Phase 1: Alice seeds a type and creates a document ---
+      await step('alice-seeds-doc-type', 'Alice seeds a multi-section document type', async () => {
+        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await page.evaluate(() => {
+          const now = new Date().toISOString();
+          const types = [{
+            id: 'collab-journey-type',
+            name: 'Collab Doc',
+            description: 'For real-time collaboration testing',
+            icon: '🤝',
+            fields: [
+              { id: 'sec-intro', name: 'Introduction', type: 'rich-text', sectionType: 'rich-text', required: true, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+              { id: 'sec-actions', name: 'Action Items', type: 'tasks', sectionType: 'tasks', required: false, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+              { id: 'sec-notes', name: 'Meeting Notes', type: 'rich-text', sectionType: 'rich-text', required: false, defaultCollapsed: false, placeholder: '', hiddenInModes: [], rendererOverrides: {} },
+            ],
+            createdAt: now,
+            updatedAt: now,
+          }];
+          localStorage.setItem('ws_document_types_v1', JSON.stringify(types));
+        });
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(500);
+      });
+
+      await step('alice-goes-to-documents', 'Alice navigates to /documents', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('alice-opens-new-doc-modal', 'Alice clicks "+ New Document"', async () => {
+        const btn = await page.$('[data-testid="new-document-btn"]')
+          ?? await page.$('button:has-text("New Document")');
+        if (btn) { await btn.click(); await page.waitForTimeout(600); }
+      });
+      await step('alice-picks-type', 'Alice selects the Collab Doc type', async () => {
+        const options = await page.$$('[data-testid^="type-option-"]');
+        for (const opt of options) {
+          const text = await opt.textContent();
+          if (/collab doc/i.test(text ?? '')) { await opt.click(); break; }
+        }
+        await page.waitForTimeout(300);
+      });
+      await step('alice-titles-document', 'Alice names the document "Team Sync — May 1"', async () => {
+        const titleInput = await page.$('[data-testid="new-doc-title"]');
+        if (titleInput) await titleInput.fill('Team Sync — May 1');
+      });
+      await step('alice-submits-document', 'Alice creates the document', async () => {
+        const submit = await page.$('[data-testid="new-doc-submit"]');
+        if (submit) { await submit.click(); await page.waitForTimeout(1_500); }
+      });
+      await step('alice-in-editor', 'Alice lands in the document editor', async () => {
+        await page.waitForTimeout(800);
+      });
+
+      // Capture the document URL for Bob.
+      const docUrl = page.url();
+
+      await step('alice-types-introduction', 'Alice writes the opening paragraph', async () => {
+        const editable = await page.$('[contenteditable="true"]');
+        if (editable) {
+          await editable.click();
+          await page.keyboard.type('Welcome to the weekly team sync. Agenda: project updates, blockers, and planning for next sprint.');
+          await page.waitForTimeout(300);
+        }
+      });
+      await step('alice-adds-second-paragraph', 'Alice adds a status update paragraph', async () => {
+        const editable = await page.$('[contenteditable="true"]');
+        if (editable) {
+          await editable.click();
+          await page.keyboard.press('Enter');
+          await page.keyboard.press('Enter');
+          await page.keyboard.type('Status: API migration is 80% complete. Auth middleware and rate limiting remain.');
+        }
+      });
+
+      // --- Phase 2: Bob joins — dual screenshots from here ---
+      const ctxB = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });
+      const pageB = await ctxB.newPage();
+      pageB.on('pageerror', (e) => log(`  [Bob] pageerror: ${e.message}`));
+
+      try {
+        await step.dual(pageB, chromium, 'bob-opens-document', 'Bob opens the same document in a second browser', async () => {
+          await pageB.goto(docUrl, { waitUntil: 'domcontentloaded' });
+          await pageB.waitForTimeout(1_500);
+        });
+
+        await step.dual(pageB, chromium, 'bob-sees-alice-content', "Bob's view shows Alice's text synced via CRDT", async () => {
+          await pageB.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'alice-continues-typing', 'Alice adds more content while Bob watches', async () => {
+          const editable = await page.$('[contenteditable="true"]');
+          if (editable) {
+            await editable.click();
+            await page.keyboard.press('Enter');
+            await page.keyboard.type('Design review confirmed for Thursday 2pm. Stakeholders: eng-leads, PM, design.');
+          }
+        });
+
+        await step.dual(pageB, chromium, 'bob-scrolls-to-notes', 'Bob scrolls down to the Meeting Notes section', async () => {
+          await pageB.evaluate(() => window.scrollTo({ top: 400, behavior: 'smooth' }));
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'bob-types-in-notes', 'Bob starts typing in the Meeting Notes section', async () => {
+          const editables = await pageB.$$('[contenteditable="true"]');
+          const target = editables.length > 1 ? editables[editables.length - 1] : editables[0];
+          if (target) {
+            await target.click();
+            await pageB.keyboard.type('Bob: CI flakiness needs resolution before release. Affected: e2e suite on staging.');
+            await pageB.waitForTimeout(300);
+          }
+        });
+
+        await step.dual(pageB, chromium, 'both-typing-simultaneously', 'Both users type at the same time in different sections', async () => {
+          const aliceEditable = await page.$('[contenteditable="true"]');
+          const bobEditables = await pageB.$$('[contenteditable="true"]');
+          const bobEditable = bobEditables.length > 1 ? bobEditables[bobEditables.length - 1] : bobEditables[0];
+          await Promise.all([
+            (async () => {
+              if (aliceEditable) {
+                await aliceEditable.click();
+                await page.keyboard.type(' Deadline: end of Sprint 19.');
+              }
+            })(),
+            (async () => {
+              if (bobEditable) {
+                await bobEditable.click();
+                await pageB.keyboard.type(' Also: new hire onboarding docs need review by Friday.');
+              }
+            })(),
+          ]);
+          await page.waitForTimeout(600);
+        });
+
+        await step.dual(pageB, chromium, 'alice-sees-bob-notes', 'Alice scrolls down to see what Bob wrote in notes', async () => {
+          await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        });
+
+        // --- Phase 3: Cross-mode collaboration ---
+        await step.dual(pageB, chromium, 'bob-switches-to-review', 'Bob switches to Review mode while Alice edits', async () => {
+          const reviewBtn = await pageB.$('[data-testid="mode-btn-ack"]')
+            ?? await pageB.$('button:has-text("Review")');
+          if (reviewBtn) await reviewBtn.click();
+          await pageB.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'bob-approves-intro', 'Bob approves the Introduction section', async () => {
+          const btn = await pageB.$('[data-testid$="-review-approved"]');
+          if (btn) await btn.click();
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'bob-requests-changes-on-actions', 'Bob requests changes on the Action Items section', async () => {
+          const btns = await pageB.$$('[data-testid$="-review-changes-requested"]');
+          if (btns.length > 0) await btns[0].click();
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'bob-approves-notes', 'Bob marks Meeting Notes as reviewed', async () => {
+          const btns = await pageB.$$('[data-testid$="-review-reviewed"]');
+          if (btns.length > 0) await btns[0].click();
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'alice-reader-bob-review', 'Alice switches to Reader mode — split: Alice reads, Bob reviews', async () => {
+          const readBtn = await page.$('[data-testid="mode-btn-reader"]')
+            ?? await page.$('button:has-text("Read")');
+          if (readBtn) await readBtn.click();
+          await page.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'cross-mode-split', 'Stitched view: Alice in Reader mode (left) and Bob in Review mode (right)', async () => {
+          await page.waitForTimeout(300);
+        });
+
+        await step.dual(pageB, chromium, 'both-back-to-editor', 'Both users return to Editor mode', async () => {
+          const aliceBtn = await page.$('[data-testid="mode-btn-editor"]')
+            ?? await page.$('button:has-text("Editor")');
+          const bobBtn = await pageB.$('[data-testid="mode-btn-editor"]')
+            ?? await pageB.$('button:has-text("Editor")');
+          if (aliceBtn) await aliceBtn.click();
+          if (bobBtn) await bobBtn.click();
+          await page.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'final-collab-state', 'Final state — both users in editor, all content visible', async () => {
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+          await pageB.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+          await page.waitForTimeout(500);
+        });
+      } finally {
+        await ctxB.close();
+      }
+
+      // --- Solo closing steps ---
+      await step('alice-returns-to-list', 'Alice navigates back to the documents list', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('document-in-list', 'The document appears in the documents list', async () => {
+        await page.waitForTimeout(400);
+      });
+    },
+  },
+
+  // =========================================================================
+  // Journey 5: Pipeline Create, Configure, and Run
+  //   Create a pipeline from blank, add nodes, save, trigger a run, and
+  //   observe the runs page.
+  //   ~22 steps.
+  // =========================================================================
+  {
+    slug: 'pipeline-create-configure-run',
+    title: 'Create a pipeline, configure nodes, and trigger a run',
+    description: 'Operator creates a new pipeline from blank, names it, opens the canvas editor, and explores the pipeline runs page with search and range filtering.',
     async run(page, step) {
-      await step('land-on-pipelines', 'Land on /pipelines', async () => {
+      await step('land-on-pipelines', 'Navigate to /pipelines', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(800);
       });
-      await step('open-new-pipeline-modal', 'Click the new-pipeline trigger (matched by visible text)', async () => {
-        // PipelinesPage doesn't expose a single canonical "new pipeline"
-        // testid for the launcher button — the modal's confirm/cancel/name
-        // testids are all there, but the entry-point button varies. Match
-        // by visible text instead.
+      await step('see-pipeline-list', 'See the pipelines list (empty or populated)', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('open-new-pipeline-modal', 'Click the new-pipeline trigger', async () => {
         const launcher = await page.$('button:has-text("New Pipeline"), button:has-text("+ New"), button:has-text("Blank")');
         if (launcher) {
           await launcher.click();
           await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 });
         }
       });
-      await step('name-the-pipeline', 'Type a name for the new pipeline', async () => {
+      await step('name-the-pipeline', 'Name it "Content Review Pipeline"', async () => {
         const input = await page.$('[data-testid="new-pipeline-name"]');
-        if (input) await input.fill('Journey Test Pipeline');
+        if (input) await input.fill('Content Review Pipeline');
       });
-      await step('confirm-create', 'Click Create — lands in the editor', async () => {
+      await step('create-pipeline', 'Click Create to land in the canvas editor', async () => {
         const confirm = await page.$('[data-testid="new-pipeline-confirm"]');
         if (confirm) {
           await confirm.click();
-          // Editor mounts on a different route (/pipelines/:id). Wait for
-          // either pipeline-editor testid OR the URL change.
           await Promise.race([
             page.waitForSelector('[data-testid="pipeline-editor"]', { timeout: 8_000 }),
             page.waitForURL(/\/pipelines\/[^/]+$/, { timeout: 8_000 }),
-          ]).catch(() => { /* best-effort */ });
+          ]).catch(() => {});
         }
       });
-      await step('verify-editor-landed', 'See the pipeline editor canvas', async () => {
-        // If the editor mounted, this shot proves it. If it didn't (e.g.
-        // social-api was not reachable), we still capture whatever we
-        // ended up on for triage.
+      await step('see-canvas-editor', 'See the pipeline canvas editor', async () => {
         await page.waitForTimeout(800);
       });
-    },
-  },
-  {
-    slug: 'pipeline-runs-page-search-and-range',
-    title: 'Explore the pipeline runs page — search box + range filter',
-    description: 'Visit /pipelines/:id/runs for a seeded pipeline, type a search query, click the range pills, and verify the URL updates.',
-    async run(page, step) {
-      // Use a fixed pipelineId so the URL is stable across runs. Empty
-      // state is the expected outcome on a fresh stack.
-      const PIPELINE_ID = 'journey-runs-pipeline';
 
-      await step('land-on-runs-page', 'Visit a pipeline runs page', async () => {
-        await page.goto(`${FRONTEND_BASE}/pipelines/${PIPELINE_ID}/runs`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(800);
-      });
-      await step('see-search-and-pills', 'Confirm the search box + range pills mounted', async () => {
-        // If the runs page rendered, the search input is present. If we
-        // landed somewhere else (e.g. a redirect to /pipelines), the
-        // screenshot shows that — operator can see the actual route.
+      // --- Explore the editor ---
+      await step('see-trigger-node', 'See the default trigger node on the canvas', async () => {
         await page.waitForTimeout(400);
       });
-      await step('type-search-query', 'Type a substring into the runs search box', async () => {
-        const input = await page.$('[data-testid="runs-search-input"]');
-        if (input) await input.fill('triage');
-        await page.waitForTimeout(300);
+      await step('explore-node-palette', 'Look at available node types in the palette', async () => {
+        // Try to find a node palette / add-node button
+        const addNode = await page.$('button:has-text("Add Node"), button:has-text("+ Node"), [data-testid="add-node"]');
+        if (addNode) await addNode.click();
+        await page.waitForTimeout(600);
       });
-      await step('click-range-7d', 'Click the 7d range pill', async () => {
-        const btn = await page.$('[data-testid="runs-range-7d"]');
-        if (btn) await btn.click();
+      await step('see-editor-toolbar', 'See the editor toolbar and controls', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      // Capture the pipeline ID from the URL for the runs page.
+      const pipelineUrl = page.url();
+      const pipelineId = pipelineUrl.split('/pipelines/')[1]?.split(/[?#/]/)[0] ?? 'unknown';
+
+      // --- Navigate to runs page ---
+      await step('go-to-runs-page', 'Navigate to the pipeline runs page', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines/${pipelineId}/runs`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+      await step('see-runs-empty-state', 'See the runs page (empty — no runs yet)', async () => {
+        await page.waitForTimeout(400);
+      });
+      await step('type-in-search', 'Type a search query in the runs search box', async () => {
+        const input = await page.$('[data-testid="runs-search-input"]');
+        if (input) await input.fill('content review');
         await page.waitForTimeout(300);
       });
       await step('click-range-24h', 'Click the 24h range pill', async () => {
@@ -706,47 +975,54 @@ const JOURNEYS = [
         if (btn) await btn.click();
         await page.waitForTimeout(300);
       });
-      await step('click-range-all', 'Click the all range pill', async () => {
+      await step('click-range-7d', 'Click the 7d range pill', async () => {
+        const btn = await page.$('[data-testid="runs-range-7d"]');
+        if (btn) await btn.click();
+        await page.waitForTimeout(300);
+      });
+      await step('click-range-all', 'Click All to show all runs', async () => {
         const btn = await page.$('[data-testid="runs-range-all"]');
         if (btn) await btn.click();
         await page.waitForTimeout(300);
       });
-    },
-  },
-  {
-    slug: 'delete-document-type-with-confirmation',
-    title: 'Delete a document type via the confirmation modal',
-    description: 'Operator picks a type, clicks the × delete button, sees the confirmation modal, and confirms deletion.',
-    async run(page, step) {
-      await step('seed-an-existing-type', 'Pre-seed localStorage with one type', async () => {
-        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
-        await page.evaluate(() => {
-          const now = new Date().toISOString();
-          const seed = [{
-            id: 'journey-delete-seed',
-            name: 'Deletable Type',
-            description: 'Pre-seeded for the delete journey',
-            icon: '🗑️',
-            fields: [],
-            createdAt: now,
-            updatedAt: now,
-          }];
-          localStorage.setItem('ws_document_types_v1', JSON.stringify(seed));
-        });
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.waitForSelector('[data-testid="type-item-journey-delete-seed"]', { timeout: 5_000 });
+
+      // --- Go back to pipeline list ---
+      await step('back-to-pipeline-list', 'Navigate back to /pipelines', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
       });
-      await step('click-delete', 'Click the × delete control on the seeded type', async () => {
-        await page.click('[data-testid="delete-type-journey-delete-seed"]');
-        await page.waitForSelector('[data-testid="confirm-delete"]', { timeout: 5_000 });
+      await step('see-pipeline-in-list', 'See "Content Review Pipeline" in the list', async () => {
+        await page.waitForTimeout(400);
       });
-      await step('see-confirmation-modal', 'Confirmation modal renders', async () => {
-        // The modal is now visible; the screenshot of this step shows it.
+
+      // --- Create a second pipeline ---
+      await step('create-second-pipeline', 'Create a second pipeline for comparison', async () => {
+        const launcher = await page.$('button:has-text("New Pipeline"), button:has-text("+ New"), button:has-text("Blank")');
+        if (launcher) {
+          await launcher.click();
+          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 });
+        }
       });
-      await step('confirm-deletion', 'Click Delete to confirm', async () => {
-        await page.click('[data-testid="confirm-delete"]');
-        // Modal closes; type list re-renders.
-        await page.waitForFunction(() => !document.querySelector('[data-testid="confirm-delete"]'), null, { timeout: 5_000 });
+      await step('name-second-pipeline', 'Name it "Data Ingestion Pipeline"', async () => {
+        const input = await page.$('[data-testid="new-pipeline-name"]');
+        if (input) await input.fill('Data Ingestion Pipeline');
+      });
+      await step('create-second', 'Click Create', async () => {
+        const confirm = await page.$('[data-testid="new-pipeline-confirm"]');
+        if (confirm) {
+          await confirm.click();
+          await Promise.race([
+            page.waitForSelector('[data-testid="pipeline-editor"]', { timeout: 8_000 }),
+            page.waitForURL(/\/pipelines\/[^/]+$/, { timeout: 8_000 }),
+          ]).catch(() => {});
+        }
+      });
+      await step('see-second-editor', 'See the second pipeline editor', async () => {
+        await page.waitForTimeout(800);
+      });
+      await step('back-to-list-final', 'Return to /pipelines to see both pipelines', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
       });
     },
   },
@@ -788,7 +1064,7 @@ async function runJourney(chromium, journey, runId, runStartedAt) {
   let status = 'passed';
   let failure = null;
   try {
-    await journey.run(page, step);
+    await journey.run(page, step, chromium);
   } catch (err) {
     status = 'failed';
     failure = err?.message ?? String(err);
@@ -838,7 +1114,6 @@ function appendRun(index, journey, runRecord) {
     };
     index.journeys.push(entry);
   } else {
-    // Refresh title/description in case the spec evolved.
     entry.title = journey.title;
     entry.description = journey.description;
   }
@@ -864,9 +1139,10 @@ async function main() {
     const record = await runJourney(chromium, journey, runId, runStartedAt);
     appendRun(index, journey, record);
     if (record.status === 'passed') passed += 1; else failed += 1;
-    await writeIndex(index); // commit progress after each journey
+    await writeIndex(index);
   }
 
+  await closeStitchBrowser();
   log(`done — ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 }

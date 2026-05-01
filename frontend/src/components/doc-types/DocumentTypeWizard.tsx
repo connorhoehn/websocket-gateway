@@ -768,10 +768,10 @@ function ViewModeCell({ field, mode, onToggleHidden, onOverrideChange }: {
   onToggleHidden: () => void;
   onOverrideChange: (key: string) => void;
 }) {
-  const hidden = field.hiddenInModes.includes(mode);
+  const hidden = (field.hiddenInModes ?? []).includes(mode);
   const fieldTypeDef = getFieldType(field.sectionType);
   const options = fieldTypeDef?.rendererKeys[mode] ?? [];
-  const currentOverride = field.rendererOverrides[mode] ?? options[0] ?? '';
+  const currentOverride = (field.rendererOverrides ?? {})[mode] ?? options[0] ?? '';
 
   return (
     <td style={{ padding: '10px 12px', verticalAlign: 'top' }}>
@@ -825,17 +825,18 @@ function Step3ViewModes({ fields, setFields }: {
 
   const toggleHidden = (fieldId: string, mode: ViewMode) => {
     const field = fields.find(f => f.id === fieldId)!;
-    const hidden = field.hiddenInModes.includes(mode);
+    const modes = field.hiddenInModes ?? [];
+    const hidden = modes.includes(mode);
     update(fieldId, {
       hiddenInModes: hidden
-        ? field.hiddenInModes.filter(m => m !== mode)
-        : [...field.hiddenInModes, mode],
+        ? modes.filter(m => m !== mode)
+        : [...modes, mode],
     });
   };
 
   const setRenderer = (fieldId: string, mode: ViewMode, key: string) => {
     const field = fields.find(f => f.id === fieldId)!;
-    update(fieldId, { rendererOverrides: { ...field.rendererOverrides, [mode]: key } });
+    update(fieldId, { rendererOverrides: { ...(field.rendererOverrides ?? {}), [mode]: key } });
   };
 
   if (fields.length === 0) {
