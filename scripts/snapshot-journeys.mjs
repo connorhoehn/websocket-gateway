@@ -648,8 +648,7 @@ const JOURNEYS = [
       await step('add-rich-text-overview', 'Add a Rich Text section for the project overview', async () => {
         await clickIfExists(page, '[data-testid="add-field-rich-text"]');
         await page.waitForTimeout(300);
-        // Rename the section
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -660,7 +659,7 @@ const JOURNEYS = [
       await step('add-checklist-section', 'Add a Checklist section for key milestones', async () => {
         await clickIfExists(page, '[data-testid="add-field-checklist"]');
         await page.waitForTimeout(300);
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -675,7 +674,7 @@ const JOURNEYS = [
       });
 
       await step('name-second-page', 'Name the second page "Technical Details"', async () => {
-        const pageTitles = await page.$('[data-testid^="page-title-"]');
+        const pageTitles = await page.$$('[data-testid^="page-title-"]');
         if (pageTitles.length >= 2) {
           await pageTitles[1].fill('');
           await pageTitles[1].fill('Technical Details');
@@ -686,7 +685,7 @@ const JOURNEYS = [
       await step('add-rich-text-to-page2', 'Add a Rich Text section to the Technical Details page', async () => {
         await clickIfExists(page, '[data-testid="add-field-rich-text"]');
         await page.waitForTimeout(300);
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -697,7 +696,7 @@ const JOURNEYS = [
       await step('add-diagram-to-page2', 'Add a Diagram section for system diagrams', async () => {
         await clickIfExists(page, '[data-testid="add-field-diagram"]');
         await page.waitForTimeout(300);
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -712,7 +711,7 @@ const JOURNEYS = [
       });
 
       await step('name-third-page', 'Name the third page "Decisions & Sign-off"', async () => {
-        const pageTitles = await page.$('[data-testid^="page-title-"]');
+        const pageTitles = await page.$$('[data-testid^="page-title-"]');
         if (pageTitles.length >= 3) {
           await pageTitles[2].fill('');
           await pageTitles[2].fill('Decisions & Sign-off');
@@ -723,7 +722,7 @@ const JOURNEYS = [
       await step('add-decisions-to-page3', 'Add a Decisions section to the third page', async () => {
         await clickIfExists(page, '[data-testid="add-field-decisions"]');
         await page.waitForTimeout(300);
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -734,7 +733,7 @@ const JOURNEYS = [
       await step('add-tasks-to-page3', 'Add a Task List section for sign-off items', async () => {
         await clickIfExists(page, '[data-testid="add-field-tasks"]');
         await page.waitForTimeout(300);
-        const fields = await page.$('[data-testid^="field-name-"]');
+        const fields = await page.$$('[data-testid^="field-name-"]');
         if (fields.length > 0) {
           const last = fields[fields.length - 1];
           await last.fill('');
@@ -747,10 +746,13 @@ const JOURNEYS = [
       });
 
       await step('enable-toc', 'Enable Table of Contents for the multi-page document', async () => {
-        const tocCheckbox = await page.$('[data-testid="page-config-toc"]');
-        if (tocCheckbox) {
-          const isChecked = await tocCheckbox.isChecked();
-          if (!isChecked) await tocCheckbox.click();
+        const tocDiv = await page.$('[data-testid="page-config-toc"]');
+        if (tocDiv) {
+          const checkbox = await tocDiv.$('input[type="checkbox"]');
+          if (checkbox) {
+            const isChecked = await checkbox.isChecked();
+            if (!isChecked) await checkbox.click();
+          }
         }
         await page.waitForTimeout(200);
       });
@@ -789,7 +791,7 @@ const JOURNEYS = [
       });
 
       await step('select-project-brief-type', 'Choose "Project Brief" from the type picker', async () => {
-        const options = await page.$('[data-testid^="type-option-"]');
+        const options = await page.$$('[data-testid^="type-option-"]');
         for (const opt of options) {
           const text = await opt.textContent();
           if (/project brief/i.test(text ?? '')) { await opt.click(); break; }
@@ -814,13 +816,11 @@ const JOURNEYS = [
       });
 
       await step('open-multipage-doc', 'Click the document card to enter the editor', async () => {
-        // Find the card for our new doc
-        const cards = await page.$('[data-testid^="document-card-"]');
+        const cards = await page.$$('[data-testid^="document-card-"]');
         for (const card of cards) {
           const text = await card.textContent();
           if (/platform modernization/i.test(text ?? '')) { await card.click(); break; }
         }
-        // Fallback: click first card
         if (cards.length > 0) {
           await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(async () => {
             await cards[0].click();
@@ -836,7 +836,7 @@ const JOURNEYS = [
 
       // --- Fill in content across all pages ---
       await step('fill-overview-section', 'Type content in the Project Overview section', async () => {
-        const editables = await page.$('[contenteditable="true"]');
+        const editables = await page.$$('[contenteditable="true"]');
         if (editables.length > 0) {
           await editables[0].click();
           await page.keyboard.type('The Q3 Platform Modernization initiative aims to migrate our monolithic API to an event-driven architecture. Key drivers: horizontal scaling constraints, deployment coupling, and team autonomy. Target completion: end of Q3 with phased rollout.');
@@ -845,14 +845,14 @@ const JOURNEYS = [
       });
 
       await step('add-milestone-items', 'Add checklist items for key milestones', async () => {
-        const addBtns = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+        const addBtns = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
         if (addBtns.length > 0) {
           await addBtns[0].click();
           await page.waitForTimeout(200);
           await page.keyboard.type('Phase 1: Service extraction (API gateway + auth) — July 15');
           await page.waitForTimeout(150);
 
-          const addBtns2 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+          const addBtns2 = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
           if (addBtns2.length > 0) {
             await addBtns2[0].click();
             await page.waitForTimeout(200);
@@ -860,7 +860,7 @@ const JOURNEYS = [
             await page.waitForTimeout(150);
           }
 
-          const addBtns3 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+          const addBtns3 = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
           if (addBtns3.length > 0) {
             await addBtns3[0].click();
             await page.waitForTimeout(200);
@@ -882,8 +882,7 @@ const JOURNEYS = [
       });
 
       await step('fill-architecture-section', 'Type architecture details', async () => {
-        const editables = await page.$('[contenteditable="true"]');
-        // Find an empty editable (architecture section) — skip the first which has overview text
+        const editables = await page.$$('[contenteditable="true"]');
         for (const ed of editables) {
           const text = await ed.textContent();
           if (!text || text.trim().length === 0) {
@@ -911,32 +910,36 @@ const JOURNEYS = [
         if (addBtn) {
           await addBtn.click();
           await page.waitForTimeout(400);
-          const inputs = await page.$('[contenteditable="true"]');
-          const lastInput = inputs[inputs.length - 1];
-          if (lastInput) {
-            await lastInput.click();
-            await page.keyboard.type('Adopt NATS JetStream over Kafka — lower operational overhead, native Go client, sufficient throughput for our scale (< 50k msg/s).');
+          const input = await page.$('input[placeholder="Describe the decision..."]');
+          if (input) {
+            await input.click();
+            await input.fill('Adopt NATS JetStream over Kafka — lower operational overhead, native Go client, sufficient throughput for our scale (< 50k msg/s).');
           }
           await page.waitForTimeout(200);
         }
       });
 
       await step('add-signoff-task', 'Add sign-off tasks', async () => {
-        const addBtns = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
-        // Find the last "Add item" button (for the sign-off tasks section)
+        const addBtns = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
         if (addBtns.length > 0) {
           const btn = addBtns[addBtns.length - 1];
           await btn.click();
-          await page.waitForTimeout(200);
-          await page.keyboard.type('Engineering lead sign-off — @alice');
+          await page.waitForTimeout(300);
+          const inputs = await page.$$('input[type="text"]');
+          if (inputs.length > 0) {
+            await inputs[inputs.length - 1].fill('Engineering lead sign-off — @alice');
+          }
           await page.waitForTimeout(150);
         }
-        const addBtns2 = await page.$('button:has-text("+ Add item"), button:has-text("Add item")');
+        const addBtns2 = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
         if (addBtns2.length > 0) {
           const btn = addBtns2[addBtns2.length - 1];
           await btn.click();
-          await page.waitForTimeout(200);
-          await page.keyboard.type('Product owner approval — @bob');
+          await page.waitForTimeout(300);
+          const inputs = await page.$$('input[type="text"]');
+          if (inputs.length > 0) {
+            await inputs[inputs.length - 1].fill('Product owner approval — @bob');
+          }
         }
         await page.waitForTimeout(300);
       });
@@ -1650,12 +1653,20 @@ const JOURNEYS = [
         await page.waitForTimeout(400);
         const publishItem = await page.$('button:has-text("Publish")');
         if (publishItem) {
-          await publishItem.click();
-          await page.waitForTimeout(400);
-          // Confirm in the publish modal
-          const confirmBtn = await page.$('button:has-text("Publish")');
-          if (confirmBtn) await confirmBtn.click();
-          await page.waitForTimeout(600);
+          const isDisabled = await publishItem.isDisabled();
+          if (!isDisabled) {
+            await publishItem.click();
+            await page.waitForTimeout(400);
+            const confirmBtn = await page.$('button:has-text("Publish")');
+            if (confirmBtn) {
+              const confirmDisabled = await confirmBtn.isDisabled();
+              if (!confirmDisabled) await confirmBtn.click();
+            }
+            await page.waitForTimeout(600);
+          } else {
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(200);
+          }
         }
       });
 
@@ -1666,8 +1677,11 @@ const JOURNEYS = [
       await step('click-run-button', 'Click the Run button to execute the pipeline', async () => {
         const runBtn = await page.$('[data-testid="run-button"]');
         if (runBtn) {
-          await runBtn.click();
-          await page.waitForTimeout(2_000);
+          const isDisabled = await runBtn.isDisabled();
+          if (!isDisabled) {
+            await runBtn.click();
+            await page.waitForTimeout(2_000);
+          }
         }
       });
 
@@ -1911,6 +1925,600 @@ const JOURNEYS = [
         await page.waitForTimeout(200);
       });
       await step('final-pipeline-list-state', 'Final state of the pipeline list with both pipelines', async () => {
+        await page.waitForTimeout(400);
+      });
+    },
+  },
+
+  // =========================================================================
+  // Journey 6: End-to-End — Type → Document → Collaboration → Pipeline
+  //   Multi-page type creation, document instance, dual-user collaboration
+  //   filling each page, finalize, and pipeline creation triggered by the
+  //   document type.
+  //   ~45 steps.
+  // =========================================================================
+  {
+    slug: 'end-to-end-type-doc-collab-pipeline',
+    title: 'End-to-end: multi-page type, collaborative editing, and pipeline trigger',
+    description: 'Creates a multi-page "Product Spec" type with 3 pages (Overview, Design, Approval). Alice creates a document, fills page 1. Bob joins and fills page 2. Both collaborate on page 3. Document is finalized. A pipeline is created that triggers on document.finalize for this type.',
+    async run(page, step, chromium) {
+      const browser = page.context().browser();
+      if (!browser) throw new Error('cannot resolve browser handle');
+
+      // =================================================================
+      // PHASE 1: Create a multi-page document type via the wizard
+      // =================================================================
+
+      await step('navigate-to-types', 'Navigate to /document-types', async () => {
+        await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
+      });
+
+      await step('open-type-wizard', 'Click "+ New" to create a type', async () => {
+        await page.click('[data-testid="create-type-btn"]');
+        await page.waitForSelector('[data-testid="name-input"]', { timeout: 5_000 });
+      });
+
+      await step('name-product-spec', 'Name the type "Product Spec" with description', async () => {
+        await page.fill('[data-testid="name-input"]', 'Product Spec');
+        const desc = await page.$('[data-testid="description-input"]');
+        if (desc) await desc.fill('Multi-page product specification — overview, technical design, and stakeholder approval. Used by cross-functional teams for feature sign-off.');
+      });
+
+      await step('advance-to-sections', 'Click Next to reach the Sections step', async () => {
+        await page.click('[data-testid="wizard-next"]');
+        await page.waitForSelector('[data-testid^="add-field-"]', { timeout: 8_000 });
+      });
+
+      // --- Page 1: Overview ---
+      await step('add-overview-richtext', 'Add a Rich Text section for the product overview', async () => {
+        await clickIfExists(page, '[data-testid="add-field-rich-text"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Product Overview');
+        }
+      });
+
+      await step('add-goals-checklist', 'Add a Checklist section for success metrics', async () => {
+        await clickIfExists(page, '[data-testid="add-field-checklist"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Success Metrics');
+        }
+      });
+
+      // --- Page 2: Technical Design ---
+      await step('add-page-2', 'Click "+ Add Page" for the Technical Design page', async () => {
+        await clickIfExists(page, '[data-testid="add-page"]');
+        await page.waitForTimeout(500);
+      });
+
+      await step('name-page-2', 'Name the second page "Technical Design"', async () => {
+        const titles = await page.$$('[data-testid^="page-title-"]');
+        if (titles.length >= 2) {
+          await titles[1].fill('');
+          await titles[1].fill('Technical Design');
+        }
+        await page.waitForTimeout(200);
+      });
+
+      await step('add-architecture-richtext', 'Add a Rich Text section for architecture', async () => {
+        await clickIfExists(page, '[data-testid="add-field-rich-text"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Architecture');
+        }
+      });
+
+      await step('add-tasks-section', 'Add a Tasks section for implementation plan', async () => {
+        await clickIfExists(page, '[data-testid="add-field-tasks"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Implementation Plan');
+        }
+      });
+
+      // --- Page 3: Approval ---
+      await step('add-page-3', 'Click "+ Add Page" for the Approval page', async () => {
+        await clickIfExists(page, '[data-testid="add-page"]');
+        await page.waitForTimeout(500);
+      });
+
+      await step('name-page-3', 'Name the third page "Stakeholder Approval"', async () => {
+        const titles = await page.$$('[data-testid^="page-title-"]');
+        if (titles.length >= 3) {
+          await titles[2].fill('');
+          await titles[2].fill('Stakeholder Approval');
+        }
+        await page.waitForTimeout(200);
+      });
+
+      await step('add-decisions-section', 'Add a Decisions section for sign-off decisions', async () => {
+        await clickIfExists(page, '[data-testid="add-field-decisions"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Sign-off Decisions');
+        }
+      });
+
+      await step('add-approval-tasks', 'Add a Tasks section for approval action items', async () => {
+        await clickIfExists(page, '[data-testid="add-field-tasks"]');
+        await page.waitForTimeout(300);
+        const fields = await page.$$('[data-testid^="field-name-"]');
+        if (fields.length > 0) {
+          await fields[fields.length - 1].fill('');
+          await fields[fields.length - 1].fill('Approval Action Items');
+        }
+      });
+
+      await step('see-3-page-wizard', 'See all 3 pages with 6 sections in the wizard', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('enable-toc', 'Enable Table of Contents', async () => {
+        const tocDiv = await page.$('[data-testid="page-config-toc"]');
+        if (tocDiv) {
+          const checkbox = await tocDiv.$('input[type="checkbox"]');
+          if (checkbox) {
+            const isChecked = await checkbox.isChecked();
+            if (!isChecked) await checkbox.click();
+          }
+        }
+        await page.waitForTimeout(200);
+      });
+
+      await step('save-product-spec-type', 'Walk wizard forward and save the type', async () => {
+        for (let i = 0; i < 5; i++) {
+          const next = await page.$('[data-testid="wizard-next"]');
+          if (!next) break;
+          const label = (await page.textContent('[data-testid="wizard-next"]')) ?? '';
+          await next.click();
+          if (/create type|save changes/i.test(label)) break;
+          await page.waitForTimeout(200);
+        }
+        await page.waitForSelector('[data-testid="save-message"], [data-testid="type-list"]', { timeout: 5_000 });
+      });
+
+      await step('see-type-in-list', 'See "Product Spec" in the types sidebar', async () => {
+        await page.waitForFunction(
+          () => Array.from(document.querySelectorAll('[data-testid^="type-item-"]'))
+            .some(el => /product spec/i.test(el.textContent ?? '')),
+          null, { timeout: 5_000 },
+        );
+      });
+
+      // =================================================================
+      // PHASE 2: Alice creates a document from the type and fills page 1
+      // =================================================================
+
+      await step('alice-go-to-documents', 'Alice navigates to /documents', async () => {
+        await page.goto(`${FRONTEND_BASE}/documents`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+
+      await step('alice-new-document', 'Alice clicks "+ New Document"', async () => {
+        const btn = await page.$('[data-testid="new-document-btn"]')
+          ?? await page.$('button:has-text("New Document")');
+        if (btn) { await btn.click(); await page.waitForTimeout(600); }
+      });
+
+      await step('alice-pick-product-spec', 'Alice selects "Product Spec" type', async () => {
+        const options = await page.$$('[data-testid^="type-option-"]');
+        for (const opt of options) {
+          const text = await opt.textContent();
+          if (/product spec/i.test(text ?? '')) { await opt.click(); break; }
+        }
+        await page.waitForTimeout(300);
+      });
+
+      await step('alice-title-document', 'Alice names it "Notification System v2 Spec"', async () => {
+        await fillIfExists(page, '[data-testid="new-doc-title"]', 'Notification System v2 Spec');
+      });
+
+      await step('alice-describe-document', 'Alice adds a description', async () => {
+        await fillIfExists(page, '[data-testid="new-doc-description"]', 'Product spec for the notification system rewrite — real-time delivery, multi-channel routing, and preference management.');
+      });
+
+      await step('alice-create-document', 'Alice clicks "Create Document"', async () => {
+        const submit = await page.$('[data-testid="new-doc-submit"]');
+        if (submit) { await submit.click(); await page.waitForTimeout(1_500); }
+      });
+
+      await step('alice-open-document', 'Alice opens the newly created document', async () => {
+        const cards = await page.$$('[data-testid^="document-card-"]');
+        for (const card of cards) {
+          const text = await card.textContent();
+          if (/notification system/i.test(text ?? '')) { await card.click(); break; }
+        }
+        await page.waitForURL(/\/documents\/[^/]+/, { timeout: 5_000 }).catch(() => {
+          if (cards.length > 0) cards[0].click();
+        });
+        await page.waitForTimeout(1_000);
+      });
+
+      await step('alice-see-editor', 'Alice sees the document editor with all sections from 3 pages', async () => {
+        await page.waitForTimeout(600);
+      });
+
+      // Alice fills page 1 content
+      await step('alice-fill-overview', 'Alice types the product overview', async () => {
+        const editable = await page.$('[contenteditable="true"]');
+        if (editable) {
+          await editable.click();
+          await page.keyboard.type('The Notification System v2 replaces our legacy email-only alerting with a unified multi-channel notification platform. Channels: in-app, email, SMS, and Slack. Key goals: sub-second delivery, user preference management, and digest batching for high-volume events.');
+          await page.waitForTimeout(400);
+        }
+      });
+
+      await step('alice-add-metrics', 'Alice adds success metrics via the checklist', async () => {
+        const addBtns = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+        if (addBtns.length > 0) {
+          await addBtns[0].click();
+          await page.waitForTimeout(300);
+          await page.keyboard.type('P95 delivery latency < 500ms across all channels');
+          await page.waitForTimeout(150);
+        }
+        const addBtns2 = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+        if (addBtns2.length > 0) {
+          await addBtns2[0].click();
+          await page.waitForTimeout(300);
+          await page.keyboard.type('User opt-out rate < 5% after preference center launch');
+          await page.waitForTimeout(150);
+        }
+        const addBtns3 = await page.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+        if (addBtns3.length > 0) {
+          await addBtns3[0].click();
+          await page.waitForTimeout(300);
+          await page.keyboard.type('Zero dropped notifications during peak (10k/min)');
+        }
+        await page.waitForTimeout(300);
+      });
+
+      await step('alice-see-page1-filled', 'Alice sees page 1 content filled — overview and metrics', async () => {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        await page.waitForTimeout(500);
+      });
+
+      // Capture doc URL for Bob
+      const docUrl = page.url();
+
+      // =================================================================
+      // PHASE 3: Bob joins — dual screenshots from here
+      // =================================================================
+
+      const ctxB = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });
+      const pageB = await ctxB.newPage();
+      pageB.on('pageerror', (e) => log(`  [Bob] pageerror: ${e.message}`));
+
+      try {
+        await step.dual(pageB, chromium, 'bob-opens-document', 'Bob opens the same document in a second browser', async () => {
+          await pageB.goto(docUrl, { waitUntil: 'domcontentloaded' });
+          await pageB.waitForTimeout(1_500);
+        });
+
+        await step.dual(pageB, chromium, 'bob-sees-alice-content', "Bob sees Alice's overview and metrics synced", async () => {
+          await pageB.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'presence-indicators', 'Both browsers show presence avatars', async () => {
+          await page.evaluate(() => window.scrollTo({ top: 0 }));
+          await pageB.evaluate(() => window.scrollTo({ top: 0 }));
+          await page.waitForTimeout(600);
+        });
+
+        // --- Bob fills page 2: Technical Design ---
+        await step.dual(pageB, chromium, 'bob-scrolls-to-architecture', 'Bob scrolls to the Architecture section (page 2)', async () => {
+          const heading = await pageB.$('text=Architecture');
+          if (heading) {
+            await heading.scrollIntoViewIfNeeded();
+            await pageB.waitForTimeout(400);
+          } else {
+            await pageB.evaluate(() => window.scrollTo({ top: 500, behavior: 'smooth' }));
+            await pageB.waitForTimeout(600);
+          }
+        });
+
+        await step.dual(pageB, chromium, 'bob-fills-architecture', 'Bob types the architecture description', async () => {
+          const editables = await pageB.$$('[contenteditable="true"]');
+          for (const ed of editables) {
+            const text = await ed.textContent();
+            if (!text || text.trim().length === 0) {
+              await ed.click();
+              await pageB.keyboard.type('Event-driven architecture: API Gateway → NATS JetStream → Channel Workers (email/SMS/push/Slack). PostgreSQL for preference storage, Redis for delivery dedup and rate limiting. Each channel worker is independently scalable. Dead letter queue for failed deliveries with automatic retry (exponential backoff, max 3 attempts).');
+              break;
+            }
+          }
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'bob-adds-impl-tasks', 'Bob adds implementation plan tasks', async () => {
+          const heading = await pageB.$('text=Implementation Plan');
+          if (heading) {
+            await heading.scrollIntoViewIfNeeded();
+            await pageB.waitForTimeout(300);
+          }
+          const addBtns = await pageB.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns.length > 0) {
+            await addBtns[addBtns.length - 1].click();
+            await pageB.waitForTimeout(300);
+            const inputs = await pageB.$$('input[type="text"]');
+            if (inputs.length > 0) await inputs[inputs.length - 1].fill('Week 1-2: NATS cluster setup + channel worker scaffold');
+          }
+          await pageB.waitForTimeout(200);
+          const addBtns2 = await pageB.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns2.length > 0) {
+            await addBtns2[addBtns2.length - 1].click();
+            await pageB.waitForTimeout(300);
+            const inputs = await pageB.$$('input[type="text"]');
+            if (inputs.length > 0) await inputs[inputs.length - 1].fill('Week 3-4: Preference API + digest batching logic');
+          }
+          await pageB.waitForTimeout(200);
+          const addBtns3 = await pageB.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns3.length > 0) {
+            await addBtns3[addBtns3.length - 1].click();
+            await pageB.waitForTimeout(300);
+            const inputs = await pageB.$$('input[type="text"]');
+            if (inputs.length > 0) await inputs[inputs.length - 1].fill('Week 5-6: Integration testing + canary rollout');
+          }
+          await pageB.waitForTimeout(300);
+        });
+
+        await step.dual(pageB, chromium, 'alice-sees-bob-architecture', 'Alice scrolls down — sees Bob\'s architecture text appear via CRDT sync', async () => {
+          const heading = await page.$('text=Architecture');
+          if (heading) {
+            await heading.scrollIntoViewIfNeeded();
+          } else {
+            await page.evaluate(() => window.scrollTo({ top: 500, behavior: 'smooth' }));
+          }
+          await page.waitForTimeout(800);
+        });
+
+        // --- Both collaborate on page 3: Approval ---
+        await step.dual(pageB, chromium, 'both-scroll-to-approval', 'Both users scroll to the Stakeholder Approval section (page 3)', async () => {
+          const headingA = await page.$('text=Sign-off Decisions');
+          const headingB = await pageB.$('text=Sign-off Decisions');
+          if (headingA) await headingA.scrollIntoViewIfNeeded();
+          else await page.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+          if (headingB) await headingB.scrollIntoViewIfNeeded();
+          else await pageB.evaluate(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        });
+
+        await step.dual(pageB, chromium, 'alice-adds-decision', 'Alice adds a sign-off decision', async () => {
+          const addBtn = await page.$('button:has-text("+ Add decision")');
+          if (addBtn) {
+            await addBtn.click();
+            await page.waitForTimeout(400);
+            const input = await page.$('input[placeholder="Describe the decision..."]');
+            if (input) {
+              await input.click();
+              await input.fill('Approved: NATS JetStream as message broker — eng-leads unanimous');
+            }
+            await page.waitForTimeout(200);
+          }
+        });
+
+        await step.dual(pageB, chromium, 'bob-adds-decision', 'Bob adds a second decision', async () => {
+          const addBtn = await pageB.$('button:has-text("+ Add decision")');
+          if (addBtn) {
+            await addBtn.click();
+            await pageB.waitForTimeout(400);
+            const inputs = await pageB.$$('input[placeholder="Describe the decision..."]');
+            if (inputs.length > 0) {
+              const last = inputs[inputs.length - 1];
+              await last.click();
+              await last.fill('Deferred: SMS channel — launch with email + in-app + Slack first');
+            }
+            await pageB.waitForTimeout(200);
+          }
+        });
+
+        await step.dual(pageB, chromium, 'bob-adds-approval-tasks', 'Bob adds approval action items', async () => {
+          const addBtns = await pageB.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns.length > 0) {
+            const btn = addBtns[addBtns.length - 1];
+            await btn.click();
+            await pageB.waitForTimeout(300);
+            const inputs = await pageB.$$('input[type="text"]');
+            if (inputs.length > 0) await inputs[inputs.length - 1].fill('PM sign-off on scope — @alice');
+          }
+          await pageB.waitForTimeout(200);
+          const addBtns2 = await pageB.$$('button:has-text("+ Add item"), button:has-text("Add item")');
+          if (addBtns2.length > 0) {
+            const btn = addBtns2[addBtns2.length - 1];
+            await btn.click();
+            await pageB.waitForTimeout(300);
+            const inputs = await pageB.$$('input[type="text"]');
+            if (inputs.length > 0) await inputs[inputs.length - 1].fill('Security review — @infosec-team');
+          }
+          await pageB.waitForTimeout(300);
+        });
+
+        await step.dual(pageB, chromium, 'see-all-pages-filled', 'Both users scroll to top — all 3 pages filled collaboratively', async () => {
+          await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+          await pageB.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+          await page.waitForTimeout(600);
+        });
+
+        // --- Bob switches to Review mode, Alice stays in editor ---
+        await step.dual(pageB, chromium, 'bob-enters-review', 'Bob switches to Review mode while Alice continues editing', async () => {
+          const btn = await pageB.$('[data-testid="mode-btn-ack"]')
+            ?? await pageB.$('button:has-text("Review")');
+          if (btn) await btn.click();
+          await pageB.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'bob-approves-overview', 'Bob approves the Product Overview section', async () => {
+          const btn = await pageB.$('[data-testid$="-review-approved"]');
+          if (btn) await btn.click();
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'bob-approves-architecture', 'Bob approves the Architecture section', async () => {
+          const btns = await pageB.$$('[data-testid$="-review-approved"]');
+          if (btns.length > 0) await btns[0].click();
+          await pageB.waitForTimeout(400);
+        });
+
+        await step.dual(pageB, chromium, 'cross-mode-view', 'Split view: Alice in Editor (left), Bob in Review (right)', async () => {
+          await page.evaluate(() => window.scrollTo({ top: 0 }));
+          await pageB.evaluate(() => window.scrollTo({ top: 0 }));
+          await page.waitForTimeout(400);
+        });
+
+        // Both return to editor
+        await step.dual(pageB, chromium, 'both-back-to-editor', 'Both users return to Editor mode', async () => {
+          const bobBtn = await pageB.$('[data-testid="mode-btn-editor"]')
+            ?? await pageB.$('button:has-text("Editor")');
+          if (bobBtn) await bobBtn.click();
+          await pageB.waitForTimeout(500);
+        });
+
+        // Alice switches to Reader to show final document
+        await step.dual(pageB, chromium, 'alice-reader-final', 'Alice switches to Reader mode to see the finalized document', async () => {
+          const btn = await page.$('[data-testid="mode-btn-reader"]')
+            ?? await page.$('button:has-text("Read")');
+          if (btn) await btn.click();
+          await page.waitForTimeout(800);
+        });
+
+        await step.dual(pageB, chromium, 'final-collab-state', 'Final collaborative state — Alice reads, Bob edits', async () => {
+          await page.evaluate(() => window.scrollTo({ top: 0 }));
+          await pageB.evaluate(() => window.scrollTo({ top: 0 }));
+          await page.waitForTimeout(500);
+        });
+      } finally {
+        await ctxB.close();
+      }
+
+      // =================================================================
+      // PHASE 4: Create a pipeline triggered by the Product Spec type
+      // =================================================================
+
+      await step('go-to-pipelines', 'Navigate to /pipelines', async () => {
+        await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(800);
+      });
+
+      await step('open-new-pipeline', 'Click to create a new pipeline', async () => {
+        const btn = await page.$('button:has-text("New Pipeline"), button:has-text("+ New"), button:has-text("Blank")');
+        if (btn) {
+          await btn.click();
+          await page.waitForSelector('[data-testid="new-pipeline-name"]', { timeout: 5_000 }).catch(() => {});
+        }
+      });
+
+      await step('name-pipeline', 'Name it "Product Spec Review Pipeline"', async () => {
+        await fillIfExists(page, '[data-testid="new-pipeline-name"]', 'Product Spec Review Pipeline');
+      });
+
+      await step('create-pipeline', 'Click Create to open the canvas editor', async () => {
+        const confirm = await page.$('[data-testid="new-pipeline-confirm"]');
+        if (confirm) {
+          await confirm.click();
+          await Promise.race([
+            page.waitForSelector('[data-testid="pipeline-editor"]', { timeout: 8_000 }),
+            page.waitForURL(/\/pipelines\/[^/]+$/, { timeout: 8_000 }),
+          ]).catch(() => {});
+        }
+      });
+
+      await step('see-pipeline-editor', 'See the blank pipeline canvas with trigger node', async () => {
+        await page.waitForTimeout(800);
+      });
+
+      // Build the pipeline via dev bridge
+      await step('build-review-pipeline', 'Build a document review pipeline: trigger → LLM → condition → approve/flag', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
+        await page.evaluate(() => {
+          const bridge = window.__pipelineEditor;
+          if (!bridge) return;
+          const triggerId = bridge.findNodeIdByType('trigger');
+          const llmId = bridge.insertNode('llm', { x: 360, y: 120 });
+          const condId = bridge.insertNode('condition', { x: 640, y: 120 });
+          const approveId = bridge.insertNode('action', { x: 920, y: 40 });
+          const flagId = bridge.insertNode('action', { x: 920, y: 220 });
+          if (triggerId) bridge.connect(triggerId, llmId);
+          bridge.connect(llmId, condId);
+          bridge.connect(condId, approveId, { sourceHandle: 'true' });
+          bridge.connect(condId, flagId, { sourceHandle: 'false' });
+          bridge.updateNodeData(llmId, { label: 'Review Content' });
+          bridge.updateNodeData(condId, { label: 'Meets Standards?' });
+          bridge.updateNodeData(approveId, { label: 'Auto-Approve' });
+          bridge.updateNodeData(flagId, { label: 'Flag for Review' });
+        });
+        await page.waitForTimeout(800);
+      });
+
+      await step('auto-arrange', 'Auto-arrange the pipeline nodes', async () => {
+        await clickIfExists(page, '[data-testid="auto-arrange-btn"]');
+        await page.waitForTimeout(600);
+        const fit = await page.$('button[title="Fit view"], button[aria-label="Fit view"]');
+        if (fit) { await fit.click(); await page.waitForTimeout(500); }
+      });
+
+      await step('see-connected-pipeline', 'See the complete pipeline: trigger → Review Content → Meets Standards? → Auto-Approve / Flag for Review', async () => {
+        await page.waitForTimeout(500);
+      });
+
+      // Configure trigger to fire on document.finalize
+      await step('click-trigger-node', 'Click the trigger node to open its config', async () => {
+        const node = await page.$('[data-testid="canvas-node-trigger"], [data-node-type="trigger"], [data-testid*="node"][data-testid*="trigger"]');
+        if (node) await node.click();
+        else {
+          const nodes = await page.$$('[data-testid^="canvas-node-"]');
+          if (nodes.length > 0) await nodes[0].click();
+        }
+        await page.waitForTimeout(800);
+      });
+
+      await step('see-trigger-config', 'See the trigger config panel', async () => {
+        await page.waitForTimeout(300);
+      });
+
+      await step('set-document-finalize-trigger', 'Set trigger type to document.finalize for Product Spec', async () => {
+        // Select document.finalize from trigger type dropdown
+        const triggerSelect = await page.$('select:near([data-testid="config-tab-config"])');
+        if (triggerSelect) {
+          await triggerSelect.selectOption('document.finalize');
+          await page.waitForTimeout(300);
+        }
+        // Select the document type
+        const typeSelect = await page.$$('select');
+        for (const sel of typeSelect) {
+          const options = await sel.$$('option');
+          for (const opt of options) {
+            const text = await opt.textContent();
+            if (/product spec/i.test(text ?? '')) {
+              await sel.selectOption({ label: text });
+              break;
+            }
+          }
+        }
+        await page.waitForTimeout(400);
+      });
+
+      await step('see-trigger-configured', 'See the trigger configured for document.finalize on Product Spec', async () => {
+        await page.waitForTimeout(400);
+      });
+
+      await step('deselect-and-see-full-pipeline', 'Press Escape to see the full pipeline', async () => {
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+      });
+
+      await step('final-pipeline-state', 'Final state: pipeline connected to the Product Spec type, ready for document events', async () => {
         await page.waitForTimeout(400);
       });
     },
