@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "name": "websocket-gateway",
+  "project_url": "https://github.com/connorhoehn/websocket-gateway",
+  "languages": ["typescript"],
+  "commands": {
+    "install": "npm install",
+    "build": "npm run build",
+    "test": "npm test",
+    "dev": "npm run dev"
+  },
+  "shared_services": ["redis"],
+  "applied_recipes": [],
+  "depends_on_projects": [
+    {
+      "url": "https://github.com/connorhoehn/distributed-core.git",
+      "ref": "v0.11.0"
+    }
+  ],
+  "mcp_servers": []
+}
