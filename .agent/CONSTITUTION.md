@@ -91,9 +91,8 @@ When the dispatched queue is empty AND no unread handoffs are open,
 draw from these ranked items. Each item must still satisfy the
 "Good-enhancement criteria" below before being claimed.
 
-1. **distributed-core v0.14.0 adoption**: surface-narrowing release;
-   no gateway breakage confirmed. Pin bump from v0.11.0 is safe but
-   not urgent. Adopt deliberately as a standalone task. ~150 LOC.
+1. ~~**distributed-core v0.14.0 adoption**~~ — DONE. Lockfiles
+   resolved, tests green. No removed exports were consumed.
 2. **Phase 51 polish / hardening**: integration tests for TypedDocument
    validation edge cases, performance testing for bulk CSV import with
    large files (1000+ rows), error message improvements. ~150 LOC.
@@ -178,7 +177,7 @@ end-user via the frontend. There is no other agent that pins to this
 repo's source.
 
 **Producers we depend on:**
-- `distributed-core` — pinned to `v0.11.0` (commit `f0a5852`).
+- `distributed-core` — pinned to `v0.14.0` (commit `ad94581`).
   Bump deliberately as part of an adoption task. When
   `distributed-core` ships a new release, expect a handoff with the
   primitive table; file an adoption task before consuming the new
@@ -224,6 +223,10 @@ review:
   `gateway_*` and `pipeline_*` for app-emitted. Don't mix.
 - **Fencing tokens** (consumer groups, when adopted): Raft
   term-derived per `distributed-core` T6b decision.
+- **Surface narrowing** (v0.14.0): `PipelineRun`, `PipelineExecutor`,
+  `registerXHandlers`, `Router/RoutedMessage/MessageHandler`,
+  `FrameworkRangeHandler`, `FrameworkClusterMessage` removed from
+  package root. None were consumed by this repo.
 
 ## Kill-switch
 
