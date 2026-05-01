@@ -201,44 +201,127 @@ const RANGE_LABEL: Record<DateRangeKey, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Chip button — keyboard accessible (Enter/Space toggle), Tab navigable.
+// Compact filter dropdown — replaces sprawling chip rows with a single
+// button + checkbox popover per facet.
 // ---------------------------------------------------------------------------
 
-function ChipButton(props: {
-  active: boolean;
-  onClick: () => void;
+function FilterDropdown<T extends string>({
+  label,
+  options,
+  selected,
+  onToggle,
+  labels,
+  testIdPrefix,
+}: {
   label: string;
-  testId?: string;
-  ariaLabel?: string;
+  options: readonly T[];
+  selected: ReadonlySet<T>;
+  onToggle: (value: T) => void;
+  labels: Record<T, string>;
+  testIdPrefix: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const summary =
+    selected.size === 0
+      ? 'All'
+      : selected.size <= 2
+        ? Array.from(selected).map((s) => labels[s]).join(', ')
+        : `${selected.size} selected`;
+
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={props.active}
-      aria-label={props.ariaLabel ?? props.label}
-      data-testid={props.testId}
-      onClick={props.onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          props.onClick();
-        }
-      }}
-      style={{
-        padding: '6px 12px',
-        fontSize: 12,
-        fontWeight: 500,
-        border: `1px solid ${props.active ? colors.primary : colors.border}`,
-        background: props.active ? colors.primary : colors.surface,
-        color: props.active ? '#fff' : colors.textSecondary,
-        borderRadius: 4,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      {props.label}
-    </button>
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        data-testid={`${testIdPrefix}-dropdown`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 10px',
+          fontSize: 12,
+          fontWeight: 500,
+          border: `1px solid ${selected.size > 0 ? colors.primary : colors.border}`,
+          background: colors.surface,
+          color: colors.textSecondary,
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{ color: colors.textTertiary, fontWeight: 600, fontSize: 11 }}>
+          {label}
+        </span>
+        <span
+          style={{
+            color: selected.size > 0 ? colors.primary : colors.textSecondary,
+            fontWeight: selected.size > 0 ? 600 : 500,
+          }}
+        >
+          {summary}
+        </span>
+        <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.6 }}>&#9662;</span>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: 4,
+            background: '#fff',
+            border: `1px solid ${colors.border}`,
+            borderRadius: 6,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            zIndex: 50,
+            minWidth: 160,
+            padding: '4px 0',
+          }}
+        >
+          {options.map((opt) => (
+            <label
+              key={opt}
+              data-testid={`${testIdPrefix}-${opt}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                cursor: 'pointer',
+                color: colors.textPrimary,
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = colors.surfaceHover;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(opt)}
+                onChange={() => onToggle(opt)}
+                style={{ margin: 0, accentColor: colors.primary }}
+              />
+              {labels[opt]}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -513,35 +596,36 @@ export default function PipelineRunsPage() {
         </button>
       </div>
 
-      {/* Compact filter bar — single wrap-aware row.
-          Search grows to fill; range/status/trigger clusters wrap onto a
-          second row only when the viewport can't hold them inline. */}
+      {/* Compact tabular filter bar */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 16,
-          flexWrap: 'wrap',
-          rowGap: 8,
+          gap: 8,
+          padding: '8px 12px',
+          background: colors.surfaceInset,
+          border: `1px solid ${colors.border}`,
+          borderRadius: 6,
         }}
       >
         <input
           id="runs-search"
           type="search"
           data-testid="runs-search-input"
-          placeholder="Search run id or pipeline id…"
+          placeholder="Search…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ ...fieldStyle, flex: '1 1 240px', maxWidth: 320 }}
+          style={{ ...fieldStyle, flex: '1 1 180px', maxWidth: 240, padding: '5px 10px', fontSize: 12 }}
           aria-label="Search runs by run id or pipeline id"
         />
 
+        <div style={{ width: 1, height: 20, background: colors.border, flexShrink: 0 }} />
+
         <div
           role="radiogroup"
-          aria-labelledby="runs-range-label"
-          style={{ display: 'flex', gap: 4 }}
+          aria-label="Date range"
+          style={{ display: 'flex', gap: 2 }}
         >
-          <span id="runs-range-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Range</span>
           {DATE_RANGE_KEYS.map((r) => (
             <button
               key={r}
@@ -550,20 +634,14 @@ export default function PipelineRunsPage() {
               aria-checked={range === r}
               data-testid={`runs-range-${r}`}
               onClick={() => setRange(r)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setRange(r);
-                }
-              }}
               style={{
-                padding: '5px 9px',
-                fontSize: 12,
-                fontWeight: 500,
-                border: `1px solid ${range === r ? colors.primary : colors.border}`,
-                background: range === r ? colors.primary : colors.surface,
+                padding: '4px 8px',
+                fontSize: 11,
+                fontWeight: range === r ? 600 : 500,
+                border: 'none',
+                background: range === r ? colors.primary : 'transparent',
                 color: range === r ? '#fff' : colors.textSecondary,
-                borderRadius: 4,
+                borderRadius: 3,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
               }}
@@ -573,41 +651,48 @@ export default function PipelineRunsPage() {
           ))}
         </div>
 
-        <div
-          role="group"
-          aria-labelledby="runs-status-label"
-          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
-        >
-          <span id="runs-status-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Status</span>
-          {STATUS_KEYS.map((s) => (
-            <ChipButton
-              key={s}
-              active={statuses.has(s)}
-              onClick={() => toggleStatus(s)}
-              label={STATUS_LABEL[s]}
-              testId={`runs-status-chip-${s}`}
-              ariaLabel={`Filter status ${STATUS_LABEL[s]}`}
-            />
-          ))}
-        </div>
+        <div style={{ width: 1, height: 20, background: colors.border, flexShrink: 0 }} />
 
-        <div
-          role="group"
-          aria-labelledby="runs-trigger-label"
-          style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}
-        >
-          <span id="runs-trigger-label" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Trigger</span>
-          {TRIGGER_KIND_KEYS.map((k) => (
-            <ChipButton
-              key={k}
-              active={triggerKinds.has(k)}
-              onClick={() => toggleTriggerKind(k)}
-              label={TRIGGER_LABEL[k]}
-              testId={`runs-trigger-chip-${k}`}
-              ariaLabel={`Filter trigger ${TRIGGER_LABEL[k]}`}
-            />
-          ))}
-        </div>
+        <FilterDropdown
+          label="Status"
+          options={STATUS_KEYS}
+          selected={statuses}
+          onToggle={toggleStatus}
+          labels={STATUS_LABEL}
+          testIdPrefix="runs-status-chip"
+        />
+
+        <FilterDropdown
+          label="Trigger"
+          options={TRIGGER_KIND_KEYS}
+          selected={triggerKinds}
+          onToggle={toggleTriggerKind}
+          labels={TRIGGER_LABEL}
+          testIdPrefix="runs-trigger-chip"
+        />
+
+        {(statuses.size > 0 || triggerKinds.size > 0 || query.length > 0) && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              updateParam('status', null);
+              updateParam('trigger', null);
+            }}
+            style={{
+              padding: '3px 8px',
+              fontSize: 11,
+              background: 'none',
+              border: 'none',
+              color: colors.textTertiary,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textDecoration: 'underline',
+            }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* Bulk-action toolbar — visible only when something is selected */}

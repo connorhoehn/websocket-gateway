@@ -71,7 +71,7 @@ export default function NewDocumentModal({ open, onClose, onCreate }: NewDocumen
       maxWidth={560}
       zIndex={9999}
       rawChildren
-      backdropStyle={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)' }}
+      backdropStyle={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(2px)' }}
       cardStyle={{
         border: '1px solid #e2e8f0', borderRadius: 8,
         maxHeight: '90vh', width: '90vw',
