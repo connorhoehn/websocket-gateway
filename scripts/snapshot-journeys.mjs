@@ -1999,12 +1999,14 @@ function appendRun(index, journey, runRecord) {
       slug: journey.slug,
       title: journey.title,
       description: journey.description,
+      app: journey.app || 'Websocket Gateway',
       runs: [],
     };
     index.journeys.push(entry);
   } else {
     entry.title = journey.title;
     entry.description = journey.description;
+    if (!entry.app) entry.app = journey.app || 'Websocket Gateway';
   }
   entry.runs.push(runRecord);
 }
