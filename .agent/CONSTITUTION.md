@@ -68,7 +68,7 @@ frontend into a working product.
 
 ## Current phase
 
-**Phase 51: COMPLETE.** All phases A through G shipped (commit `4db1f34`):
+**Phase 51: COMPLETE.** All phases A through G shipped (commits `4db1f34`, `ca0fbbd`):
 - **Phase A** (hub#48): DDB-backed repos, CRUD routes, auto-form.
 - **Phase A.5**: Wizard dual-writes to server.
 - **Phase B**: `number`, `date`, `boolean` field types.
@@ -77,10 +77,11 @@ frontend into a working product.
 - **Phase E**: `displayModes` (full/teaser/list).
 - **Phase F** (hub#169, blocker #26): **Option B chosen** — TypedDocument
   and Document (CRDT) remain parallel systems, no bridge.
-- **Phase G** (hub#170): JSON Schema export + bulk CSV import.
+- **Phase G** (hub#170, hub#171): JSON Schema export + bulk CSV import,
+  backend + frontend UI complete.
 - Phase decomposition: `.planning/PHASE-51-DOCUMENT-TYPES.md`
 
-Phase 50 shipped + hardened. Phase 51 shipped + stable.
+Phase 50 shipped + hardened. Phase 51 shipped + stable + UI complete.
 
 Tests green: gateway 372 / social-api 456 / frontend 1006.
 
@@ -93,9 +94,9 @@ draw from these ranked items. Each item must still satisfy the
 1. **distributed-core v0.14.0 adoption**: surface-narrowing release;
    no gateway breakage confirmed. Pin bump from v0.11.0 is safe but
    not urgent. Adopt deliberately as a standalone task. ~150 LOC.
-2. **Frontend UI for Phase G endpoints**: add "Export Schema" button to
-   DocumentTypeWizard, "Bulk Import" button to TypedDocumentsPage that
-   triggers file picker + calls POST /bulk-import. ~80 LOC.
+2. **Phase 51 polish / hardening**: integration tests for TypedDocument
+   validation edge cases, performance testing for bulk CSV import with
+   large files (1000+ rows), error message improvements. ~150 LOC.
 3. **Pipeline / Phase 50 leftovers** (carry-over):
    - `T2 IdempotentProducer` adoption — only if duplicate-trigger
      incidents are observed. Don't pre-adopt.
