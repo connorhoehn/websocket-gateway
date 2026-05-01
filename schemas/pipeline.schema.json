@@ -55,6 +55,16 @@
   },
 
   "$defs": {
+    "RetryPolicy": {
+      "type": "object",
+      "required": ["maxAttempts", "backoffMs", "backoffMultiplier"],
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "backoffMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
+        "backoffMultiplier": { "type": "number", "minimum": 1, "maximum": 5 }
+      }
+    },
+
     "PipelineStatus": {
       "type": "string",
       "enum": ["draft", "published"]
@@ -161,7 +171,8 @@
         "userPromptTemplate": { "type": "string" },
         "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
         "maxTokens": { "type": "integer", "minimum": 1 },
-        "streaming": { "type": "boolean" }
+        "streaming": { "type": "boolean" },
+        "retryPolicy": { "$ref": "#/$defs/RetryPolicy" }
       }
     },
 
@@ -172,7 +183,8 @@
         "type": { "const": "transform" },
         "transformType": { "$ref": "#/$defs/TransformType" },
         "expression": { "type": "string" },
-        "outputKey": { "type": "string" }
+        "outputKey": { "type": "string" },
+        "retryPolicy": { "$ref": "#/$defs/RetryPolicy" }
       }
     },
 
@@ -194,7 +206,8 @@
         "actionType": { "$ref": "#/$defs/ActionType" },
         "config": { "type": "object", "additionalProperties": true },
         "idempotent": { "type": "boolean" },
-        "onError": { "type": "string", "enum": ["route-error", "fail-run"] }
+        "onError": { "type": "string", "enum": ["route-error", "fail-run"] },
+        "retryPolicy": { "$ref": "#/$defs/RetryPolicy" }
       }
     },
 

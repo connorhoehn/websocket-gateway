@@ -10,6 +10,8 @@ import { VideoSessionRepository } from './VideoSessionRepository';
 import { DocumentTypeRepository } from './DocumentTypeRepository';
 import { TypedDocumentRepository } from './TypedDocumentRepository';
 import { ApprovalRepository } from './ApprovalRepository';
+import { PipelineRunRepository } from './PipelineRunRepository';
+import { PipelineDLQRepository } from './PipelineDLQRepository';
 
 // Singleton instances — share the same docClient across all repositories
 export const profileRepo = new ProfileRepository(docClient);
@@ -23,6 +25,8 @@ export const videoSessionRepo = new VideoSessionRepository(docClient);
 export const documentTypeRepo = new DocumentTypeRepository(docClient);
 export const typedDocumentRepo = new TypedDocumentRepository(docClient);
 export const approvalRepo = new ApprovalRepository(docClient);
+export const pipelineRunRepo = new PipelineRunRepository(docClient);
+export const pipelineDLQRepo = new PipelineDLQRepository(docClient);
 
 export { BaseRepository } from './BaseRepository';
 export { ProfileRepository, ProfileItem } from './ProfileRepository';
@@ -43,6 +47,7 @@ export {
   DocumentTypeFieldValidation,
   DocumentTypeFieldShowWhen,
   DocumentTypeFieldDisplayModes,
+  DocumentTypeVersionSnapshot,
 } from './DocumentTypeRepository';
 export {
   TypedDocumentRepository,
@@ -54,3 +59,11 @@ export {
   ApprovalEntry,
   ApprovalDecision,
 } from './ApprovalRepository';
+export {
+  PipelineRunRepository,
+  PipelineRunItem,
+} from './PipelineRunRepository';
+export {
+  PipelineDLQRepository,
+  PipelineDLQItem,
+} from './PipelineDLQRepository';

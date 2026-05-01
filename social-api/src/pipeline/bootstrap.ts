@@ -710,18 +710,14 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
       at: string;
     }>) => {
       const payload = event.payload;
-      const now = new Date().toISOString();
       const ttl = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60; // 90 days
-      await runRepo.create({
+      await runRepo.put({
         pipelineId: payload.pipelineId,
         runId: payload.runId,
-        userId: (payload.triggeredBy?.payload as { userId?: string })?.userId ?? 'system',
         status: 'running',
-        triggeredAt: payload.at,
+        triggeredBy: (payload.triggeredBy?.payload as { userId?: string })?.userId ?? 'system',
+        triggerType: payload.triggeredBy?.triggerType ?? 'manual',
         startedAt: payload.at,
-        updatedAt: now,
-        triggerPayload: payload.triggeredBy?.payload,
-        triggeredBy: payload.triggeredBy as { userId: string; triggerType: string } | undefined,
         ttl,
       }).catch((err: unknown) => {
         console.error('[pipeline] run persistence failed (started)', { runId: payload.runId, err });

@@ -82,6 +82,17 @@ export interface DocumentTypeItem {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  version?: number;
+  previousVersions?: DocumentTypeVersionSnapshot[];
+}
+
+export interface DocumentTypeVersionSnapshot {
+  version: number;
+  name: string;
+  description: string;
+  icon: string;
+  fields: DocumentTypeFieldItem[];
+  updatedAt: string;
 }
 
 export class DocumentTypeRepository extends BaseRepository {
@@ -114,6 +125,7 @@ export class DocumentTypeRepository extends BaseRepository {
   async update(
     typeId: string,
     patch: Partial<Pick<DocumentTypeItem, 'name' | 'description' | 'icon' | 'fields'>>,
+    existingItem?: DocumentTypeItem,
   ): Promise<DocumentTypeItem> {
     const expressions: string[] = [];
     const exprNames: Record<string, string> = {};
@@ -137,8 +149,31 @@ export class DocumentTypeRepository extends BaseRepository {
       exprNames['#fields'] = 'fields';
       exprValues[':fields'] = patch.fields;
     }
+
+    const now = new Date().toISOString();
     expressions.push('updatedAt = :updatedAt');
-    exprValues[':updatedAt'] = new Date().toISOString();
+    exprValues[':updatedAt'] = now;
+
+    // Schema versioning: bump version and snapshot the previous state.
+    const currentVersion = existingItem?.version ?? 0;
+    const nextVersion = currentVersion + 1;
+    expressions.push('version = :version');
+    exprValues[':version'] = nextVersion;
+
+    if (existingItem) {
+      const snapshot: DocumentTypeVersionSnapshot = {
+        version: currentVersion || 1,
+        name: existingItem.name,
+        description: existingItem.description,
+        icon: existingItem.icon,
+        fields: existingItem.fields,
+        updatedAt: existingItem.updatedAt,
+      };
+      const history = existingItem.previousVersions ?? [];
+      const trimmed = history.length >= 20 ? history.slice(-19) : history;
+      expressions.push('previousVersions = :previousVersions');
+      exprValues[':previousVersions'] = [...trimmed, snapshot];
+    }
 
     const result = await this.updateItem({
       Key: { typeId },

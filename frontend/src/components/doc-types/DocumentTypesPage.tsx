@@ -12,6 +12,7 @@ import { useDocumentTypes } from '../../hooks/useDocumentTypes';
 import type { DocumentType } from '../../types/documentType';
 import Modal from '../shared/Modal';
 import EmptyState from '../shared/EmptyState';
+import CookbooksModal from './CookbooksModal';
 
 export interface DocumentTypesPageProps {
   /**
@@ -170,6 +171,7 @@ export function DocumentTypesPage({ idToken }: DocumentTypesPageProps = {}) {
   const [mode, setMode] = useState<Mode>('idle');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [cookbooksOpen, setCookbooksOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ text: string; key: number; syncSuffix?: string } | null>(null);
 
   // When a sync resolves, decorate the most recent save banner with the
@@ -240,6 +242,12 @@ export function DocumentTypesPage({ idToken }: DocumentTypesPageProps = {}) {
     setConfirmDeleteId(null);
   };
 
+  const handleCookbookCreated = (typeId: string) => {
+    setEditingId(typeId);
+    setMode('edit');
+    setSaveMessage(null);
+  };
+
   const confirmDeleteType = confirmDeleteId
     ? types.find(t => t.id === confirmDeleteId)
     : null;
@@ -265,17 +273,30 @@ export function DocumentTypesPage({ idToken }: DocumentTypesPageProps = {}) {
           <span style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>
             Document Types
           </span>
-          <button
-            data-testid="create-type-btn"
-            onClick={handleCreateClick}
-            style={{
-              padding: '5px 12px', fontSize: 12, fontWeight: 600,
-              background: '#646cff', color: '#fff', border: 'none',
-              borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            + New
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              data-testid="cookbooks-btn"
+              onClick={() => setCookbooksOpen(true)}
+              style={{
+                padding: '5px 12px', fontSize: 12, fontWeight: 600,
+                background: '#fff', color: '#646cff', border: '1px solid #646cff',
+                borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Cookbooks
+            </button>
+            <button
+              data-testid="create-type-btn"
+              onClick={handleCreateClick}
+              style={{
+                padding: '5px 12px', fontSize: 12, fontWeight: 600,
+                background: '#646cff', color: '#fff', border: 'none',
+                borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              + New
+            </button>
+          </div>
         </div>
 
         {/* Type list */}
@@ -369,6 +390,14 @@ export function DocumentTypesPage({ idToken }: DocumentTypesPageProps = {}) {
           onCancel={handleDeleteCancel}
         />
       )}
+
+      {/* ── Cookbooks gallery modal ── */}
+      <CookbooksModal
+        open={cookbooksOpen}
+        onClose={() => setCookbooksOpen(false)}
+        onCreated={handleCookbookCreated}
+        createType={createType}
+      />
     </div>
   );
 }

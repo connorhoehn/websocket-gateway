@@ -233,12 +233,12 @@
       "gsi": [
         {
           "indexName": "failedAt-index",
-          "hashKey": { "name": "partitionKey", "type": "S" },
+          "hashKey": { "name": "status", "type": "S" },
           "rangeKey": { "name": "failedAt", "type": "S" },
           "projection": "ALL"
         }
       ],
-      "_note": "Pipeline dead-letter queue — durable backing store for failed events. TTL attribute: ttl (epoch seconds, 30-day retention). GSI uses synthetic partitionKey='DLQ' for chronological listing."
+      "_note": "TTL attribute: ttl (epoch seconds, 30-day retention). DLQ entries auto-expire."
     }
   ]
 }

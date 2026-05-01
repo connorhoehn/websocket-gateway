@@ -53,6 +53,7 @@ export interface LLMNodeData {
   temperature?: number;
   maxTokens?: number;
   streaming: boolean;
+  retryPolicy?: RetryPolicy;
 }
 
 export type TransformType = 'jsonpath' | 'template' | 'javascript';
@@ -65,6 +66,7 @@ export interface TransformNodeData {
   outputKey?: string;
   /** Marks this node as an intentional terminal/sink — silences DEAD_END lint. */
   terminal?: boolean;
+  retryPolicy?: RetryPolicy;
 }
 
 export interface ConditionNodeData {
@@ -89,6 +91,7 @@ export interface ActionNodeData {
   config: Record<string, unknown>;
   idempotent?: boolean;
   onError?: 'route-error' | 'fail-run';
+  retryPolicy?: RetryPolicy;
 }
 
 export interface ForkNodeData {
@@ -125,6 +128,16 @@ export interface ApprovalNodeData {
   timeoutAction?: ApprovalTimeoutAction;
   /** Message shown to the approver. */
   message?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Retry policy — optional per-node resilience config (Phase 50 durability)
+// ---------------------------------------------------------------------------
+
+export interface RetryPolicy {
+  maxAttempts: number;
+  backoffMs: number;
+  backoffMultiplier: number;
 }
 
 export type NodeData =

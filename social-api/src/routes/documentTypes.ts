@@ -22,6 +22,7 @@ import type {
   DocumentTypeFieldValidation,
   DocumentTypeFieldShowWhen,
   DocumentTypeFieldDisplayModes,
+  DocumentTypeVersionSnapshot,
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
 
@@ -223,6 +224,7 @@ documentTypesRouter.post('/', asyncHandler(async (req: Request, res: Response) =
     createdBy: req.user!.sub,
     createdAt: now,
     updatedAt: now,
+    version: 1,
   };
   await documentTypeRepo.create(item);
   res.status(201).json(item);
@@ -256,7 +258,7 @@ documentTypesRouter.put('/:typeId', asyncHandler(async (req: Request, res: Respo
   if (typeof body.icon === 'string') patch.icon = body.icon;
   if (body.fields !== undefined) patch.fields = parseFields(body.fields);
 
-  const updated = await documentTypeRepo.update(params.typeId, patch);
+  const updated = await documentTypeRepo.update(params.typeId, patch, existing);
   res.status(200).json(updated);
 }));
 
@@ -264,6 +266,52 @@ documentTypesRouter.delete('/:typeId', asyncHandler(async (req: Request, res: Re
   const params = req.params as { typeId: string };
   await documentTypeRepo.delete(params.typeId);
   res.status(204).end();
+}));
+
+// Schema versioning — list previous versions of a document type
+documentTypesRouter.get('/:typeId/versions', asyncHandler(async (req: Request, res: Response) => {
+  const params = req.params as { typeId: string };
+  const item = await documentTypeRepo.get(params.typeId);
+  if (!item) throw new NotFoundError(`document type ${params.typeId} not found`);
+
+  const currentSnapshot: DocumentTypeVersionSnapshot = {
+    version: item.version ?? 1,
+    name: item.name,
+    description: item.description,
+    icon: item.icon,
+    fields: item.fields,
+    updatedAt: item.updatedAt,
+  };
+
+  const history = item.previousVersions ?? [];
+  res.status(200).json({ typeId: params.typeId, current: currentSnapshot, versions: history });
+}));
+
+documentTypesRouter.get('/:typeId/versions/:version', asyncHandler(async (req: Request, res: Response) => {
+  const params = req.params as { typeId: string; version: string };
+  const versionNum = parseInt(params.version, 10);
+  if (!Number.isFinite(versionNum) || versionNum < 1) {
+    throw new ValidationError('version must be a positive integer');
+  }
+
+  const item = await documentTypeRepo.get(params.typeId);
+  if (!item) throw new NotFoundError(`document type ${params.typeId} not found`);
+
+  if (versionNum === (item.version ?? 1)) {
+    res.status(200).json({
+      version: item.version ?? 1,
+      name: item.name,
+      description: item.description,
+      icon: item.icon,
+      fields: item.fields,
+      updatedAt: item.updatedAt,
+    });
+    return;
+  }
+
+  const snapshot = (item.previousVersions ?? []).find(v => v.version === versionNum);
+  if (!snapshot) throw new NotFoundError(`version ${versionNum} not found for type ${params.typeId}`);
+  res.status(200).json(snapshot);
 }));
 
 // Phase 51 Phase G — JSON Schema export
