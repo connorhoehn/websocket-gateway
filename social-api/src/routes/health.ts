@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import { ddbClient } from '../lib/aws-clients';
 import { getRedisClient } from '../lib/redis-client';
+import { tableName } from '../lib/ddb-table-name';
+
+const PROFILES_TABLE = tableName('social-profiles');
 
 const router = Router();
 
@@ -11,7 +14,7 @@ router.get('/', async (_req, res) => {
   // DynamoDB check — lightweight DescribeTable call
   const ddbStart = Date.now();
   try {
-    await ddbClient.send(new DescribeTableCommand({ TableName: 'social-profiles' }));
+    await ddbClient.send(new DescribeTableCommand({ TableName: PROFILES_TABLE }));
     checks.dynamodb = { status: 'ok', latencyMs: Date.now() - ddbStart };
   } catch (err) {
     checks.dynamodb = { status: 'error', latencyMs: Date.now() - ddbStart, error: (err as Error).message };

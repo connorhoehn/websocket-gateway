@@ -12,7 +12,8 @@ import {
   ConflictError,
   AppError,
 } from '../middleware/error-handler';
-const REL_TABLE = 'social-relationships';
+import { tableName } from '../lib/ddb-table-name';
+const REL_TABLE = tableName('social-relationships');
 
 export const roomsRouter = Router();
 

@@ -11,8 +11,9 @@ import {
   ForbiddenError,
   ConflictError,
 } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const REL_TABLE = 'social-relationships';
+const REL_TABLE = tableName('social-relationships');
 
 export const profilesRouter = Router();
 

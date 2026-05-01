@@ -7,6 +7,7 @@
 
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export type DocumentTypeFieldKind =
   | 'text'
@@ -85,7 +86,7 @@ export interface DocumentTypeItem {
 
 export class DocumentTypeRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {
-    super('document-types', docClient);
+    super(tableName('document-types'), docClient);
   }
 
   async create(item: DocumentTypeItem): Promise<void> {

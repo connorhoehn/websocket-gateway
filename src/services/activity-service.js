@@ -30,7 +30,8 @@ class ActivityService {
     this.metricsCollector = metricsCollector;
     this.redisClient = redisClient;
     this.dynamoClient = dynamoClient;
-    this.activityTableName = process.env.DYNAMODB_ACTIVITY_TABLE || 'user-activity';
+    const { tableName } = require('../lib/ddb-table-name');
+    this.activityTableName = tableName(process.env.DYNAMODB_ACTIVITY_TABLE || 'user-activity');
     this.clientChannels = new Map(); // clientId -> Set of channelIds
   }
 

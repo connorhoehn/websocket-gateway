@@ -1,6 +1,7 @@
 import { DynamoDBDocumentClient, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface DocumentSectionFields {
   documentId: string;
@@ -26,7 +27,7 @@ export type CreateDocumentSectionInput = {
   placeholder?: string;
 };
 
-const TABLE_NAME = 'document-sections';
+const TABLE_NAME = tableName('document-sections');
 
 export class DocumentSectionRepository extends BaseRepository {
   private docClientRef: DynamoDBDocumentClient;

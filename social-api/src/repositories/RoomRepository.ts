@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient, BatchGetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface RoomItem {
   roomId: string;
@@ -20,8 +21,9 @@ export interface RoomMemberItem {
   joinedAt: string;
 }
 
-const ROOMS_TABLE = 'social-rooms';
-const ROOM_MEMBERS_TABLE = 'social-room-members';
+const ROOMS_TABLE = tableName('social-rooms');
+const ROOM_MEMBERS_TABLE = tableName('social-room-members');
+const OUTBOX_TABLE = tableName('social-outbox');
 
 export class RoomRepository {
   private rooms: BaseRepository;
@@ -130,7 +132,7 @@ export class RoomRepository {
       new TransactWriteCommand({
         TransactItems: [
           { Put: { TableName: ROOM_MEMBERS_TABLE, Item: memberItem as unknown as Record<string, unknown> } },
-          { Put: { TableName: 'social-outbox', Item: outboxItem } },
+          { Put: { TableName: OUTBOX_TABLE, Item: outboxItem } },
         ],
       }),
     );

@@ -33,8 +33,9 @@ import {
 import { ulid } from 'ulid';
 import { BaseRepository } from '../repositories/BaseRepository';
 import { docClient } from '../lib/aws-clients';
+import { tableName } from '../lib/ddb-table-name';
 
-const PIPELINE_AUDIT_TABLE = 'pipeline-audit';
+const PIPELINE_AUDIT_TABLE = tableName('pipeline-audit');
 const ACTOR_TIME_INDEX = 'actor-time-index';
 const PIPELINE_TIME_INDEX = 'pipeline-time-index';
 

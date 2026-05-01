@@ -30,8 +30,10 @@ const OPERATIONS_BEFORE_SNAPSHOT = 50;
 // DynamoDB table names
 // ---------------------------------------------------------------------------
 
-const SNAPSHOTS_TABLE = process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots';
-const DOCUMENTS_TABLE = process.env.DYNAMODB_DOCUMENTS_TABLE || 'crdt-documents';
+const { tableName } = require('../../lib/ddb-table-name');
+
+const SNAPSHOTS_TABLE = tableName(process.env.DYNAMODB_CRDT_TABLE || 'crdt-snapshots');
+const DOCUMENTS_TABLE = tableName(process.env.DYNAMODB_DOCUMENTS_TABLE || 'crdt-documents');
 
 // ---------------------------------------------------------------------------
 // Redis cache settings

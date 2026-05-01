@@ -1,6 +1,7 @@
 import { ulid } from 'ulid';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface DocumentComment {
   documentId: string;
@@ -17,7 +18,7 @@ export interface DocumentComment {
   resolvedAt?: string;
 }
 
-const TABLE_NAME = 'document-comments';
+const TABLE_NAME = tableName('document-comments');
 
 export class DocumentCommentRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {

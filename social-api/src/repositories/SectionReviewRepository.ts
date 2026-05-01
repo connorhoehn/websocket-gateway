@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface SectionReview {
   documentId: string;
@@ -12,7 +13,7 @@ export interface SectionReview {
   comment?: string;
 }
 
-const TABLE_NAME = 'section-reviews';
+const TABLE_NAME = tableName('section-reviews');
 
 export class SectionReviewRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {

@@ -22,8 +22,9 @@ import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { ulid } from 'ulid';
 import { docClient } from '../lib/aws-clients';
 import { ConflictError } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const OUTBOX_TABLE = 'social-outbox';
+const OUTBOX_TABLE = tableName('social-outbox');
 
 export interface TargetPut {
   TableName: string;

@@ -1,6 +1,7 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ulid } from 'ulid';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface SectionItemFields {
   sectionKey: string;
@@ -33,7 +34,7 @@ export type CreateSectionItemInput = {
   notes?: string;
 };
 
-const TABLE_NAME = 'section-items';
+const TABLE_NAME = tableName('section-items');
 
 export class SectionItemRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {

@@ -5,6 +5,7 @@
 
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 // Value shapes Phase B understands. Stored verbatim in DDB; the route
 // layer enforces (fieldType, cardinality) → value-shape correspondence
@@ -27,7 +28,7 @@ export interface TypedDocumentItem {
 
 export class TypedDocumentRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {
-    super('typed-documents', docClient);
+    super(tableName('typed-documents'), docClient);
   }
 
   async create(item: TypedDocumentItem): Promise<void> {

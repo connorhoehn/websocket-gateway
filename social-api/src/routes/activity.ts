@@ -6,8 +6,9 @@ import {
   ValidationError,
   AppError,
 } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const TABLE = 'user-activity';
+const TABLE = tableName('user-activity');
 
 export const activityRouter = Router();
 

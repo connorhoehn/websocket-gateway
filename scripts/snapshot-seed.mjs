@@ -27,9 +27,15 @@ const doc = DynamoDBDocumentClient.from(ddb, {
   marshallOptions: { removeUndefinedValues: true },
 });
 
+// Local-dev-only DDB table-name prefix (mirrors src/lib/ddb-table-name.js).
+// When the gateway runs in shared-services mode, DDB_TABLE_PREFIX=gateway_
+// is set so seeded rows land in the same prefixed tables the app reads.
+const TABLE_PREFIX = process.env.DDB_TABLE_PREFIX ?? '';
+
 async function put(table, item) {
-  await doc.send(new PutCommand({ TableName: table, Item: item }));
-  console.log(`[seed] ${table} <- ${JSON.stringify(item).slice(0, 80)}…`);
+  const resolved = `${TABLE_PREFIX}${table}`;
+  await doc.send(new PutCommand({ TableName: resolved, Item: item }));
+  console.log(`[seed] ${resolved} <- ${JSON.stringify(item).slice(0, 80)}…`);
 }
 
 async function main() {

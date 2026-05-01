@@ -13,6 +13,7 @@
 
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export type ApprovalDecision = 'approved' | 'rejected' | 'changes_requested';
 
@@ -30,7 +31,7 @@ export interface ApprovalEntry {
 
 export class ApprovalRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {
-    super('approval-workflows', docClient);
+    super(tableName('approval-workflows'), docClient);
   }
 
   async create(entry: ApprovalEntry): Promise<void> {

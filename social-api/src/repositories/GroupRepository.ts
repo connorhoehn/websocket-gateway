@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface GroupItem {
   groupId: string;
@@ -20,8 +21,8 @@ export interface GroupMemberItem {
   invitedAt?: string;
 }
 
-const GROUPS_TABLE = 'social-groups';
-const MEMBERS_TABLE = 'social-group-members';
+const GROUPS_TABLE = tableName('social-groups');
+const MEMBERS_TABLE = tableName('social-group-members');
 
 export class GroupRepository {
   private groups: BaseRepository;

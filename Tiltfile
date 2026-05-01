@@ -84,15 +84,20 @@ local_resource(
 )
 
 # --- DynamoDB table setup (runs once after DynamoDB is ready) ---
+# DDB_TABLE_PREFIX defaults to empty in standalone mode; values-shared-local.yaml
+# sets it to "gateway_" so multiple projects can share one DynamoDB-local
+# without table-name collisions. The setup script below interpolates the
+# prefix into every create-table call.
 local_resource(
     'dynamodb-setup',
     cmd='''
         sleep 5
         ENDPOINT="--endpoint-url http://localhost:8000 --region us-east-1"
+        PREFIX="${DDB_TABLE_PREFIX:-}"
 
         # Gateway CRDT table (key names must match crdt-service.js _ensureTable / retrieveLatestSnapshot)
         aws dynamodb create-table \
-            --table-name crdt-snapshots \
+            --table-name "${PREFIX}crdt-snapshots" \
             --attribute-definitions \
                 AttributeName=documentId,AttributeType=S \
                 AttributeName=timestamp,AttributeType=N \
@@ -105,71 +110,71 @@ local_resource(
         # Social API tables + gateway doc registry
         CT="aws dynamodb create-table --billing-mode PAY_PER_REQUEST $ENDPOINT"
 
-        $CT --table-name social-profiles --attribute-definitions AttributeName=userId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH 2>/dev/null || echo "social-profiles exists"
-        aws dynamodb create-table --table-name social-relationships \
+        $CT --table-name "${PREFIX}social-profiles" --attribute-definitions AttributeName=userId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH 2>/dev/null || echo "${PREFIX}social-profiles exists"
+        aws dynamodb create-table --table-name "${PREFIX}social-relationships" \
             --attribute-definitions AttributeName=followerId,AttributeType=S AttributeName=followeeId,AttributeType=S \
             --key-schema AttributeName=followerId,KeyType=HASH AttributeName=followeeId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"followeeId-followerId-index","KeySchema":[{"AttributeName":"followeeId","KeyType":"HASH"},{"AttributeName":"followerId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "social-relationships exists"
-        aws dynamodb create-table --table-name social-outbox \
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}social-relationships exists"
+        aws dynamodb create-table --table-name "${PREFIX}social-outbox" \
             --attribute-definitions AttributeName=outboxId,AttributeType=S AttributeName=status,AttributeType=S AttributeName=createdAt,AttributeType=S \
             --key-schema AttributeName=outboxId,KeyType=HASH \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"status-index","KeySchema":[{"AttributeName":"status","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "social-outbox exists"
-        $CT --table-name social-rooms --attribute-definitions AttributeName=roomId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH 2>/dev/null || echo "social-rooms exists"
-        aws dynamodb create-table --table-name social-room-members \
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}social-outbox exists"
+        $CT --table-name "${PREFIX}social-rooms" --attribute-definitions AttributeName=roomId,AttributeType=S --key-schema AttributeName=roomId,KeyType=HASH 2>/dev/null || echo "${PREFIX}social-rooms exists"
+        aws dynamodb create-table --table-name "${PREFIX}social-room-members" \
             --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=userId,AttributeType=S \
             --key-schema AttributeName=roomId,KeyType=HASH AttributeName=userId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"userId-roomId-index","KeySchema":[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"roomId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "social-room-members exists"
-        $CT --table-name social-groups --attribute-definitions AttributeName=groupId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH 2>/dev/null || echo "social-groups exists"
-        $CT --table-name social-group-members --attribute-definitions AttributeName=groupId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-group-members exists"
-        aws dynamodb create-table --table-name social-posts \
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}social-room-members exists"
+        $CT --table-name "${PREFIX}social-groups" --attribute-definitions AttributeName=groupId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH 2>/dev/null || echo "${PREFIX}social-groups exists"
+        $CT --table-name "${PREFIX}social-group-members" --attribute-definitions AttributeName=groupId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=groupId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}social-group-members exists"
+        aws dynamodb create-table --table-name "${PREFIX}social-posts" \
             --attribute-definitions AttributeName=roomId,AttributeType=S AttributeName=postId,AttributeType=S AttributeName=authorId,AttributeType=S \
             --key-schema AttributeName=roomId,KeyType=HASH AttributeName=postId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"authorId-postId-index","KeySchema":[{"AttributeName":"authorId","KeyType":"HASH"},{"AttributeName":"postId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "social-posts exists"
-        $CT --table-name social-comments --attribute-definitions AttributeName=postId,AttributeType=S AttributeName=commentId,AttributeType=S --key-schema AttributeName=postId,KeyType=HASH AttributeName=commentId,KeyType=RANGE 2>/dev/null || echo "social-comments exists"
-        $CT --table-name social-likes --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "social-likes exists"
-        $CT --table-name user-activity --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "user-activity exists"
-        $CT --table-name crdt-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "crdt-documents exists"
-        $CT --table-name chat-messages --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=messageId,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=messageId,KeyType=RANGE 2>/dev/null || echo "chat-messages exists"
-        $CT --table-name document-video-sessions --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sessionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sessionId,KeyType=RANGE 2>/dev/null || echo "document-video-sessions exists"
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}social-posts exists"
+        $CT --table-name "${PREFIX}social-comments" --attribute-definitions AttributeName=postId,AttributeType=S AttributeName=commentId,AttributeType=S --key-schema AttributeName=postId,KeyType=HASH AttributeName=commentId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}social-comments exists"
+        $CT --table-name "${PREFIX}social-likes" --attribute-definitions AttributeName=targetId,AttributeType=S AttributeName=userId,AttributeType=S --key-schema AttributeName=targetId,KeyType=HASH AttributeName=userId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}social-likes exists"
+        $CT --table-name "${PREFIX}user-activity" --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=timestamp,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=timestamp,KeyType=RANGE 2>/dev/null || echo "${PREFIX}user-activity exists"
+        $CT --table-name "${PREFIX}crdt-documents" --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "${PREFIX}crdt-documents exists"
+        $CT --table-name "${PREFIX}chat-messages" --attribute-definitions AttributeName=channelId,AttributeType=S AttributeName=messageId,AttributeType=S --key-schema AttributeName=channelId,KeyType=HASH AttributeName=messageId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}chat-messages exists"
+        $CT --table-name "${PREFIX}document-video-sessions" --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sessionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sessionId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}document-video-sessions exists"
 
-        aws dynamodb create-table --table-name section-items \
+        aws dynamodb create-table --table-name "${PREFIX}section-items" \
             --attribute-definitions AttributeName=sectionKey,AttributeType=S AttributeName=itemId,AttributeType=S AttributeName=assignee,AttributeType=S AttributeName=status,AttributeType=S AttributeName=documentId,AttributeType=S \
             --key-schema AttributeName=sectionKey,KeyType=HASH AttributeName=itemId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"assignee-status-index","KeySchema":[{"AttributeName":"assignee","KeyType":"HASH"},{"AttributeName":"status","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},{"IndexName":"documentId-index","KeySchema":[{"AttributeName":"documentId","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "section-items exists"
-        $CT --table-name document-sections --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sectionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sectionId,KeyType=RANGE 2>/dev/null || echo "document-sections exists"
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}section-items exists"
+        $CT --table-name "${PREFIX}document-sections" --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=sectionId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH AttributeName=sectionId,KeyType=RANGE 2>/dev/null || echo "${PREFIX}document-sections exists"
 
-        aws dynamodb create-table --table-name approval-workflows \
+        aws dynamodb create-table --table-name "${PREFIX}approval-workflows" \
             --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=workflowId,AttributeType=S AttributeName=workflowStatus,AttributeType=S AttributeName=createdAt,AttributeType=S \
             --key-schema AttributeName=documentId,KeyType=HASH AttributeName=workflowId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"status-index","KeySchema":[{"AttributeName":"workflowStatus","KeyType":"HASH"},{"AttributeName":"createdAt","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "approval-workflows exists"
-        aws dynamodb create-table --table-name document-comments \
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}approval-workflows exists"
+        aws dynamodb create-table --table-name "${PREFIX}document-comments" \
             --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=commentId,AttributeType=S AttributeName=sectionId,AttributeType=S AttributeName=timestamp,AttributeType=S \
             --key-schema AttributeName=documentId,KeyType=HASH AttributeName=commentId,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"sectionId-timestamp-index","KeySchema":[{"AttributeName":"sectionId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "document-comments exists"
-        aws dynamodb create-table --table-name section-reviews \
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}document-comments exists"
+        aws dynamodb create-table --table-name "${PREFIX}section-reviews" \
             --attribute-definitions AttributeName=documentId,AttributeType=S AttributeName=reviewKey,AttributeType=S AttributeName=userId,AttributeType=S AttributeName=sectionId,AttributeType=S AttributeName=timestamp,AttributeType=S \
             --key-schema AttributeName=documentId,KeyType=HASH AttributeName=reviewKey,KeyType=RANGE \
             --billing-mode PAY_PER_REQUEST \
             --global-secondary-indexes '[{"IndexName":"userId-documentId-index","KeySchema":[{"AttributeName":"userId","KeyType":"HASH"},{"AttributeName":"documentId","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}},{"IndexName":"sectionId-timestamp-index","KeySchema":[{"AttributeName":"sectionId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
-            $ENDPOINT 2>/dev/null || echo "section-reviews exists"
+            $ENDPOINT 2>/dev/null || echo "${PREFIX}section-reviews exists"
 
         # Phase 51 Phase A — document-type schemas + typed-document instances.
-        $CT --table-name document-types --attribute-definitions AttributeName=typeId,AttributeType=S --key-schema AttributeName=typeId,KeyType=HASH 2>/dev/null || echo "document-types exists"
-        $CT --table-name typed-documents --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "typed-documents exists"
+        $CT --table-name "${PREFIX}document-types" --attribute-definitions AttributeName=typeId,AttributeType=S --key-schema AttributeName=typeId,KeyType=HASH 2>/dev/null || echo "${PREFIX}document-types exists"
+        $CT --table-name "${PREFIX}typed-documents" --attribute-definitions AttributeName=documentId,AttributeType=S --key-schema AttributeName=documentId,KeyType=HASH 2>/dev/null || echo "${PREFIX}typed-documents exists"
 
         echo "All tables ready"
     ''',

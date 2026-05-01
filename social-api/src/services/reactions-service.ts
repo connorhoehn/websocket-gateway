@@ -17,9 +17,10 @@ import {
   ValidationError,
   NotFoundError,
 } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const LIKES_TABLE = 'social-likes';
-const POSTS_TABLE = 'social-posts';
+const LIKES_TABLE = tableName('social-likes');
+const POSTS_TABLE = tableName('social-posts');
 
 export const VALID_EMOJI = new Set([
   '\u2764\uFE0F',     // heart

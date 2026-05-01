@@ -49,7 +49,8 @@ class ChatService {
         this.logger = logger;
         this.metricsCollector = metricsCollector;
         this.dynamoClient = dynamoClient;
-        this.chatTableName = process.env.DYNAMODB_CHAT_TABLE || 'chat-messages';
+        const { tableName } = require('../lib/ddb-table-name');
+        this.chatTableName = tableName(process.env.DYNAMODB_CHAT_TABLE || 'chat-messages');
         this.TTL_90_DAYS_SEC = 90 * 24 * 60 * 60;
 
         // Local state management

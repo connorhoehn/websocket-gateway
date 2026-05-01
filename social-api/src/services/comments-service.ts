@@ -19,9 +19,10 @@ import {
   NotFoundError,
   ForbiddenError,
 } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const COMMENTS_TABLE = 'social-comments';
-const POSTS_TABLE = 'social-posts';
+const COMMENTS_TABLE = tableName('social-comments');
+const POSTS_TABLE = tableName('social-posts');
 
 export interface CommentItem {
   postId: string;

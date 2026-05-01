@@ -23,8 +23,9 @@ import {
   parseJsonImport,
   parseMarkdownSections,
 } from '../services/document-importer';
+import { tableName } from '../lib/ddb-table-name';
 
-const DOCUMENTS_TABLE = process.env.DYNAMODB_DOCUMENTS_TABLE || 'crdt-documents';
+const DOCUMENTS_TABLE = tableName(process.env.DYNAMODB_DOCUMENTS_TABLE || 'crdt-documents');
 
 export const documentImportExportRouter = Router({ mergeParams: true });
 

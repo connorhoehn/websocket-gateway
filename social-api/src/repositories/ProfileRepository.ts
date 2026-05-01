@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from './BaseRepository';
+import { tableName } from '../lib/ddb-table-name';
 
 export interface ProfileItem {
   userId: string;
@@ -13,7 +14,7 @@ export interface ProfileItem {
 
 export class ProfileRepository extends BaseRepository {
   constructor(docClient: DynamoDBDocumentClient) {
-    super('social-profiles', docClient);
+    super(tableName('social-profiles'), docClient);
   }
 
   async getProfile(userId: string): Promise<ProfileItem | null> {

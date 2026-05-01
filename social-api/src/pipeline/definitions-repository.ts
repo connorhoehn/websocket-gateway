@@ -34,6 +34,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { BaseRepository } from '../repositories/BaseRepository';
 import { docClient } from '../lib/aws-clients';
+import { tableName } from '../lib/ddb-table-name';
 
 /**
  * Structural minimum of a pipeline definition. Mirrors the route file's
@@ -52,7 +53,7 @@ export interface PipelineDefinitionItem {
   updatedAt: string;
 }
 
-const PIPELINE_DEFINITIONS_TABLE = 'pipeline-definitions';
+const PIPELINE_DEFINITIONS_TABLE = tableName('pipeline-definitions');
 
 export class DefinitionsRepository {
   private store: BaseRepository;

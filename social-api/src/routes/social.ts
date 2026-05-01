@@ -12,7 +12,8 @@ import {
   ValidationError,
   NotFoundError,
 } from '../middleware/error-handler';
-const REL_TABLE = 'social-relationships';
+import { tableName } from '../lib/ddb-table-name';
+const REL_TABLE = tableName('social-relationships');
 
 export const socialRouter = Router();
 

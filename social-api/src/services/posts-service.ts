@@ -24,8 +24,9 @@ import {
   NotFoundError,
   ForbiddenError,
 } from '../middleware/error-handler';
+import { tableName } from '../lib/ddb-table-name';
 
-const POSTS_TABLE = 'social-posts';
+const POSTS_TABLE = tableName('social-posts');
 
 export interface PostItem {
   roomId: string;
