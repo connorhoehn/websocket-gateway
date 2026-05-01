@@ -190,18 +190,40 @@ step for triage.
 
 ### Current journeys
 
-Defined in `scripts/snapshot-journeys.mjs` as inline JS objects:
+Defined in `scripts/snapshot-journeys.mjs` as inline JS objects.
+Document-side journeys exercise the document-types wizard surface
+end-to-end; pipeline-side journeys exercise the pipelines list,
+editor, and runs pages.
+
+**Document journeys**
 
 | slug | what it exercises |
 |------|-------------------|
 | `create-document-type-basic` | Empty state → wizard → name + add a section field → save → populated list |
 | `edit-document-type-name` | Pre-seed a type via localStorage → click Edit → rename → save |
+| `comprehensive-design-doc` | 28-step lifecycle: admin schema → end-user fill (gap-tracked) → reader → 2-user CRDT collab |
+| `multi-field-document-type` | Build a Project Brief schema with up to 4 different field kinds in sequence |
+| `edit-document-type-toggle-field-flags` | Pre-seed a 2-field type → toggle required + collapsed flags → save |
+| `multi-page-wizard-add-page-and-reorder` | Pre-seed a 1-page type → +Page → rename via TOC → save |
 | `delete-document-type-with-confirmation` | Pre-seed a type → click × → confirm modal → confirm delete |
 
-The edit and delete journeys seed `localStorage` directly via
-`page.evaluate()` rather than driving the wizard inline — that
-isolates each journey's flow from cross-journey state and removes
-race conditions on wizard mount/unmount.
+**Pipeline journeys**
+
+| slug | what it exercises |
+|------|-------------------|
+| `pipelines-list-create-from-blank` | Visit /pipelines → open the new-pipeline modal → name → confirm → land in editor |
+| `pipeline-runs-page-search-and-range` | Visit a pipeline-id/runs page → type search query → click 7d / 24h / all range pills |
+
+The edit and delete journeys (and the multi-page + flags variants)
+seed `localStorage` directly via `page.evaluate()` rather than driving
+the wizard inline — that isolates each journey's flow from cross-
+journey state and removes race conditions on wizard mount/unmount.
+
+The pipeline journeys are best-effort: the new-pipeline launcher
+button has no canonical testid (matched by visible text), and the
+runs page renders an empty state for the seeded pipeline-id (which is
+fine — the search + range filter still update URL state, which is
+what the journey verifies via screenshot).
 
 ### Running journeys standalone
 
