@@ -225,6 +225,20 @@
         }
       ],
       "_note": "Phase 51 Phase A — instances conforming to DocumentType schemas. GSI on typeId enables efficient list-by-type queries (currently Scan fallback in code, GSI provisioned for future)."
+    },
+    {
+      "tableName": "pipeline-dlq",
+      "hashKey": { "name": "messageId", "type": "S" },
+      "billing": "PAY_PER_REQUEST",
+      "gsi": [
+        {
+          "indexName": "failedAt-index",
+          "hashKey": { "name": "partitionKey", "type": "S" },
+          "rangeKey": { "name": "failedAt", "type": "S" },
+          "projection": "ALL"
+        }
+      ],
+      "_note": "Pipeline dead-letter queue — durable backing store for failed events. TTL attribute: ttl (epoch seconds, 30-day retention). GSI uses synthetic partitionKey='DLQ' for chronological listing."
     }
   ]
 }

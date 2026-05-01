@@ -150,6 +150,12 @@ export interface BootstrapOptions {
    */
   pipelineRunRepository?: import('../repositories/PipelineRunRepository').PipelineRunRepository;
   /**
+   * DLQ persistence repository. When provided, the deadLetterHandler also
+   * writes entries to DDB so they survive restarts. Optional — defaults to
+   * undefined (DLQ persistence disabled, in-memory only).
+   */
+  dlqRepository?: import('../repositories/DLQRepository').DLQRepository;
+  /**
    * Registry mode override. When set, takes precedence over the env-var
    * resolver in `resolveRegistryMode()`. Tests use this to opt into the
    * 'raft' branch without monkey-patching `process.env`.
@@ -574,10 +580,13 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
   const dlqRaw = process.env.PIPELINE_EVENT_BUS_DLQ_ENABLED ?? 'true';
   const dlqEnabled = dlqRaw.trim().toLowerCase() !== 'false';
   const dlqRef: { current: DeadLetterQueue<BusEvent> | null } = { current: null };
+  const dlqRepo = opts.dlqRepository;
   const eventBusDeadLetterHandler = dlqEnabled
     ? (event: BusEvent, error: Error): void => {
         incrementBusDeadLetter(error.name);
         const dlq = dlqRef.current;
+        const lastError = `${error.name || 'Error'}: ${error.message}`;
+        const failedAtMs = Date.now();
         if (dlq) {
           // Fire-and-forget — DLQ.put is async but the bus's handler signature
           // is sync void; rejection is logged so a broken DLQ doesn't silently
@@ -589,13 +598,28 @@ export async function bootstrapPipeline(opts: BootstrapOptions = {}): Promise<Pi
               // route-side `?errorKind=` query param can match the error
               // class prefix. Falls back to `Error:` if the throwable has
               // no `name` (defensive — Error subclasses always set one).
-              lastError:     `${error.name || 'Error'}: ${error.message}`,
-              failedAtMs:    Date.now(),
+              lastError,
+              failedAtMs,
               totalAttempts: 1,
             })
             .catch((err: unknown) => {
               console.error('[pipeline] DLQ.put failed', err);
             });
+        }
+        // Also persist to DDB when dlqRepository is provided.
+        if (dlqRepo) {
+          const ttl = Math.floor(failedAtMs / 1000) + 30 * 24 * 60 * 60; // 30 days
+          void dlqRepo.create({
+            messageId: typeof event.id === 'string' ? event.id : `${event.type}-${failedAtMs}`,
+            eventType: event.type,
+            eventPayload: event.payload,
+            lastError,
+            failedAt: new Date(failedAtMs).toISOString(),
+            totalAttempts: 1,
+            ttl,
+          }).catch((err: unknown) => {
+            console.error('[pipeline] DLQ persistence to DDB failed', err);
+          });
         }
         // BusEvent (v0.7.2) does not carry a `topic` field — that lives on
         // the EventBus instance, not the envelope. Surface `type` (the

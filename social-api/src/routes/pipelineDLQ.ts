@@ -7,6 +7,12 @@
 // EventBus. This route exposes that store for operator inspection +
 // targeted redrive.
 //
+// DLQ persistence (Phase 1): when PIPELINE_DLQ_PERSISTENCE_ENABLED=true,
+// the deadLetterHandler also writes entries to the pipeline-dlq DDB table
+// (via DLQRepository). Entries survive restarts but these routes still read
+// from the in-memory DLQ only. Phase 2: add fallback to DDB when entries
+// aren't in memory, or add a parallel /api/pipelines/dlq/durable endpoint.
+//
 // Endpoints:
 //   GET  /api/pipelines/dlq?errorKind=…           → paginated list (filters: sinceMs, errorKind)
 //   GET  /api/pipelines/dlq/peek/:id              → single envelope by id

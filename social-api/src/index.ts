@@ -11,6 +11,7 @@ import { setPipelineBridge } from './routes/pipelineTriggers';
 import { bootstrapPipeline } from './pipeline/bootstrap';
 import { createBridge } from './pipeline/createBridge';
 import { PipelineRunRepository } from './repositories/PipelineRunRepository';
+import { DLQRepository } from './repositories/DLQRepository';
 import { docClient } from './lib/aws-clients';
 
 const port = process.env.PORT ?? '3001';
@@ -42,11 +43,19 @@ const pipelineRunRepository = runPersistenceEnabled
   ? new PipelineRunRepository(docClient)
   : undefined;
 
-bootstrapPipeline({ pipelineRunRepository })
+// DLQ persistence — wire DLQRepository so failed events survive restarts.
+// Opt-in via PIPELINE_DLQ_PERSISTENCE_ENABLED=true.
+const dlqPersistenceEnabled =
+  (process.env.PIPELINE_DLQ_PERSISTENCE_ENABLED ?? 'false').trim().toLowerCase() === 'true';
+const dlqRepository = dlqPersistenceEnabled
+  ? new DLQRepository(docClient)
+  : undefined;
+
+bootstrapPipeline({ pipelineRunRepository, dlqRepository })
   .then(({ module, nodeId, dlq, shutdown }) => {
     pipelineShutdown = shutdown;
     setPipelineBridge(createBridge(module, dlq));
-    console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId} (run persistence: ${runPersistenceEnabled ? 'enabled' : 'disabled'})`);
+    console.log(`[social-api] PipelineModule bootstrapped on node ${nodeId} (run persistence: ${runPersistenceEnabled ? 'enabled' : 'disabled'}, DLQ persistence: ${dlqPersistenceEnabled ? 'enabled' : 'disabled'})`);
   })
   .catch((err: unknown) => {
     console.error('[social-api] PipelineModule bootstrap failed (continuing with stub paths):', err);
