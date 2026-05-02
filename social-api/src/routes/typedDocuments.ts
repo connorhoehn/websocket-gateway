@@ -21,10 +21,25 @@ import type {
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
 import { withContext } from '../lib/logger';
+import {
+  recordTypedDocumentCreated,
+  recordTypedDocumentBulkImported,
+  recordTypedDocumentValidationError,
+} from '../observability/metrics';
 
 const log = withContext({ route: 'typedDocuments' });
 
 export const typedDocumentsRouter = Router();
+
+// Classify ValidationError messages into bounded error types for metrics labeling.
+function classifyValidationError(message: string): string {
+  if (/is required/.test(message)) return 'required_field';
+  if (/expects a|expects an|type mismatch/i.test(message)) return 'type_mismatch';
+  if (/not found|does not exist/.test(message)) return 'reference_not_found';
+  if (/not in the configured options/.test(message)) return 'enum_invalid';
+  if (/length|below min|above max|does not match|must be/.test(message)) return 'validation_rule';
+  return 'other';
+}
 
 // ---------------------------------------------------------------------------
 // Schema-aware value validation
@@ -248,8 +263,17 @@ typedDocumentsRouter.post('/', asyncHandler(async (req: Request, res: Response) 
   const type = await documentTypeRepo.get(typeId);
   if (!type) throw new NotFoundError(`document type ${typeId} not found`);
 
-  const values = validateValuesAgainstSchema(type.fields, body.values ?? {});
-  await assertReferencesExist(type.fields, values);
+  let values: Record<string, TypedDocumentValue>;
+  try {
+    values = validateValuesAgainstSchema(type.fields, body.values ?? {});
+    await assertReferencesExist(type.fields, values);
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      const errorType = classifyValidationError(e.message);
+      recordTypedDocumentValidationError(errorType);
+    }
+    throw e;
+  }
 
   const now = new Date().toISOString();
   const item: TypedDocumentItem = {
@@ -261,6 +285,7 @@ typedDocumentsRouter.post('/', asyncHandler(async (req: Request, res: Response) 
     updatedAt: now,
   };
   await typedDocumentRepo.create(item);
+  recordTypedDocumentCreated();
   log.info('create', { typeId, userId: req.user!.sub, fieldCount: Object.keys(values).length });
   res.status(201).json(item);
 }));
@@ -395,14 +420,20 @@ typedDocumentsRouter.post(
         results.imported++;
       } catch (e) {
         results.failed++;
+        const errorMsg = (e as Error).message;
         results.errors.push({
           row: rowNum,
-          reason: (e as Error).message,
+          reason: errorMsg,
         });
+        if (e instanceof ValidationError) {
+          const errorType = classifyValidationError(errorMsg);
+          recordTypedDocumentValidationError(errorType);
+        }
       }
     }
 
     const durationMs = Date.now() - startTime;
+    recordTypedDocumentBulkImported();
     log.info('bulk-import.done', {
       typeId,
       imported: results.imported,

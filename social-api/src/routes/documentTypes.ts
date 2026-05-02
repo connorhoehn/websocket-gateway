@@ -26,6 +26,11 @@ import type {
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
 import { withContext } from '../lib/logger';
+import {
+  recordDocumentTypeCreated,
+  recordDocumentTypeUpdated,
+  recordDocumentTypeDeleted,
+} from '../observability/metrics';
 
 const log = withContext({ route: 'documentTypes' });
 
@@ -230,6 +235,7 @@ documentTypesRouter.post('/', asyncHandler(async (req: Request, res: Response) =
     version: 1,
   };
   await documentTypeRepo.create(item);
+  recordDocumentTypeCreated();
   log.info('create', { typeId: item.typeId, name: item.name, fieldCount: fields.length, userId: req.user!.sub });
   res.status(201).json(item);
 }));
@@ -265,6 +271,7 @@ documentTypesRouter.put('/:typeId', asyncHandler(async (req: Request, res: Respo
   if (body.fields !== undefined) patch.fields = parseFields(body.fields);
 
   const updated = await documentTypeRepo.update(params.typeId, patch, existing);
+  recordDocumentTypeUpdated();
   log.info('update', {
     typeId: params.typeId,
     name: updated.name,
@@ -279,6 +286,7 @@ documentTypesRouter.delete('/:typeId', asyncHandler(async (req: Request, res: Re
   const params = req.params as { typeId: string };
   const item = await documentTypeRepo.get(params.typeId);
   await documentTypeRepo.delete(params.typeId);
+  recordDocumentTypeDeleted();
   log.warn('delete', { typeId: params.typeId, name: item?.name, userId: req.user!.sub });
   res.status(204).end();
 }));

@@ -46,6 +46,19 @@ const pipelineErrorsTotal = registry.counter('pipeline_errors_total', BASE_LABEL
 // in `incrementBusDeadLetter`.
 registry.counter('pipeline_event_bus_dead_letters_total', { ...BASE_LABELS, reason: '_init' }, 'Pipeline EventBus dead letters (subscriber throw or publish failure), labeled by error.name.');
 
+// Phase 51 TypedDocuments / DocumentTypes counters. Track creation, updates,
+// deletes, and validation failures for operator visibility into document type
+// usage patterns and error rates.
+const documentTypesCreatedTotal = registry.counter('document_types_created_total', BASE_LABELS, 'DocumentTypes created via POST /api/document-types.');
+const documentTypesUpdatedTotal = registry.counter('document_types_updated_total', BASE_LABELS, 'DocumentTypes updated via PUT /api/document-types/:id.');
+const documentTypesDeletedTotal = registry.counter('document_types_deleted_total', BASE_LABELS, 'DocumentTypes deleted via DELETE /api/document-types/:id.');
+const typedDocumentsCreatedTotal = registry.counter('typed_documents_created_total', BASE_LABELS, 'TypedDocuments created via POST /api/typed-documents.');
+const typedDocumentsBulkImportedTotal = registry.counter('typed_documents_bulk_imported_total', BASE_LABELS, 'TypedDocument bulk imports via POST /api/typed-documents/bulk-import.');
+// Validation error counter pre-registered with error_type='_init' so the metric
+// appears at zero before the first validation failure; per-error-type labels
+// are minted lazily in recordTypedDocumentValidationError.
+registry.counter('typed_documents_validation_errors_total', { ...BASE_LABELS, error_type: '_init' }, 'TypedDocument validation failures, labeled by error type (required_field, type_mismatch, reference_not_found, etc).');
+
 export function recordConnection(delta: number): void {
   if (delta > 0) activeConnections.inc(delta);
   else if (delta < 0) activeConnections.dec(-delta);
@@ -96,6 +109,36 @@ export function recordPipelineError(): void {
  */
 export function incrementBusDeadLetter(reason: string): void {
   registry.counter('pipeline_event_bus_dead_letters_total', { ...BASE_LABELS, reason }).inc();
+}
+
+export function recordDocumentTypeCreated(): void {
+  documentTypesCreatedTotal.inc();
+}
+
+export function recordDocumentTypeUpdated(): void {
+  documentTypesUpdatedTotal.inc();
+}
+
+export function recordDocumentTypeDeleted(): void {
+  documentTypesDeletedTotal.inc();
+}
+
+export function recordTypedDocumentCreated(): void {
+  typedDocumentsCreatedTotal.inc();
+}
+
+export function recordTypedDocumentBulkImported(): void {
+  typedDocumentsBulkImportedTotal.inc();
+}
+
+/**
+ * Increment the TypedDocument validation error counter, labeled by `errorType`.
+ * Expected error types: 'required_field', 'type_mismatch', 'reference_not_found',
+ * 'enum_invalid', 'validation_rule'. Cardinality is bounded by the fixed set of
+ * validation failure modes; full error messages are NOT used as labels.
+ */
+export function recordTypedDocumentValidationError(errorType: string): void {
+  registry.counter('typed_documents_validation_errors_total', { ...BASE_LABELS, error_type: errorType }).inc();
 }
 
 // Renders the registry snapshot as Prometheus 0.0.4 text format.
