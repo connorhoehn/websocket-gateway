@@ -11,7 +11,6 @@
 // typed against the bus's PipelineEventMap and the assertion is on the
 // counter, not the executor.
 
-// @ts-expect-error TS2307: module resolution doesn't see subpath exports
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { bootstrapPipeline } from '../bootstrap';
 import { getRegistry } from '../../observability/metrics';

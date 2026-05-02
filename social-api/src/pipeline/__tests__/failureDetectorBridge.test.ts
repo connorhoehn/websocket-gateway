@@ -15,7 +15,6 @@
 // it via package `exports`. tsc with our current `module: commonjs`
 // (classic resolver) doesn't honor `exports`. Suppressing here rather
 // than flipping the project to `moduleResolution: nodenext`.
-// @ts-expect-error TS2307: module resolution doesn't see subpath exports
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { Cluster } from 'distributed-core';
 

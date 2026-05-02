@@ -8,7 +8,6 @@
 // a known-throwing handler then publish — and inspect the DLQ via the
 // bootstrap return value (T9 adds `dlq` to the bootstrap result).
 
-// @ts-expect-error TS2307: module resolution doesn't see subpath exports
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { bootstrapPipeline } from '../bootstrap';
 

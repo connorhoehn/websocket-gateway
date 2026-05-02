@@ -10,7 +10,6 @@
 // (classic resolver) doesn't honor `exports`. Suppressing here rather
 // than flipping the project to `moduleResolution: nodenext`, which
 // would require explicit `.js` extensions across the codebase.
-// @ts-expect-error TS2307: module resolution doesn't see subpath exports
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { bootstrapPipeline } from '../bootstrap';
 

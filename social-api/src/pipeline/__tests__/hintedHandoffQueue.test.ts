@@ -5,8 +5,6 @@
 // the configured dataDir when enabled, returns null when disabled, and that
 // bootstrapPipeline() integrates cleanly in both modes.
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error TS2307: distributed-core/testing is a subpath export not visible to classic resolver
 import { FixtureLLMClient } from 'distributed-core/testing';
 import { HintedHandoffQueue } from 'distributed-core';
 import * as fs from 'fs';
