@@ -615,4 +615,43 @@ describe('POST /api/typed-documents/bulk-import', () => {
     expect(res.status).toBe(200);
     expect(res.json).toMatchObject({ imported: 0, failed: 1 });
   });
+
+  it('handles 1000+ row CSV within 10s (performance test)', async () => {
+    // Constitution backlog: Phase 51 polish — performance testing for bulk CSV import with large files (1000+ rows)
+    const TYPE_WITH_ALL_FIELD_TYPES = {
+      typeId: 'type-perf',
+      name: 'PerfTest',
+      fields: [
+        { fieldId: 'f-name', name: 'Name', fieldType: 'text', cardinality: 1, required: true },
+        { fieldId: 'f-count', name: 'Count', fieldType: 'number', cardinality: 1, required: false },
+        { fieldId: 'f-date', name: 'Date', fieldType: 'date', cardinality: 1, required: false },
+        { fieldId: 'f-active', name: 'Active', fieldType: 'boolean', cardinality: 1, required: false },
+        { fieldId: 'f-status', name: 'Status', fieldType: 'enum', cardinality: 1, required: false, options: ['draft', 'published'] },
+        { fieldId: 'f-tags', name: 'Tags', fieldType: 'text', cardinality: 'unlimited', required: false },
+      ],
+    };
+    mockDocTypeGet.mockResolvedValue(TYPE_WITH_ALL_FIELD_TYPES);
+
+    // Generate 1000 valid CSV rows with varied field types
+    const rows: string[] = ['Name,Count,Date,Active,Status,Tags'];
+    for (let i = 1; i <= 1000; i++) {
+      const name = `User${i}`;
+      const count = (i % 100).toString();
+      const date = `2026-01-${String((i % 28) + 1).padStart(2, '0')}`;
+      const active = i % 2 === 0 ? 'true' : 'false';
+      const status = i % 2 === 0 ? 'draft' : 'published';
+      const tags = `tag${i % 10};tag${(i % 10) + 1}`;
+      rows.push(`${name},${count},${date},${active},${status},${tags}`);
+    }
+    const csv = rows.join('\n');
+
+    const startTime = Date.now();
+    const res = await postMultipart(server, '/api/typed-documents/bulk-import?typeId=type-perf', csv);
+    const durationMs = Date.now() - startTime;
+
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ imported: 1000, failed: 0 });
+    expect(mockTypedDocCreate).toHaveBeenCalledTimes(1000);
+    expect(durationMs).toBeLessThan(10000); // Performance requirement: under 10s
+  });
 });
