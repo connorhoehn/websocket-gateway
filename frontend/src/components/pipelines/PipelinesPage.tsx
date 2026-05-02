@@ -51,7 +51,7 @@ import type {
 } from '../../types/pipeline';
 import EmptyState from '../shared/EmptyState';
 import Modal from '../shared/Modal';
-import IconPicker from '../shared/IconPicker';
+
 import { useToast } from '../shared/ToastProvider';
 import { useIdentityContext } from '../../contexts/IdentityContext';
 import {
@@ -439,22 +439,20 @@ function NewPipelineModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (name: string, icon: string) => void;
+  onCreate: (name: string) => void;
 }) {
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState('🔀');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setName('');
-      setIcon('🔀');
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
   const canSubmit = name.trim().length > 0;
-  const handleSubmit = () => { if (canSubmit) onCreate(name.trim(), icon); };
+  const handleSubmit = () => { if (canSubmit) onCreate(name.trim()); };
 
   return (
     <Modal
@@ -479,12 +477,6 @@ function NewPipelineModal({
       }
     >
       <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: colors.textSecondary, marginBottom: 6 }}>
-        Icon
-      </label>
-      <div style={{ marginBottom: 14 }}>
-        <IconPicker value={icon} onChange={setIcon} />
-      </div>
-      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: colors.textSecondary, marginBottom: 6 }}>
         Name
       </label>
       <input
@@ -495,7 +487,7 @@ function NewPipelineModal({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
         placeholder="e.g. Invoice summarizer"
-        style={{ ...fieldStyle, width: '100%', padding: '8px 12px', fontSize: 14 }}
+        style={{ ...fieldStyle, boxSizing: 'border-box', width: '100%', padding: '8px 12px', fontSize: 14 }}
       />
     </Modal>
   );
@@ -962,8 +954,8 @@ export default function PipelinesPage() {
     }
   }, [someVisibleSelected]);
 
-  const handleCreate = (name: string, icon: string) => {
-    const def = createPipeline({ name, createdBy: userId, icon });
+  const handleCreate = (name: string) => {
+    const def = createPipeline({ name, createdBy: userId });
     setNewModalOpen(false);
     navigate(`/pipelines/${def.id}`);
   };

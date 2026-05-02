@@ -804,7 +804,7 @@ export default function DocumentEditorPage({
             {/* (docked video portal is rendered outside this conditional — see below) */}
 
             {/* Center: section content */}
-            <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : 48 }}>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: commentSidebarOpen ? 0 : (showTOC && sections.length > 1 && mode === 'editor' ? 192 : 48) }}>
               <SectionList
                 sections={sections.map(s => {
                   // Y.Doc is the primary live state. Merge in REST items that

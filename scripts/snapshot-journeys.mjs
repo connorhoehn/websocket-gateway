@@ -198,6 +198,41 @@ function makeStepRecorder(page, runDir, recordedSteps) {
 }
 
 // ---------------------------------------------------------------------------
+// localStorage cleanup — purge keys that accumulate across journey runs.
+//
+// Each journey gets a fresh browser context, but localStorage within a
+// Chromium profile can persist across runs.  Clearing these keys at the
+// start of each journey ensures screenshots show only the current run's
+// data, not dozens of stale entries from prior runs.
+// ---------------------------------------------------------------------------
+
+async function clearAccumulatedStorage(page) {
+  await page.evaluate(() => {
+    // Document types (localStorage-backed list)
+    localStorage.removeItem('ws_document_types_v1');
+    // Custom field types
+    localStorage.removeItem('ws_field_types_v1');
+    // Pipeline index and UI toggles
+    localStorage.removeItem('ws_pipelines_v1_index');
+    localStorage.removeItem('ws_pipelines_v1_show_tags');
+    localStorage.removeItem('ws_pipelines_v1_source_diagnostic_dismissed');
+    // Remove per-pipeline defs, per-pipeline run histories, and attachments
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (
+        k.startsWith('ws_pipelines_v1:') ||
+        k.startsWith('ws_pipeline_runs_v1:') ||
+        k.startsWith('ws_attachments_')
+      ) {
+        toRemove.push(k);
+      }
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Journey definitions.
 // ---------------------------------------------------------------------------
 
@@ -216,6 +251,7 @@ const JOURNEYS = [
       // --- Phase 1: Navigate and open wizard ---
       await step('land-on-doc-types', 'Navigate to /document-types', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
       });
       await step('see-empty-state', 'See the empty type list or existing types', async () => {
@@ -386,6 +422,7 @@ const JOURNEYS = [
       // --- Create the document type first ---
       await step('navigate-to-doc-types', 'Open /document-types', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
       });
       await step('open-wizard', 'Click "+ New" to create a type', async () => {
@@ -503,11 +540,11 @@ const JOURNEYS = [
         if (addBtn) {
           await addBtn.click();
           await page.waitForTimeout(500);
-          const inputs = await page.$$('input[type="text"]');
-          const lastInput = inputs[inputs.length - 1];
-          if (lastInput) {
-            await lastInput.click();
-            await lastInput.fill('Migrate auth service to OAuth 2.1 — due Friday');
+          const inputs = await page.$$('[data-testid^="task-text-"]');
+          if (inputs.length > 0) {
+            const last = inputs[inputs.length - 1];
+            await last.click();
+            await last.fill('Migrate auth service to OAuth 2.1 — due Friday');
           }
           await page.waitForTimeout(200);
         }
@@ -517,11 +554,11 @@ const JOURNEYS = [
         if (addBtn) {
           await addBtn.click();
           await page.waitForTimeout(500);
-          const inputs = await page.$$('input[type="text"]');
-          const lastInput = inputs[inputs.length - 1];
-          if (lastInput) {
-            await lastInput.click();
-            await lastInput.fill('Write post-mortem for the staging outage');
+          const inputs = await page.$$('[data-testid^="task-text-"]');
+          if (inputs.length > 0) {
+            const last = inputs[inputs.length - 1];
+            await last.click();
+            await last.fill('Write post-mortem for the staging outage');
           }
           await page.waitForTimeout(200);
         }
@@ -531,11 +568,11 @@ const JOURNEYS = [
         if (addBtn) {
           await addBtn.click();
           await page.waitForTimeout(500);
-          const inputs = await page.$$('input[type="text"]');
-          const lastInput = inputs[inputs.length - 1];
-          if (lastInput) {
-            await lastInput.click();
-            await lastInput.fill('Schedule design review with UX team');
+          const inputs = await page.$$('[data-testid^="task-text-"]');
+          if (inputs.length > 0) {
+            const last = inputs[inputs.length - 1];
+            await last.click();
+            await last.fill('Schedule design review with UX team');
           }
           await page.waitForTimeout(200);
         }
@@ -1021,6 +1058,7 @@ const JOURNEYS = [
       // --- Seed a document with sections for review ---
       await step('seed-document-type', 'Pre-seed a document type with 4 sections via localStorage', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.evaluate(() => {
           const now = new Date().toISOString();
           const types = [{
@@ -1192,6 +1230,7 @@ const JOURNEYS = [
       // --- Phase 1: Alice seeds a type and creates a document ---
       await step('alice-seeds-doc-type', 'Alice seeds a multi-section document type', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.evaluate(() => {
           const now = new Date().toISOString();
           const types = [{
@@ -1452,6 +1491,7 @@ const JOURNEYS = [
       // --- Phase 1: Pipeline list & templates ---
       await step('land-on-pipelines', 'Navigate to /pipelines', async () => {
         await page.goto(`${FRONTEND_BASE}/pipelines`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.waitForTimeout(800);
       });
       await step('see-pipeline-list-page', 'See the pipelines list page with header and filter bar', async () => {
@@ -1499,18 +1539,19 @@ const JOURNEYS = [
       });
 
       // --- Phase 3: Explore node palette ---
-      await step('see-node-palette', 'See the left node palette with available node types', async () => {
-        await page.waitForTimeout(300);
+      await step('see-palette-and-trigger', 'See the left node palette showing all available node types and the default trigger node on canvas', async () => {
+        await page.waitForTimeout(500);
       });
-      await step('see-trigger-node-on-canvas', 'See the default trigger node on the canvas', async () => {
-        await page.waitForTimeout(300);
-      });
-      await step('search-palette', 'Type in the palette search to filter node types', async () => {
+      await step('search-palette-for-transform', 'Type "transform" in palette search to filter, then clear it', async () => {
         const search = await page.$('[data-testid="palette-search"], [data-testid="node-search"]');
-        if (search) { await search.click(); await search.fill('transform'); }
-        await page.waitForTimeout(300);
+        if (search) {
+          await search.click();
+          await search.fill('transform');
+          await page.waitForTimeout(600);
+        }
       });
-      await step('clear-palette-search', 'Clear the palette search to see all node types again', async () => {
+      await step('see-filtered-palette', 'See the palette filtered to show only Transform node type', async () => {
+        await page.waitForTimeout(400);
         const search = await page.$('[data-testid="palette-search"], [data-testid="node-search"]');
         if (search) await search.fill('');
         await page.waitForTimeout(200);
@@ -1535,12 +1576,22 @@ const JOURNEYS = [
           bridge.connect(transformId, conditionId);
           bridge.connect(conditionId, actionOk, { sourceHandle: 'true' });
           bridge.connect(conditionId, actionFail, { sourceHandle: 'false' });
-          // Label the action nodes
-          bridge.updateNodeData(actionOk, { label: 'Publish Results' });
-          bridge.updateNodeData(actionFail, { label: 'Send Alert' });
-          bridge.updateNodeData(llmId, { label: 'Analyze Content' });
-          bridge.updateNodeData(transformId, { label: 'Format Output' });
-          bridge.updateNodeData(conditionId, { label: 'Quality Check' });
+          // Label the nodes AND fill required config so validation passes
+          bridge.updateNodeData(actionOk, { label: 'Publish Results', actionType: 'webhook' });
+          bridge.updateNodeData(actionFail, { label: 'Send Alert', actionType: 'webhook' });
+          bridge.updateNodeData(llmId, {
+            label: 'Analyze Content',
+            systemPrompt: 'You are a content reviewer.',
+            userPromptTemplate: 'Review the following: {{input}}',
+          });
+          bridge.updateNodeData(transformId, {
+            label: 'Format Output',
+            expression: '$.result',
+          });
+          bridge.updateNodeData(conditionId, {
+            label: 'Quality Check',
+            expression: '$.score > 0.8',
+          });
         });
         await page.waitForTimeout(800);
       });
@@ -1648,66 +1699,86 @@ const JOURNEYS = [
       });
 
       // --- Phase 8b: Publish and execute the pipeline ---
-      await step('publish-pipeline', 'Publish the pipeline via the overflow menu', async () => {
+      await step('publish-pipeline', 'Open overflow menu and click Publish to open confirm modal', async () => {
         await clickIfExists(page, '[data-testid="overflow-menu-btn"]');
-        await page.waitForTimeout(400);
-        const publishItem = await page.$('button:has-text("Publish")');
-        if (publishItem) {
-          const isDisabled = await publishItem.isDisabled();
-          if (!isDisabled) {
-            await publishItem.click();
-            await page.waitForTimeout(400);
-            const confirmBtn = await page.$('button:has-text("Publish")');
-            if (confirmBtn) {
-              const confirmDisabled = await confirmBtn.isDisabled();
-              if (!confirmDisabled) await confirmBtn.click();
+        await page.waitForTimeout(500);
+        // The menu item text is "Publish…" (unicode ellipsis)
+        const menuItems = await page.$$('button');
+        for (const btn of menuItems) {
+          const text = (await btn.textContent()) ?? '';
+          if (/^Publish/.test(text.trim())) {
+            const isDisabled = await btn.isDisabled().catch(() => false);
+            if (!isDisabled) {
+              await btn.click();
+              break;
             }
-            await page.waitForTimeout(600);
-          } else {
-            await page.keyboard.press('Escape');
-            await page.waitForTimeout(200);
           }
         }
+        await page.waitForTimeout(600);
       });
 
-      await step('see-published-badge', 'See the version badge update to "Published"', async () => {
-        await page.waitForTimeout(400);
+      await step('confirm-publish', 'Click the Publish button in the confirmation modal', async () => {
+        // The confirm modal has a "Publish" button (not "Publish…")
+        // It's inside a dialog — find buttons in the modal
+        const dialog = await page.$('[role="dialog"]');
+        if (dialog) {
+          const btns = await dialog.$$('button');
+          for (const btn of btns) {
+            const text = (await btn.textContent()) ?? '';
+            if (/^Publish$/i.test(text.trim())) {
+              const isDisabled = await btn.isDisabled().catch(() => false);
+              if (!isDisabled) {
+                await btn.click();
+                break;
+              }
+            }
+          }
+        }
+        await page.waitForTimeout(800);
       });
 
-      await step('click-run-button', 'Click the Run button to execute the pipeline', async () => {
+      await step('see-published-badge', 'See the version badge update to show Published status', async () => {
+        await page.waitForTimeout(500);
+      });
+
+      await step('click-run-button', 'Click the green Run button to execute the pipeline', async () => {
         const runBtn = await page.$('[data-testid="run-button"]');
         if (runBtn) {
-          const isDisabled = await runBtn.isDisabled();
+          const isDisabled = await runBtn.isDisabled().catch(() => true);
           if (!isDisabled) {
             await runBtn.click();
-            await page.waitForTimeout(2_000);
           }
         }
+        // Wait for the MockExecutor to start and process nodes
+        await page.waitForTimeout(3_000);
       });
 
-      await step('see-execution-running', 'See the execution log updating with step events', async () => {
-        await page.waitForTimeout(1_500);
+      await step('see-execution-running', 'See the execution log updating with step-by-step events', async () => {
+        await page.waitForTimeout(2_000);
       });
 
-      await step('wait-for-execution-complete', 'Wait for the pipeline execution to finish', async () => {
-        // Wait up to 10s for completion events
-        for (let i = 0; i < 10; i++) {
+      await step('wait-for-execution-complete', 'Wait for the pipeline execution to finish completely', async () => {
+        // MockExecutor runs async — wait up to 15s for it to reach terminal state
+        for (let i = 0; i < 15; i++) {
           const logText = await page.textContent('[data-testid="execution-log"]').catch(() => '');
-          if (/completed|failed/i.test(logText ?? '')) break;
+          if (/completed|failed|cancelled/i.test(logText ?? '')) break;
+          // Also check if run button changed to "Re-run" (means execution finished)
+          const runBtnText = await page.textContent('[data-testid="run-button"]').catch(() => '');
+          if (/re-run/i.test(runBtnText ?? '')) break;
           await page.waitForTimeout(1_000);
         }
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1_000);
       });
 
-      await step('see-execution-results', 'See the completed execution log with step results and edge highlights', async () => {
+      await step('see-execution-results', 'See the completed execution log with all node results', async () => {
         // Expand the log if collapsed
         const toggle = await page.$('[data-testid="execution-log-toggle"], [data-testid="exec-log-chevron"]');
-        if (toggle) { await toggle.click(); await page.waitForTimeout(300); }
-        await page.waitForTimeout(500);
+        if (toggle) { await toggle.click(); await page.waitForTimeout(400); }
+        await page.waitForTimeout(600);
       });
 
-      await step('see-node-success-states', 'See nodes highlighted green for success on the canvas', async () => {
-        await page.waitForTimeout(400);
+      await step('see-node-success-states', 'See nodes highlighted with success/failure states on the canvas', async () => {
+        await page.waitForTimeout(500);
       });
 
       // Capture pipeline ID for runs/stats pages
@@ -1715,11 +1786,16 @@ const JOURNEYS = [
       const pipelineId = pipelineUrl.split('/pipelines/')[1]?.split(/[?#/]/)[0] ?? 'unknown';
 
       // --- Phase 9: Runs page with all filters ---
-      await step('go-to-runs-page', 'Navigate to the pipeline runs page', async () => {
+      await step('go-to-runs-page', 'Navigate to the pipeline runs page to see completed run', async () => {
+        // Wait extra to ensure the MockExecutor has finished and persisted the run
+        await page.waitForTimeout(2_000);
         await page.goto(`${FRONTEND_BASE}/pipelines/${pipelineId}/runs`, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(1_200);
       });
-      await step('type-in-runs-search', 'See the runs page and type a search query', async () => {
+      await step('see-run-in-table', 'See the completed run in the runs table with status, duration, and cost', async () => {
+        await page.waitForTimeout(600);
+      });
+      await step('type-in-runs-search', 'Type a search query in the runs search box', async () => {
         await fillIfExists(page, '[data-testid="runs-search-input"]', 'content review');
         await page.waitForTimeout(200);
       });
@@ -1830,12 +1906,22 @@ const JOURNEYS = [
           bridge.connect(transformB, joinId);
           bridge.connect(joinId, approvalId);
           bridge.connect(approvalId, actionId, { sourceHandle: 'approved' });
-          // Label nodes
-          bridge.updateNodeData(llmId, { label: 'Parse Input' });
-          bridge.updateNodeData(transformA, { label: 'Validate Schema' });
-          bridge.updateNodeData(transformB, { label: 'Enrich Metadata' });
-          bridge.updateNodeData(approvalId, { label: 'Review Gate' });
-          bridge.updateNodeData(actionId, { label: 'Write to Store' });
+          // Label nodes AND fill required config so validation passes
+          bridge.updateNodeData(llmId, {
+            label: 'Parse Input',
+            systemPrompt: 'You parse structured data from raw input.',
+            userPromptTemplate: 'Parse this input: {{input}}',
+          });
+          bridge.updateNodeData(forkId, { branchCount: 2 });
+          bridge.updateNodeData(transformA, { label: 'Validate Schema', expression: '$.validated' });
+          bridge.updateNodeData(transformB, { label: 'Enrich Metadata', expression: '$.enriched' });
+          bridge.updateNodeData(joinId, { mode: 'all', mergeStrategy: 'merge' });
+          bridge.updateNodeData(approvalId, {
+            label: 'Review Gate',
+            approvers: ['ops-lead@example.com'],
+            requiredCount: 1,
+          });
+          bridge.updateNodeData(actionId, { label: 'Write to Store', actionType: 'webhook' });
         });
         await page.waitForTimeout(800);
       });
@@ -1951,6 +2037,7 @@ const JOURNEYS = [
 
       await step('navigate-to-types', 'Navigate to /document-types', async () => {
         await page.goto(`${FRONTEND_BASE}/document-types`, { waitUntil: 'domcontentloaded' });
+        await clearAccumulatedStorage(page);
         await page.waitForSelector('[data-testid="create-type-btn"]', { timeout: 10_000 });
       });
 

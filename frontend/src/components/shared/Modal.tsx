@@ -12,6 +12,7 @@
 // dance is ~30 lines so we don't pull in `focus-trap-react`. See task brief.
 
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ModalProps {
   open: boolean;
@@ -38,7 +39,7 @@ export interface ModalProps {
    */
   cardStyle?: React.CSSProperties;
   /**
-   * Optional z-index for the backdrop. Defaults to 1000.
+   * Optional z-index for the backdrop. Defaults to 10000.
    */
   zIndex?: number;
   /**
@@ -79,7 +80,7 @@ function getFocusableElements(root: HTMLElement): HTMLElement[] {
 
 function Modal({
   open, onClose, title, maxWidth = 380, children, footer,
-  backdropTestId = 'modal-backdrop', backdropStyle, cardStyle, zIndex = 1000,
+  backdropTestId = 'modal-backdrop', backdropStyle, cardStyle, zIndex = 10000,
   rawChildren = false,
 }: ModalProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -170,7 +171,11 @@ function Modal({
 
   if (!open) return null;
 
-  return (
+  // Portal into document.body so the backdrop escapes any ancestor stacking
+  // context (e.g. AppLayout's main-content area has `zIndex: 1` which would
+  // otherwise cap the modal's effective z-index and let the sidebar / header
+  // punch through the overlay).
+  return createPortal(
     <div
       data-testid={backdropTestId}
       style={{
@@ -208,7 +213,8 @@ function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

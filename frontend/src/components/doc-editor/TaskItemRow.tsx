@@ -303,6 +303,7 @@ export default function TaskItemRow({ item, editable, onUpdate, onRemove, autoFo
 
       <input
         ref={textInputRef}
+        data-testid={`task-text-${item.id}`}
         type="text"
         value={item.text}
         onChange={(e) => onUpdate({ text: e.target.value })}

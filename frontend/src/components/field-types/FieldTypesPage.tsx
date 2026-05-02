@@ -9,6 +9,7 @@
 // Delete flows through a confirmation modal.
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useCustomFieldTypes } from '../../hooks/useCustomFieldTypes';
 import type { CustomFieldType } from '../../types/fieldType';
 
@@ -76,10 +77,10 @@ const labelStyle: React.CSSProperties = {
 function DeleteModal({ name, onConfirm, onCancel }: {
   name: string; onConfirm: () => void; onCancel: () => void;
 }) {
-  return (
+  return createPortal(
     <div
       data-testid="delete-modal"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}
       onClick={onCancel}
     >
       <div
@@ -95,7 +96,8 @@ function DeleteModal({ name, onConfirm, onCancel }: {
           <button data-testid="confirm-delete" onClick={onConfirm} style={btn('danger')}>Delete</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

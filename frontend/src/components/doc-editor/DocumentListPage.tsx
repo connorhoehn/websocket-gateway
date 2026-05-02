@@ -3,8 +3,9 @@
 // Card-based list view of all documents in the workspace.
 // Shows document metadata, presence avatars, and actions.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import NewDocumentModal from './NewDocumentModal';
+import { colors } from '../../constants/styles';
 
 // ---------------------------------------------------------------------------
 // Exported types
@@ -243,6 +244,17 @@ export default function DocumentListPage({
 }: DocumentListPageProps) {
   const [showModal, setShowModal] = useState(false);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const DOCS_PER_PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(documents.length / DOCS_PER_PAGE));
+
+  // Reset to page 1 when the documents list changes length (e.g. after delete)
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedDocs = useMemo(() => {
+    const start = (safeCurrentPage - 1) * DOCS_PER_PAGE;
+    return documents.slice(start, start + DOCS_PER_PAGE);
+  }, [documents, safeCurrentPage]);
 
   const handleDelete = useCallback(
     (e: React.MouseEvent, docId: string, title: string) => {
@@ -306,7 +318,7 @@ export default function DocumentListPage({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {documents.map((doc) => {
+          {paginatedDocs.map((doc) => {
             const users = presence[doc.id] ?? [];
             const isHovered = hoveredCard === doc.id;
 
@@ -443,6 +455,65 @@ export default function DocumentListPage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination controls */}
+      {documents.length > DOCS_PER_PAGE && (
+        <div
+          data-testid="pagination-controls"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            marginTop: 16,
+            paddingTop: 12,
+            borderTop: `1px solid ${colors.border}`,
+          }}
+        >
+          <button
+            data-testid="pagination-prev"
+            disabled={safeCurrentPage <= 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            style={{
+              padding: '6px 14px',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 6,
+              background: safeCurrentPage <= 1 ? colors.surfaceInset : colors.surface,
+              color: safeCurrentPage <= 1 ? colors.textDisabled : colors.textSecondary,
+              cursor: safeCurrentPage <= 1 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Previous
+          </button>
+          <span
+            data-testid="pagination-info"
+            style={{ fontSize: 13, color: colors.textSecondary, fontWeight: 500 }}
+          >
+            Page {safeCurrentPage} of {totalPages}
+          </span>
+          <button
+            data-testid="pagination-next"
+            disabled={safeCurrentPage >= totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            style={{
+              padding: '6px 14px',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              border: `1px solid ${colors.border}`,
+              borderRadius: 6,
+              background: safeCurrentPage >= totalPages ? colors.surfaceInset : colors.surface,
+              color: safeCurrentPage >= totalPages ? colors.textDisabled : colors.textSecondary,
+              cursor: safeCurrentPage >= totalPages ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Next
+          </button>
         </div>
       )}
 
