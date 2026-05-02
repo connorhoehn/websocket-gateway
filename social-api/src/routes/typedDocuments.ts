@@ -337,7 +337,7 @@ typedDocumentsRouter.post(
     }
 
     const startTime = Date.now();
-    log.info('bulk-import.start', { typeId, rowCount: rows.length, userId: req.user!.sub });
+    log.info({ typeId, rowCount: rows.length, userId: req.user!.sub }, 'bulk-import.start');
 
     // Map CSV column headers to fieldIds. Accept either the field name or the fieldId itself.
     const fieldMap = new Map<string, DocumentTypeFieldItem>();
@@ -434,12 +434,12 @@ typedDocumentsRouter.post(
 
     const durationMs = Date.now() - startTime;
     recordTypedDocumentBulkImported();
-    log.info('bulk-import.done', {
+    log.info({
       typeId,
       imported: results.imported,
       failed: results.failed,
       durationMs,
-    });
-    res.status(200).json(results);
+    }, 'bulk-import.done');
+    return res.status(200).json(results);
   }),
 );
