@@ -25,6 +25,9 @@ import type {
   DocumentTypeVersionSnapshot,
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
+import { withContext } from '../lib/logger';
+
+const log = withContext({ route: 'documentTypes' });
 
 export const documentTypesRouter = Router();
 
@@ -227,11 +230,13 @@ documentTypesRouter.post('/', asyncHandler(async (req: Request, res: Response) =
     version: 1,
   };
   await documentTypeRepo.create(item);
+  log.info('create', { typeId: item.typeId, name: item.name, fieldCount: fields.length, userId: req.user!.sub });
   res.status(201).json(item);
 }));
 
 documentTypesRouter.get('/', asyncHandler(async (_req: Request, res: Response) => {
   const items = await documentTypeRepo.list();
+  log.debug('list', { count: items.length });
   res.status(200).json({ items });
 }));
 
@@ -239,6 +244,7 @@ documentTypesRouter.get('/:typeId', asyncHandler(async (req: Request, res: Respo
   const params = req.params as { typeId: string };
   const item = await documentTypeRepo.get(params.typeId);
   if (!item) throw new NotFoundError(`document type ${params.typeId} not found`);
+  log.debug('fetch', { typeId: params.typeId, name: item.name });
   res.status(200).json(item);
 }));
 
@@ -259,12 +265,21 @@ documentTypesRouter.put('/:typeId', asyncHandler(async (req: Request, res: Respo
   if (body.fields !== undefined) patch.fields = parseFields(body.fields);
 
   const updated = await documentTypeRepo.update(params.typeId, patch, existing);
+  log.info('update', {
+    typeId: params.typeId,
+    name: updated.name,
+    fieldCount: updated.fields.length,
+    userId: req.user!.sub,
+    version: updated.version,
+  });
   res.status(200).json(updated);
 }));
 
 documentTypesRouter.delete('/:typeId', asyncHandler(async (req: Request, res: Response) => {
   const params = req.params as { typeId: string };
+  const item = await documentTypeRepo.get(params.typeId);
   await documentTypeRepo.delete(params.typeId);
+  log.warn('delete', { typeId: params.typeId, name: item?.name, userId: req.user!.sub });
   res.status(204).end();
 }));
 
