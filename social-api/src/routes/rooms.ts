@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { QueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { Router, Request, Response } from 'express';
 import { docClient } from '../lib/aws-clients';
@@ -56,7 +56,7 @@ roomsRouter.post('/dm', asyncHandler(async (req: Request, res: Response): Promis
 
   // Deterministic DM roomId — sorted to ensure same key regardless of who initiates (ROOM-03)
   const dmRoomId = ['dm', ...[callerId, targetUserId].sort()].join('#');
-  const channelId = uuidv4();
+  const channelId = randomUUID();
   const now = new Date().toISOString();
 
   // Write room item with ConditionExpression to prevent duplicate DM rooms (TOCTOU-safe)
@@ -118,8 +118,8 @@ roomsRouter.post('/', asyncHandler(async (req: Request, res: Response): Promise<
     throw new ValidationError('name is required (max 100 chars)');
   }
 
-  const roomId = uuidv4();
-  const channelId = uuidv4();
+  const roomId = randomUUID();
+  const channelId = randomUUID();
   const now = new Date().toISOString();
 
   const roomItem: RoomItem = {

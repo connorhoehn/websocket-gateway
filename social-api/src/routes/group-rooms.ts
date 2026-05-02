@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { setCachedRoom } from '../lib/cache';
 import { roomRepo, groupRepo } from '../repositories';
@@ -35,8 +35,8 @@ groupRoomsRouter.post('/', asyncHandler(async (req: Request, res: Response): Pro
     throw new ForbiddenError('Only group owners and admins can create rooms');
   }
 
-  const roomId = uuidv4();
-  const channelId = uuidv4();
+  const roomId = randomUUID();
+  const channelId = randomUUID();
   const now = new Date().toISOString();
 
   const roomItem: RoomItem = {

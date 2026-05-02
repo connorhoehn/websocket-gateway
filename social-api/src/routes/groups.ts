@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { TransactionCanceledException } from '@aws-sdk/client-dynamodb';
 import { Router, Request, Response } from 'express';
 import { getCachedGroup, setCachedGroup, invalidateGroupCache } from '../lib/cache';
@@ -34,7 +34,7 @@ groupsRouter.post('/', asyncHandler(async (req: Request, res: Response): Promise
   }
 
   const callerId = req.user!.sub;
-  const groupId = uuidv4();
+  const groupId = randomUUID();
   const now = new Date().toISOString();
 
   const groupItem: GroupItem = {
