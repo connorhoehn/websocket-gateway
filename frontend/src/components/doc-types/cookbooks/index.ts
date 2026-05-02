@@ -99,7 +99,7 @@ function buildBugReport(): Omit<DocumentType, 'id' | 'createdAt' | 'updatedAt'> 
 
 function buildOnboarding(): Omit<DocumentType, 'id' | 'createdAt' | 'updatedAt'> {
   return {
-    name: 'Employee Onboarding Checklist',
+    name: 'Employee Onboarding',
     description: 'New hire onboarding tasks, milestones, and equipment tracking.',
     icon: '\u{1F44B}',
     fields: [

@@ -243,7 +243,7 @@ describe('<PipelineRunsPage/> filter UX', () => {
     appendRun(def.id, makeRun(def.id, 'apple-1111'));
     appendRun(def.id, makeRun(def.id, 'banana-2222'));
 
-    renderPage(def.id);
+    renderPage(def.id, '?range=all');
 
     expect(screen.getByText('apple-11')).toBeInTheDocument();
     expect(screen.getByText('banana-2')).toBeInTheDocument();
@@ -262,13 +262,13 @@ describe('<PipelineRunsPage/> filter UX', () => {
 
     // Initial mount with `status=failed` already in the URL — only the failed
     // run should be visible. This exercises the URL -> state direction.
-    const { unmount } = renderPage(def.id, '?status=failed');
+    const { unmount } = renderPage(def.id, '?status=failed&range=all');
     expect(screen.queryByText('a-1111'.slice(0, 8))).not.toBeInTheDocument();
     expect(screen.getByText('b-2222'.slice(0, 8))).toBeInTheDocument();
     unmount();
 
     // Re-mount with a different param to confirm the URL is the source of truth.
-    renderPage(def.id, '?status=completed');
+    renderPage(def.id, '?status=completed&range=all');
     expect(screen.getByText('a-1111'.slice(0, 8))).toBeInTheDocument();
     expect(screen.queryByText('b-2222'.slice(0, 8))).not.toBeInTheDocument();
   });
@@ -288,7 +288,7 @@ describe('<PipelineRunsPage/> filter UX', () => {
       }),
     );
 
-    renderPage(def.id, '?trigger=document');
+    renderPage(def.id, '?trigger=document&range=all');
     expect(screen.queryByText('man-1111'.slice(0, 8))).not.toBeInTheDocument();
     expect(screen.getByText('doc-2222'.slice(0, 8))).toBeInTheDocument();
   });
