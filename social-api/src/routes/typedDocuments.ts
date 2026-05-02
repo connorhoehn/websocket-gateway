@@ -20,6 +20,9 @@ import type {
   DocumentTypeFieldItem,
 } from '../repositories';
 import { asyncHandler, ValidationError, NotFoundError } from '../middleware/error-handler';
+import { withContext } from '../lib/logger';
+
+const log = withContext({ route: 'typedDocuments' });
 
 export const typedDocumentsRouter = Router();
 
@@ -131,9 +134,16 @@ async function assertReferencesExist(
     for (const id of ids) {
       const referenced = await typedDocumentRepo.get(id);
       if (!referenced) {
+        log.warn('reference-check-failed', { fieldName: field.name, missingId: id });
         throw new ValidationError(`field "${field.name}": referenced document ${id} not found`);
       }
       if (field.referenceTypeId && referenced.typeId !== field.referenceTypeId) {
+        log.warn('reference-type-mismatch', {
+          fieldName: field.name,
+          documentId: id,
+          actualType: referenced.typeId,
+          expectedType: field.referenceTypeId,
+        });
         throw new ValidationError(
           `field "${field.name}": referenced document ${id} is type ${referenced.typeId}, expected ${field.referenceTypeId}`,
         );
@@ -251,6 +261,7 @@ typedDocumentsRouter.post('/', asyncHandler(async (req: Request, res: Response) 
     updatedAt: now,
   };
   await typedDocumentRepo.create(item);
+  log.info('create', { typeId, userId: req.user!.sub, fieldCount: Object.keys(values).length });
   res.status(201).json(item);
 }));
 
@@ -258,6 +269,7 @@ typedDocumentsRouter.get('/', asyncHandler(async (req: Request, res: Response) =
   const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : '';
   if (!typeId) throw new ValidationError('typeId query parameter is required');
   const items = await typedDocumentRepo.listByType(typeId);
+  log.info('list', { typeId, count: items.length });
   res.status(200).json({ items });
 }));
 
@@ -265,6 +277,7 @@ typedDocumentsRouter.get('/:documentId', asyncHandler(async (req: Request, res: 
   const params = req.params as { documentId: string };
   const item = await typedDocumentRepo.get(params.documentId);
   if (!item) throw new NotFoundError(`typed document ${params.documentId} not found`);
+  log.debug('fetch', { documentId: params.documentId, typeId: item.typeId });
   res.status(200).json(item);
 }));
 
@@ -297,6 +310,9 @@ typedDocumentsRouter.post(
     if (rows.length === 0) {
       return res.status(200).json({ imported: 0, failed: 0, errors: [] });
     }
+
+    const startTime = Date.now();
+    log.info('bulk-import.start', { typeId, rowCount: rows.length, userId: req.user!.sub });
 
     // Map CSV column headers to fieldIds. Accept either the field name or the fieldId itself.
     const fieldMap = new Map<string, DocumentTypeFieldItem>();
@@ -386,6 +402,13 @@ typedDocumentsRouter.post(
       }
     }
 
+    const durationMs = Date.now() - startTime;
+    log.info('bulk-import.done', {
+      typeId,
+      imported: results.imported,
+      failed: results.failed,
+      durationMs,
+    });
     res.status(200).json(results);
   }),
 );
