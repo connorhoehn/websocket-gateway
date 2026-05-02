@@ -149,16 +149,16 @@ async function assertReferencesExist(
     for (const id of ids) {
       const referenced = await typedDocumentRepo.get(id);
       if (!referenced) {
-        log.warn('reference-check-failed', { fieldName: field.name, missingId: id });
+        log.warn({ fieldName: field.name, missingId: id }, 'reference-check-failed');
         throw new ValidationError(`field "${field.name}": referenced document ${id} not found`);
       }
       if (field.referenceTypeId && referenced.typeId !== field.referenceTypeId) {
-        log.warn('reference-type-mismatch', {
+        log.warn({
           fieldName: field.name,
           documentId: id,
           actualType: referenced.typeId,
           expectedType: field.referenceTypeId,
-        });
+        }, 'reference-type-mismatch');
         throw new ValidationError(
           `field "${field.name}": referenced document ${id} is type ${referenced.typeId}, expected ${field.referenceTypeId}`,
         );
@@ -286,7 +286,7 @@ typedDocumentsRouter.post('/', asyncHandler(async (req: Request, res: Response) 
   };
   await typedDocumentRepo.create(item);
   recordTypedDocumentCreated();
-  log.info('create', { typeId, userId: req.user!.sub, fieldCount: Object.keys(values).length });
+  log.info({ typeId, userId: req.user!.sub, fieldCount: Object.keys(values).length }, 'create');
   res.status(201).json(item);
 }));
 
@@ -294,7 +294,7 @@ typedDocumentsRouter.get('/', asyncHandler(async (req: Request, res: Response) =
   const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : '';
   if (!typeId) throw new ValidationError('typeId query parameter is required');
   const items = await typedDocumentRepo.listByType(typeId);
-  log.info('list', { typeId, count: items.length });
+  log.info({ typeId, count: items.length }, 'list');
   res.status(200).json({ items });
 }));
 
@@ -302,7 +302,7 @@ typedDocumentsRouter.get('/:documentId', asyncHandler(async (req: Request, res: 
   const params = req.params as { documentId: string };
   const item = await typedDocumentRepo.get(params.documentId);
   if (!item) throw new NotFoundError(`typed document ${params.documentId} not found`);
-  log.debug('fetch', { documentId: params.documentId, typeId: item.typeId });
+  log.debug({ documentId: params.documentId, typeId: item.typeId }, 'fetch');
   res.status(200).json(item);
 }));
 

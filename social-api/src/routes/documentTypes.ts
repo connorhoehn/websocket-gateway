@@ -236,13 +236,13 @@ documentTypesRouter.post('/', asyncHandler(async (req: Request, res: Response) =
   };
   await documentTypeRepo.create(item);
   recordDocumentTypeCreated();
-  log.info('create', { typeId: item.typeId, name: item.name, fieldCount: fields.length, userId: req.user!.sub });
+  log.info({ typeId: item.typeId, name: item.name, fieldCount: fields.length, userId: req.user!.sub }, 'create');
   res.status(201).json(item);
 }));
 
 documentTypesRouter.get('/', asyncHandler(async (_req: Request, res: Response) => {
   const items = await documentTypeRepo.list();
-  log.debug('list', { count: items.length });
+  log.debug({ count: items.length }, 'list');
   res.status(200).json({ items });
 }));
 
@@ -250,7 +250,7 @@ documentTypesRouter.get('/:typeId', asyncHandler(async (req: Request, res: Respo
   const params = req.params as { typeId: string };
   const item = await documentTypeRepo.get(params.typeId);
   if (!item) throw new NotFoundError(`document type ${params.typeId} not found`);
-  log.debug('fetch', { typeId: params.typeId, name: item.name });
+  log.debug({ typeId: params.typeId, name: item.name }, 'fetch');
   res.status(200).json(item);
 }));
 
@@ -272,13 +272,13 @@ documentTypesRouter.put('/:typeId', asyncHandler(async (req: Request, res: Respo
 
   const updated = await documentTypeRepo.update(params.typeId, patch, existing);
   recordDocumentTypeUpdated();
-  log.info('update', {
+  log.info({
     typeId: params.typeId,
     name: updated.name,
     fieldCount: updated.fields.length,
     userId: req.user!.sub,
     version: updated.version,
-  });
+  }, 'update');
   res.status(200).json(updated);
 }));
 
@@ -287,7 +287,7 @@ documentTypesRouter.delete('/:typeId', asyncHandler(async (req: Request, res: Re
   const item = await documentTypeRepo.get(params.typeId);
   await documentTypeRepo.delete(params.typeId);
   recordDocumentTypeDeleted();
-  log.warn('delete', { typeId: params.typeId, name: item?.name, userId: req.user!.sub });
+  log.warn({ typeId: params.typeId, name: item?.name, userId: req.user!.sub }, 'delete');
   res.status(204).end();
 }));
 
