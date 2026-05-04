@@ -646,4 +646,77 @@ test.describe('Pipelines E2E', () => {
       expect(await completedNode.getAttribute('data-state')).toBe('completed');
     }
   });
+
+  // --------------------------------------------------------------------------
+  // Run cancellation
+  //
+  // Build a pipeline with an approval node that blocks execution, cancel the
+  // run while paused, and verify the run transitions to cancelled state.
+  // --------------------------------------------------------------------------
+  test('pipeline run cancellation stops execution and shows cancelled state', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // Create pipeline.
+    await page.goto('/pipelines');
+    await page.getByTestId('new-pipeline-btn').click();
+    await page.getByTestId('new-pipeline-name').fill('E2E Cancellation Test');
+    await page.getByTestId('new-pipeline-confirm').click();
+    await expect(page.getByTestId('pipeline-editor')).toBeVisible();
+
+    // Insert Approval node and wire to Trigger.
+    const approvalId = await insertNodeViaBridge(page, 'approval');
+    const triggerId = await findNodeIdByType(page, 'trigger');
+    if (!triggerId) throw new Error('Trigger node not present');
+    await connectViaBridge(page, triggerId, approvalId);
+
+    // Configure approval node with required fields.
+    await updateNodeDataViaBridge(page, approvalId, {
+      approvers: ['user-1'],
+      requiredCount: 1,
+      mode: 'all',
+    });
+
+    // Publish.
+    await page.getByTestId('overflow-menu-btn').click();
+    await page.getByRole('button', { name: /^Publish…$/ }).click();
+    await page.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(page.getByTestId('version-badge')).toContainText(/Published/i);
+
+    // Run pipeline - it will pause at approval gate.
+    await page.getByTestId('run-button').click();
+
+    // Wait for approval node to reach awaiting_approval state.
+    const approvalNode = page.locator(`.react-flow__node[data-id="${approvalId}"]`);
+    const awaitingApproval = approvalNode.locator('[data-state="awaiting_approval"]');
+    await expect(awaitingApproval).toBeVisible({ timeout: 10_000 });
+
+    // Look for cancel button (may be in overflow menu or toolbar).
+    const cancelBtn = page.getByRole('button', { name: /cancel/i }).first();
+    if (await cancelBtn.isVisible()) {
+      await cancelBtn.click();
+    } else {
+      // Try overflow menu.
+      await page.getByTestId('overflow-menu-btn').click();
+      await page.getByRole('button', { name: /cancel/i }).click();
+    }
+
+    // Node should transition to cancelled state.
+    const cancelledNode = approvalNode.locator('[data-state="cancelled"]');
+    await expect(cancelledNode).toBeVisible({ timeout: 5_000 });
+
+    // Verify run appears as cancelled on runs page.
+    const url = page.url();
+    const match = url.match(/\/pipelines\/([^/]+)$/);
+    if (match) {
+      const pipelineId = match[1];
+      await page.goto(`/pipelines/${pipelineId}/runs`);
+      await expect(page.getByTestId('pipeline-runs-page')).toBeVisible();
+
+      // First run should show cancelled status.
+      const runCards = page.locator('[data-testid^="run-card-"]');
+      const firstRun = runCards.first();
+      await expect(firstRun).toBeVisible();
+      await expect(firstRun).toContainText(/cancelled/i);
+    }
+  });
 });
