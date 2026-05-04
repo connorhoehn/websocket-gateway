@@ -495,4 +495,81 @@ test.describe('Pipelines E2E', () => {
     await page.getByTestId('bulk-archive').click();
     await expect(cardsBefore).toHaveCount(seeded.count - 2);
   });
+
+  // --------------------------------------------------------------------------
+  // Run history display
+  //
+  // Create a pipeline, run it to completion via MockExecutor, then navigate
+  // to /pipelines/:id/runs and verify the completed run appears in the list
+  // with correct status and metadata.
+  // --------------------------------------------------------------------------
+  test('completed run appears on /pipelines/:id/runs page with status and metadata', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    // Create pipeline through UI.
+    await page.goto('/pipelines');
+    await page.getByTestId('new-pipeline-btn').click();
+    await page.getByTestId('new-pipeline-name').fill('E2E Runs Page Test');
+    await page.getByTestId('new-pipeline-confirm').click();
+    await expect(page.getByTestId('pipeline-editor')).toBeVisible();
+
+    // Insert LLM node and wire to Trigger.
+    const llmId = await insertNodeViaBridge(page, 'llm');
+    const triggerId = await findNodeIdByType(page, 'trigger');
+    if (!triggerId) throw new Error('Trigger node not present');
+    await connectViaBridge(page, triggerId, llmId);
+
+    // Configure LLM node.
+    await updateNodeDataViaBridge(page, llmId, {
+      provider: 'mock',
+      model: 'mock-model',
+      systemPrompt: 'You are helpful.',
+      userPromptTemplate: 'Say hello.',
+    });
+
+    // Publish the pipeline.
+    await page.getByTestId('overflow-menu-btn').click();
+    const publishMenuItem = page.getByRole('button', { name: /^Publish…$/ });
+    await publishMenuItem.click();
+    const publishConfirm = page.getByRole('button', { name: /^Publish$/ });
+    await publishConfirm.click();
+    await expect(page.getByTestId('version-badge')).toContainText(/Published/i);
+
+    // Capture the pipeline ID from the URL.
+    const url = page.url();
+    const match = url.match(/\/pipelines\/([^/]+)$/);
+    if (!match) throw new Error('Could not extract pipeline ID from URL');
+    const pipelineId = match[1];
+
+    // Run the pipeline via MockExecutor.
+    const runBtn = page.getByTestId('run-button');
+    await runBtn.click();
+
+    // Wait for at least one node to transition (MockExecutor completing).
+    const transitionedNode = page.locator(
+      '[data-state="running"], [data-state="completed"], [data-state="failed"]'
+    ).first();
+    await expect(transitionedNode).toBeVisible({ timeout: 10_000 });
+
+    // Wait a moment for run to fully complete and persist to localStorage.
+    await page.waitForTimeout(1000);
+
+    // Navigate to the runs page.
+    await page.goto(`/pipelines/${pipelineId}/runs`);
+    await expect(page.getByTestId('pipeline-runs-page')).toBeVisible();
+
+    // At least one run should appear in the list.
+    const runCards = page.locator('[data-testid^="run-card-"]');
+    await expect(runCards.first()).toBeVisible({ timeout: 5_000 });
+
+    // Verify run metadata is visible (timestamp, status).
+    const firstRun = runCards.first();
+    await expect(firstRun).toContainText(/completed|failed/i);
+
+    // Verify timestamp is present (looks for ISO-like date or relative time).
+    const runText = await firstRun.textContent();
+    if (!runText) throw new Error('Run card has no text');
+    const hasTimestamp = /\d{4}-\d{2}-\d{2}|ago|just now/i.test(runText);
+    expect(hasTimestamp).toBe(true);
+  });
 });
