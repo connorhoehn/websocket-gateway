@@ -33,7 +33,7 @@
 // responses. The frontend renders "—" / "n/a" for null fields.
 
 import { Router } from 'express';
-import { getPipelineBridge } from './pipelineTriggers';
+import { getPipelineBridge } from './pipelineTriggers.js';
 import { withContext } from '../lib/logger';
 import { recordPipelineError } from '../observability/metrics';
 
