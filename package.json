@@ -17,7 +17,6 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
-    "@types/multer": "^2.1.0",
     "@types/node": "22.7.9",
     "@types/ws": "^8.18.1",
     "aws-cdk": "2.1016.0",
@@ -53,7 +52,6 @@
     "jwks-rsa": "^3.2.2",
     "lib0": "^0.2.117",
     "lru-cache": "^10.4.3",
-    "multer": "^2.1.1",
     "pino": "^9.14.0",
     "redis": "^5.0.0",
     "ws": "^8.14.0",
