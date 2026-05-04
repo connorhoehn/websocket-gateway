@@ -126,6 +126,9 @@ samconfig.toml
 !assets/
 !assets/**
 
+# Pipeline WAL data (created at runtime by PipelineModule)
+data/
+
 # agent-hub shard transients
 .agent-hub/*.db-wal
 .agent-hub/*.db-shm

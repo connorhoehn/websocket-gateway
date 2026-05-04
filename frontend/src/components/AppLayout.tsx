@@ -29,6 +29,7 @@ import ShortcutsHelp from './shared/ShortcutsHelp';
 import { useDocuments } from '../hooks/useDocuments';
 import { ErrorBoundary } from './ErrorBoundary';
 import { EventStreamProvider } from './pipelines/context/EventStreamContext';
+import { getPipelineSource } from './pipelines/hooks/usePipelineSource';
 import { PipelineRunsProvider } from './pipelines/context/PipelineRunsContext';
 import { useDocumentTriggers } from './pipelines/hooks/useDocumentTriggers';
 import { useWebhookTriggers } from './pipelines/hooks/useWebhookTriggers';
@@ -175,7 +176,7 @@ export interface AppLayoutProps {
  */
 export function AppLayout(props: AppLayoutProps) {
   return (
-    <EventStreamProvider>
+    <EventStreamProvider source={getPipelineSource()}>
       <PipelineRunsProvider>
         <ObservabilityProvider>
           <AppLayoutInner {...props} />

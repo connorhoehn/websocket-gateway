@@ -36,6 +36,23 @@ const pipelineApprovalsTotal = registry.counter('pipeline_approvals_total', BASE
 const pipelineCancelsTotal = registry.counter('pipeline_cancels_total', BASE_LABELS, 'Pipeline runs explicitly cancelled by an operator.');
 const pipelineErrorsTotal = registry.counter('pipeline_errors_total', BASE_LABELS, 'Pipeline operations that failed (bridge throw, probe timeout, etc).');
 
+// Per-step execution metrics (task #371 - detailed pipeline telemetry).
+// Histogram buckets chosen to cover realistic pipeline step durations:
+// sub-second for transforms, seconds for LLM calls, minutes for long-running steps.
+const pipelineStepDurationMs = registry.histogram(
+  'pipeline_step_duration_ms',
+  { ...BASE_LABELS, node_type: '_init' },
+  'Pipeline step execution time in milliseconds, labeled by node type.',
+  [100, 250, 500, 1000, 2500, 5000, 10_000, 30_000, 60_000, 120_000],
+);
+
+const pipelineRunsInflight = registry.gauge('pipeline_runs_inflight', BASE_LABELS, 'Pipeline runs currently in pending or running state.');
+const pipelineApprovalsPending = registry.gauge('pipeline_approvals_pending', BASE_LABELS, 'Pipeline runs currently awaiting approval.');
+
+// LLM token counter with model label. Pre-registered with model='_init' so the metric
+// appears at zero; per-model labels are minted lazily in recordLLMTokens.
+registry.counter('pipeline_llm_tokens_total', { ...BASE_LABELS, model: '_init', direction: 'in' }, 'LLM tokens processed, labeled by model and direction (in/out).');
+
 // EventBus dead-letter counter (Stream 3 — BusDLQ). Incremented every time a
 // subscriber throws or a publish path fails inside the pipeline EventBus.
 // `reason` carries the error's `name` (e.g., 'Error', 'TypeError', custom
@@ -98,6 +115,41 @@ export function recordPipelineCancel(): void {
 
 export function recordPipelineError(): void {
   pipelineErrorsTotal.inc();
+}
+
+/**
+ * Record pipeline step execution duration. Called when pipeline.step.completed
+ * event is observed. `nodeType` should be the step's node type (llm, transform,
+ * approval, etc). `durationMs` is the elapsed time from step.started to step.completed.
+ */
+export function recordPipelineStepDuration(nodeType: string, durationMs: number): void {
+  registry.histogram('pipeline_step_duration_ms', { ...BASE_LABELS, node_type: nodeType }, '', []).observe(durationMs);
+}
+
+/**
+ * Update the pipeline_runs_inflight gauge. Called on run.started (+1) and
+ * run.completed/failed/cancelled (-1).
+ */
+export function recordPipelineRunInflightDelta(delta: number): void {
+  if (delta > 0) pipelineRunsInflight.inc(delta);
+  else if (delta < 0) pipelineRunsInflight.dec(-delta);
+}
+
+/**
+ * Update the pipeline_approvals_pending gauge. Called when a run enters
+ * awaiting_approval (+1) and when resolved (-1).
+ */
+export function recordPipelineApprovalPendingDelta(delta: number): void {
+  if (delta > 0) pipelineApprovalsPending.inc(delta);
+  else if (delta < 0) pipelineApprovalsPending.dec(-delta);
+}
+
+/**
+ * Record LLM token consumption. Called when pipeline.llm.token events are observed.
+ * `model` is the LLM model name, `direction` is 'in' or 'out', `count` is the token delta.
+ */
+export function recordLLMTokens(model: string, direction: 'in' | 'out', count: number): void {
+  registry.counter('pipeline_llm_tokens_total', { ...BASE_LABELS, model, direction }, '', []).inc(count);
 }
 
 /**

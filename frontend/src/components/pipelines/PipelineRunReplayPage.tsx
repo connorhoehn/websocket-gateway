@@ -227,7 +227,7 @@ export default function PipelineRunReplayPage() {
   }
 
   return (
-    <EventStreamProvider>
+    <EventStreamProvider source={getPipelineSource()}>
       <PipelineEditorProvider pipelineId={pipelineId}>
         <PipelineRunsProvider>
           <ReplayFrame pipelineId={pipelineId} runId={runId} />

@@ -19,6 +19,7 @@ import {
   EventStreamProvider,
   useEventStream,
 } from '../pipelines/context/EventStreamContext';
+import { getPipelineSource } from '../pipelines/hooks/usePipelineSource';
 import type { WildcardEvent } from '../pipelines/context/EventStreamContext';
 import EventTimeline, { type EventItem } from './components/EventTimeline';
 import EventDetailPane from './components/EventDetailPane';
@@ -452,7 +453,7 @@ function EventsPageInner() {
 
 export default function EventsPage() {
   return (
-    <EventStreamProvider>
+    <EventStreamProvider source={getPipelineSource()}>
       <EventsPageInner />
     </EventStreamProvider>
   );

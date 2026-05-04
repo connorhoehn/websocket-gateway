@@ -34,6 +34,7 @@ import {
   EventStreamProvider,
   useEventStream,
 } from './context/EventStreamContext';
+import { getPipelineSource } from './hooks/usePipelineSource';
 import type { WildcardEvent } from './context/EventStreamContext';
 import PipelineCanvas from './canvas/PipelineCanvas';
 import NodePalette from './canvas/NodePalette';
@@ -284,7 +285,7 @@ export default function PipelineEditorPage() {
   }
 
   return (
-    <EventStreamProvider>
+    <EventStreamProvider source={getPipelineSource()}>
       <PipelineEditorProvider pipelineId={pipelineId}>
         <PipelineRunsProvider>
           <EditorFrame pipelineId={pipelineId} />

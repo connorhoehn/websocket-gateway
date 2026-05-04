@@ -529,7 +529,7 @@ export default function PipelineRunsPage() {
   const selectionCount = selected.size;
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div data-testid="pipeline-runs-page" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
           type="button"
@@ -835,6 +835,7 @@ export default function PipelineRunsPage() {
               return (
                 <tr
                   key={r.id}
+                  data-testid={`run-card-${r.id}`}
                   style={{
                     borderBottom: `1px solid ${colors.border}`,
                     cursor: 'pointer',

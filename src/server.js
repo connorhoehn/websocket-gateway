@@ -34,7 +34,7 @@ const SocialService = require("./services/social-service");
 const ActivityService = require("./services/activity-service");
 const DocumentEventsService = require("./services/document-events-service");
 const PipelineService = require("./services/pipeline-service");
-const { PipelineBridge } = require("./pipeline-bridge/pipeline-bridge");
+const { PipelineBridge, bindPipelineModule } = require("./pipeline-bridge/pipeline-bridge");
 
 // Utilities
 const { createDynamoClient } = require('./utils/dynamo-client');
@@ -312,6 +312,12 @@ class DistributedWebSocketServer {
             logger: this.logger,
         });
         this.pipelineBridge.start();
+
+        // Wire the distributed-core PipelineModule (async, non-blocking).
+        // When available, real pipeline execution replaces the mock fallback.
+        // When unavailable (distributed-core not built, cluster not enabled),
+        // the mock fallback in PipelineService continues to work.
+        this._wirePipelineModule(pipelineService);
 
         // Expose the source on the HTTP server so later phases (and tests) can grab it.
         if (this.httpServer) {
@@ -1022,6 +1028,196 @@ class DistributedWebSocketServer {
             });
     }
 
+    /**
+     * Wire the distributed-core PipelineModule into PipelineService so
+     * trigger / cancel / resolveApproval / getRun / getHistory /
+     * resumeFromStep go through the real executor instead of the in-memory
+     * mock shim.
+     *
+     * Non-blocking: if distributed-core is not available or the cluster is
+     * not enabled, we log a warning and leave the mock fallback in place.
+     * The gateway continues to work either way.
+     */
+    _wirePipelineModule(pipelineService) {
+        // Ensure the WAL data directory exists (gitignored).
+        const dataDir = path.join(__dirname, '..', 'data');
+        try {
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+        } catch (err) {
+            this.logger.warn('Failed to create data/ directory for pipeline WAL', {
+                error: err && err.message,
+            });
+        }
+
+        // eslint-disable-next-line global-require
+        const { getRoomOwnershipService } = require('./services/room-ownership-service');
+        Promise.resolve()
+            .then(() => getRoomOwnershipService({ logger: this.logger }))
+            .then(async (svc) => {
+                // The room-ownership bootstrap gives us a Cluster facade
+                // (when ownership routing is enabled). We need its pubsub
+                // and clusterManager to initialize PipelineModule.
+                const cluster = svc && svc.shutdown && svc._cluster
+                    ? svc._cluster
+                    : null;
+                // If no cluster, try to grab it from the bootstrap result
+                // stashed on the singleton.
+                const clusterFacade = cluster
+                    || (svc && svc.clusterHandle)
+                    || null;
+
+                // Fallback: construct a minimal standalone context so
+                // PipelineModule can initialize without the full cluster.
+                // This is the common path when ownership routing is
+                // disabled (WSG_ENABLE_OWNERSHIP_ROUTING != "true").
+                let PipelineModule, FixtureLLMClient;
+                try {
+                    // eslint-disable-next-line global-require
+                    ({ PipelineModule, FixtureLLMClient } = require('distributed-core'));
+                } catch (loadErr) {
+                    this.logger.warn(
+                        '[pipeline] distributed-core not available; PipelineModule wiring skipped — using mock fallback',
+                        { error: loadErr && loadErr.message },
+                    );
+                    return;
+                }
+
+                // Build a minimal ApplicationModuleContext. When the full
+                // cluster facade is available we use its pubsub +
+                // clusterManager; otherwise we construct in-memory stubs.
+                const { EventEmitter: EE } = require('events');
+                const nodeId = (clusterFacade && clusterFacade.clusterManager)
+                    ? clusterFacade.clusterManager.localNodeId
+                    : `wsg-pipeline-${Date.now()}`;
+
+                let pubsub;
+                if (clusterFacade && clusterFacade.pubsub) {
+                    pubsub = clusterFacade.pubsub;
+                } else {
+                    // Construct a minimal in-memory PubSub stub for the
+                    // PipelineModule's EventBus. The EventBus only needs
+                    // subscribe/unsubscribe/publish — same pattern used by
+                    // distributed-core's own test harness.
+                    const handlers = new Map();
+                    let counter = 0;
+                    pubsub = {
+                        subscribe(_topic, handler) {
+                            counter++;
+                            const id = `ps-${counter}`;
+                            handlers.set(id, handler);
+                            return id;
+                        },
+                        unsubscribe(id) { handlers.delete(id); },
+                        async publish(topic, payload) {
+                            const meta = {
+                                publisherNodeId: nodeId,
+                                messageId: String(Date.now()),
+                                timestamp: Date.now(),
+                                topic,
+                            };
+                            await Promise.all(
+                                Array.from(handlers.values()).map((h) => h(topic, payload, meta)),
+                            );
+                        },
+                    };
+                }
+
+                const stubEvents = new EE();
+                const clusterManager = (clusterFacade && clusterFacade.clusterManager)
+                    ? clusterFacade.clusterManager
+                    : {
+                        localNodeId: nodeId,
+                        on: stubEvents.on.bind(stubEvents),
+                        off: stubEvents.off.bind(stubEvents),
+                        emit: stubEvents.emit.bind(stubEvents),
+                    };
+
+                const context = {
+                    clusterManager,
+                    resourceRegistry: {
+                        registerResourceType: () => {},
+                        getResourcesByType: () => [],
+                    },
+                    topologyManager: {},
+                    moduleRegistry: {
+                        registerModule: async () => {},
+                        unregisterModule: async () => {},
+                        getModule: () => undefined,
+                        getAllModules: () => [],
+                        getModulesByResourceType: () => [],
+                    },
+                    configuration: { pubsub },
+                    logger: {
+                        info: (...a) => this.logger.info('[PipelineModule]', ...a),
+                        warn: (...a) => this.logger.warn('[PipelineModule]', ...a),
+                        error: (...a) => this.logger.error('[PipelineModule]', ...a),
+                        debug: (...a) => this.logger.debug && this.logger.debug('[PipelineModule]', ...a),
+                    },
+                };
+
+                const pipelineModule = new PipelineModule({
+                    moduleId: 'pipeline',
+                    moduleName: 'Pipeline',
+                    version: '1.0.0',
+                    resourceTypes: ['pipeline-run'],
+                    configuration: {},
+                    llmClient: new FixtureLLMClient([]),
+                    walFilePath: path.join(dataDir, 'pipeline-wal'),
+                    checkpointEveryN: 10,
+                });
+
+                await pipelineModule.initialize(context);
+                await pipelineModule.start();
+
+                // Use the existing bindPipelineModule helper to wire
+                // setPipelineModule + setCancelHandler + setResolveApprovalHandler.
+                bindPipelineModule(pipelineService, pipelineModule);
+
+                // Wire metrics subscriber to EventBus (task #371).
+                const { subscribePipelineMetrics } = require('./pipeline-metrics-subscriber');
+                // Import metrics recording functions from social-api.
+                // In production, social-api runs as separate process; here we import
+                // directly for single-process dev mode. Multi-process setups would
+                // export metrics via gateway's own registry.
+                try {
+                    // eslint-disable-next-line global-require
+                    const socialApiMetrics = require('../social-api/src/observability/metrics');
+                    const eventBus = pipelineModule.getEventBus && pipelineModule.getEventBus();
+                    if (eventBus && typeof eventBus.subscribeAll === 'function') {
+                        const unsubscribe = subscribePipelineMetrics(
+                            eventBus,
+                            {
+                                recordPipelineStepDuration: socialApiMetrics.recordPipelineStepDuration,
+                                recordPipelineRunInflightDelta: socialApiMetrics.recordPipelineRunInflightDelta,
+                                recordPipelineApprovalPendingDelta: socialApiMetrics.recordPipelineApprovalPendingDelta,
+                                recordLLMTokens: socialApiMetrics.recordLLMTokens,
+                            },
+                            this.logger,
+                        );
+                        // Stash unsubscribe for shutdown.
+                        this._pipelineMetricsUnsubscribe = unsubscribe;
+                    }
+                } catch (metricsErr) {
+                    this.logger.warn('[pipeline] metrics subscriber wiring failed; continuing without detailed telemetry', {
+                        error: metricsErr && metricsErr.message,
+                    });
+                }
+
+                // Stash reference for shutdown.
+                this._pipelineModule = pipelineModule;
+
+                this.logger.info('✅ PipelineModule wired from distributed-core — real execution enabled');
+            })
+            .catch((err) => {
+                this.logger.warn(
+                    '[pipeline] PipelineModule wiring failed; continuing with mock fallback',
+                    { error: err && err.message },
+                );
+            });
+    }
+
     _attachPeerMessagingWhenReady() {
         // eslint-disable-next-line global-require
         const { getRoomOwnershipService } = require('./services/room-ownership-service');
@@ -1068,6 +1264,15 @@ class DistributedWebSocketServer {
         if (this.metricsInterval) {
             clearInterval(this.metricsInterval);
             this.metricsInterval = null;
+        }
+
+        // Stop PipelineModule (if wired from distributed-core)
+        if (this._pipelineModule && typeof this._pipelineModule.stop === 'function') {
+            try {
+                await this._pipelineModule.stop();
+            } catch (err) {
+                this.logger.warn('Error stopping PipelineModule:', err.message);
+            }
         }
 
         // Stop pipeline bridge (unsubscribe from event source)
@@ -1123,6 +1328,15 @@ class DistributedWebSocketServer {
         this.logger.info('🛑 Shutting down WebSocket server...');
 
         try {
+            // Stop PipelineModule before bridge so executors finish cleanly
+            if (this._pipelineModule && typeof this._pipelineModule.stop === 'function') {
+                try {
+                    await this._pipelineModule.stop();
+                } catch (err) {
+                    this.logger.warn('Error stopping PipelineModule during shutdown:', err.message);
+                }
+            }
+
             // Stop pipeline bridge first so no more events fan out to closing sockets
             if (this.pipelineBridge) {
                 try {
