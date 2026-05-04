@@ -289,6 +289,11 @@ export interface PipelineBridge {
    * `estimatedCostUsd` is NOT tracked by distributed-core yet — it is always
    * absent here and surfaces as `null` to clients.
    */
+  /**
+   * (Phase 4) Epoch-ms timestamp of the most recent event the bridge relayed,
+   * or null if no events have been relayed yet.
+   */
+  getLastEventAt?(): number | null;
   getMetrics?(): Promise<PipelineBridgeMetrics> | PipelineBridgeMetrics;
   /**
    * (Phase 50, T13 — lib-expansion-3) Operator introspection over the

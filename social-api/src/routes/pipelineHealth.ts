@@ -24,10 +24,8 @@
 // All bridge calls are wrapped in try/catch and a tight 1s timeout so a flaky
 // bridge can't hang or 500 the health endpoint.
 //
-// TODO(phase 4): expose `lastEventAt` (ISO 8601 of the most recent pipeline
-// event observed). The bridge doesn't track it yet; wiring this requires
-// subscribing to `module.getEventBus()` from the bridge factory and stamping
-// a timestamp on each delivery.
+// `lastEventAt` (ISO 8601) is read live from the bridge via
+// `bridge.getLastEventAt()` — see the route handler below.
 
 import { Router } from 'express';
 import { getPipelineBridge, type PipelineBridge } from './pipelineTriggers';
@@ -367,6 +365,20 @@ pipelineHealthRouter.get('/', async (_req, res) => {
     }
   }
 
-  const body: PipelineHealth = { ...base, ...probe };
+  // Read lastEventAt from the bridge (epoch ms -> ISO 8601, or null).
+  let lastEventAt: string | null = null;
+  try {
+    const bridgeRef = getPipelineBridge();
+    if (bridgeRef && typeof bridgeRef.getLastEventAt === 'function') {
+      const ts = bridgeRef.getLastEventAt();
+      if (typeof ts === 'number' && ts > 0) {
+        lastEventAt = new Date(ts).toISOString();
+      }
+    }
+  } catch {
+    // Non-fatal — fall through with null.
+  }
+
+  const body: PipelineHealth = { ...base, ...probe, lastEventAt };
   res.json(body satisfies PipelineHealth);
 });

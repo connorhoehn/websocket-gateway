@@ -156,6 +156,10 @@ class PipelineBridge {
     // Bound so we can pass it to .on / .off symmetrically.
     this._boundHandler = this._handleEvent.bind(this);
 
+    // Timestamp (ms since epoch) of the most recent event relayed by the bridge.
+    // Exposed via getLastEventAt() for the health endpoint.
+    this._lastEventAt = null;
+
     // Token-rate sliding-window ring buffer. Each entry is the Date.now() ms
     // timestamp of a `pipeline.llm.token` event observed by the bridge.
     // Fixed-size circular buffer to avoid unbounded growth under load.
@@ -306,6 +310,9 @@ class PipelineBridge {
       return;
     }
 
+    // Stamp the most recent event time for the health endpoint.
+    this._lastEventAt = Date.now();
+
     const safePayload = payload && typeof payload === 'object' ? payload : {};
     const runId = safePayload.runId;
 
@@ -338,6 +345,17 @@ class PipelineBridge {
     if (eventType.startsWith('pipeline.approval.')) {
       this._emit('pipeline:approvals', eventType, safePayload);
     }
+  }
+
+  /**
+   * Public: ms-since-epoch timestamp of the most recent event relayed by the
+   * bridge, or null if no events have been relayed yet. Used by the health
+   * endpoint to surface `lastEventAt`.
+   *
+   * @returns {number | null}
+   */
+  getLastEventAt() {
+    return this._lastEventAt;
   }
 
   /**
